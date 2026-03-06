@@ -54,6 +54,28 @@ pub struct TextStyle {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
+pub struct TextRun {
+    pub text: String,
+    pub style: TextStyle,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ImageReference {
+    pub resource_id: String,
+    pub description: Option<String>,
+    pub content_type: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum Block {
+    Paragraph { runs: Vec<TextRun> },
+    Image { image: ImageReference },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct TextNode {
     pub text: String,
     pub bounds: Rect,

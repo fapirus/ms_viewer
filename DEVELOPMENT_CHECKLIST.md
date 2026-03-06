@@ -87,11 +87,12 @@
     - package relationships fixture
     - missing relationship target
   - Done: content types, package relationships, and target resolution parser added
-- [ ] shared text/run/style base model 정의
+- [x] shared text/run/style base model 정의
   - Rust scope: common text span, block, image reference model
   - Tests:
     - model construction tests
     - serde round-trip tests
+  - Done: parser-facing shared text run, block, and image reference model added
 
 ### FFI and Flutter foundation
 - [ ] Rust error model과 Flutter error mapping 연결
