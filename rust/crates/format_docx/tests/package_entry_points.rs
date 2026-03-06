@@ -6,7 +6,7 @@ use zip::write::SimpleFileOptions;
 use zip::ZipWriter;
 
 use format_docx::{
-    parse_docx, parse_page_boxes, parse_paragraph_blocks, parse_section_layouts,
+    layout_document, parse_docx, parse_page_boxes, parse_paragraph_blocks, parse_section_layouts,
     parse_style_catalog,
 };
 use viewer_core::model::{Block, TableCellMerge};
@@ -973,6 +973,104 @@ fn parses_page_metrics_from_section_properties() {
     assert_eq!(pages[0].content.y, 72.0);
     assert_eq!(pages[0].content.width, 432.0);
     assert_eq!(pages[0].content.height, 648.0);
+}
+
+#[test]
+fn lays_out_long_paragraph_across_multiple_pages() {
+    let file = create_docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+              <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+            </Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+              <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+            </Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+              <w:body>
+                <w:p>
+                  <w:r><w:t>alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi rho sigma tau upsilon phi chi psi omega alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi rho sigma tau</w:t></w:r>
+                </w:p>
+                <w:sectPr>
+                  <w:pgSz w:w="2400" w:h="1200"/>
+                  <w:pgMar w:top="120" w:right="120" w:bottom="120" w:left="120"/>
+                </w:sectPr>
+              </w:body>
+            </w:document>"#,
+        ),
+    ]);
+    let archive = OoxmlArchive::open_path(file.path()).expect("docx archive should open");
+    let package = parse_docx(&archive).expect("docx package should parse");
+    let pages = layout_document(&archive, &package).expect("layout should succeed");
+
+    assert!(pages.len() >= 2);
+    assert_eq!(pages[0].page_index, 0);
+    assert_eq!(pages[1].page_index, 1);
+    assert!(!pages[0].blocks.is_empty());
+    assert!(!pages[1].blocks.is_empty());
+}
+
+#[test]
+fn explicit_page_break_starts_new_page() {
+    let file = create_docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+              <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+            </Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+              <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+            </Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+              <w:body>
+                <w:p>
+                  <w:r><w:t>First page</w:t></w:r>
+                  <w:r><w:br w:type="page"/></w:r>
+                  <w:r><w:t>Second page</w:t></w:r>
+                </w:p>
+                <w:sectPr>
+                  <w:pgSz w:w="12240" w:h="15840"/>
+                  <w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"/>
+                </w:sectPr>
+              </w:body>
+            </w:document>"#,
+        ),
+    ]);
+    let archive = OoxmlArchive::open_path(file.path()).expect("docx archive should open");
+    let package = parse_docx(&archive).expect("docx package should parse");
+    let pages = layout_document(&archive, &package).expect("layout should succeed");
+
+    assert_eq!(pages.len(), 2);
+    match &pages[0].blocks[0] {
+        format_docx::LaidOutBlock::Paragraph { lines, .. } => {
+            assert!(lines.iter().any(|line| line.text.contains("First page")));
+        }
+        other => panic!("expected paragraph layout, got {other:?}"),
+    }
+    match &pages[1].blocks[0] {
+        format_docx::LaidOutBlock::Paragraph { lines, .. } => {
+            assert!(lines.iter().any(|line| line.text.contains("Second page")));
+        }
+        other => panic!("expected paragraph layout, got {other:?}"),
+    }
 }
 
 fn create_docx_fixture(entries: &[(&str, &str)]) -> NamedTempFile {

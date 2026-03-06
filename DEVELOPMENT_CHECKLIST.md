@@ -163,7 +163,8 @@
   - Rust scope: page size, margins, content frame
   - Tests:
     - page metrics fixture
-- [ ] block layout MVP 구현
+- [x] block layout MVP 구현
+  - Done: simple paragraph flow, estimated line breaking, explicit page break handling
   - Rust scope: paragraph flow, line breaking, page breaking
   - Tests:
     - multi page paragraph fixture

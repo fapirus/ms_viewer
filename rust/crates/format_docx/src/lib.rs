@@ -106,6 +106,43 @@ pub struct PageBox {
     pub content: ContentFrame,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct LaidOutLine {
+    pub text: String,
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum LaidOutBlock {
+    Paragraph {
+        list: Option<ListMarker>,
+        lines: Vec<LaidOutLine>,
+    },
+    Table {
+        x: f32,
+        y: f32,
+        width: f32,
+        height: f32,
+    },
+    Image {
+        resource_id: String,
+        x: f32,
+        y: f32,
+        width: f32,
+        height: f32,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct DocxPageLayout {
+    pub page_index: u32,
+    pub page_box: PageBox,
+    pub blocks: Vec<LaidOutBlock>,
+}
+
 pub fn parse_docx(archive: &OoxmlArchive) -> Result<DocxPackage, ViewerError> {
     let relationships = parse_package_relationships(archive)?;
     let main_document = relationships
@@ -332,6 +369,136 @@ pub fn parse_page_boxes(
     Ok(page_boxes)
 }
 
+pub fn layout_document(
+    archive: &OoxmlArchive,
+    package: &DocxPackage,
+) -> Result<Vec<DocxPageLayout>, ViewerError> {
+    let blocks = parse_paragraph_blocks(archive, package)?;
+    let mut page_boxes = parse_page_boxes(archive, package)?;
+    if page_boxes.is_empty() {
+        page_boxes.push(PageBox {
+            width: 612.0,
+            height: 792.0,
+            margins: PageMargins {
+                top: 72.0,
+                right: 72.0,
+                bottom: 72.0,
+                left: 72.0,
+            },
+            content: ContentFrame {
+                x: 72.0,
+                y: 72.0,
+                width: 468.0,
+                height: 648.0,
+            },
+        });
+    }
+
+    let default_page_box = page_boxes[0].clone();
+    let mut pages = vec![DocxPageLayout {
+        page_index: 0,
+        page_box: default_page_box.clone(),
+        blocks: Vec::new(),
+    }];
+    let mut cursor_y = default_page_box.content.y;
+
+    for block in blocks {
+        match block {
+            Block::Paragraph { runs, list } => {
+                let font_size = runs.first().map(|run| run.style.font_size).unwrap_or(12.0);
+                let line_height = (font_size * 1.2).max(14.0);
+                let full_text = runs
+                    .iter()
+                    .map(|run| run.text.as_str())
+                    .collect::<Vec<_>>()
+                    .join("");
+                let segments = full_text.split('\u{000C}').collect::<Vec<_>>();
+
+                for (segment_index, segment) in segments.iter().enumerate() {
+                    if segment_index > 0 {
+                        start_new_page(&mut pages, &mut cursor_y, &default_page_box);
+                    }
+
+                    let lines = break_text_lines(segment, default_page_box.content.width, font_size);
+                    if lines.is_empty() {
+                        continue;
+                    }
+
+                    let mut current_lines = Vec::new();
+                    for text in lines {
+                        let content_bottom =
+                            default_page_box.content.y + default_page_box.content.height;
+                        if cursor_y + line_height > content_bottom && !current_lines.is_empty() {
+                            pages.last_mut().expect("page exists").blocks.push(
+                                LaidOutBlock::Paragraph {
+                                    list: list.clone(),
+                                    lines: current_lines,
+                                },
+                            );
+                            start_new_page(&mut pages, &mut cursor_y, &default_page_box);
+                            current_lines = Vec::new();
+                        } else if cursor_y + line_height > content_bottom {
+                            start_new_page(&mut pages, &mut cursor_y, &default_page_box);
+                        }
+
+                        current_lines.push(LaidOutLine {
+                            text: text.clone(),
+                            x: default_page_box.content.x,
+                            y: cursor_y,
+                            width: estimate_text_width(&text, font_size)
+                                .min(default_page_box.content.width),
+                            height: line_height,
+                        });
+                        cursor_y += line_height;
+                    }
+
+                    if !current_lines.is_empty() {
+                        pages
+                            .last_mut()
+                            .expect("page exists")
+                            .blocks
+                            .push(LaidOutBlock::Paragraph {
+                                list: list.clone(),
+                                lines: current_lines,
+                            });
+                    }
+
+                    cursor_y += font_size * 0.5;
+                }
+            }
+            Block::Table { rows } => {
+                let table_height = rows.len() as f32 * 24.0;
+                if cursor_y + table_height > default_page_box.content.y + default_page_box.content.height {
+                    start_new_page(&mut pages, &mut cursor_y, &default_page_box);
+                }
+                pages.last_mut().expect("page exists").blocks.push(LaidOutBlock::Table {
+                    x: default_page_box.content.x,
+                    y: cursor_y,
+                    width: default_page_box.content.width,
+                    height: table_height,
+                });
+                cursor_y += table_height + 12.0;
+            }
+            Block::Image { image } => {
+                let image_height = 96.0;
+                if cursor_y + image_height > default_page_box.content.y + default_page_box.content.height {
+                    start_new_page(&mut pages, &mut cursor_y, &default_page_box);
+                }
+                pages.last_mut().expect("page exists").blocks.push(LaidOutBlock::Image {
+                    resource_id: image.resource_id,
+                    x: default_page_box.content.x,
+                    y: cursor_y,
+                    width: default_page_box.content.width.min(144.0),
+                    height: image_height,
+                });
+                cursor_y += image_height + 12.0;
+            }
+        }
+    }
+
+    Ok(pages)
+}
+
 fn parse_document_relationships(
     archive: &OoxmlArchive,
     main_document: &str,
@@ -525,6 +692,54 @@ fn parse_twips_value(value: &str) -> Option<f32> {
     value.parse::<f32>().ok().map(|twips| twips / 20.0)
 }
 
+fn start_new_page(pages: &mut Vec<DocxPageLayout>, cursor_y: &mut f32, page_box: &PageBox) {
+    let next_index = pages.len() as u32;
+    pages.push(DocxPageLayout {
+        page_index: next_index,
+        page_box: page_box.clone(),
+        blocks: Vec::new(),
+    });
+    *cursor_y = page_box.content.y;
+}
+
+fn break_text_lines(text: &str, max_width: f32, font_size: f32) -> Vec<String> {
+    let mut lines = Vec::new();
+
+    for paragraph_line in text.split('\n') {
+        let words = paragraph_line.split_whitespace().collect::<Vec<_>>();
+        if words.is_empty() {
+            lines.push(String::new());
+            continue;
+        }
+
+        let mut current = String::new();
+        for word in words {
+            let candidate = if current.is_empty() {
+                word.to_string()
+            } else {
+                format!("{current} {word}")
+            };
+
+            if estimate_text_width(&candidate, font_size) <= max_width || current.is_empty() {
+                current = candidate;
+            } else {
+                lines.push(current);
+                current = word.to_string();
+            }
+        }
+
+        if !current.is_empty() {
+            lines.push(current);
+        }
+    }
+
+    lines
+}
+
+fn estimate_text_width(text: &str, font_size: f32) -> f32 {
+    text.chars().count() as f32 * (font_size * 0.5)
+}
+
 fn parse_paragraph_runs(
     paragraph: &viewer_core::xml::XmlElement,
     styles: &StyleCatalog,
@@ -686,7 +901,13 @@ fn parse_run(run: &viewer_core::xml::XmlElement, styles: &StyleCatalog) -> TextR
     for child in &run.children {
         match child.local_name() {
             "t" => text.push_str(&child.text),
-            "br" => text.push('\n'),
+            "br" => {
+                if child.attribute("type") == Some("page") {
+                    text.push('\u{000C}');
+                } else {
+                    text.push('\n');
+                }
+            }
             _ => {}
         }
     }
