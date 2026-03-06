@@ -65,12 +65,13 @@
     - same document opens from path and bytes
     - invalid source error mapping
   - Done: archive source abstraction added for path and in-memory bytes
-- [ ] encrypted package 감지 구현
+- [x] encrypted package 감지 구현
   - Rust scope: encrypted package detection without full parse
   - Tests:
     - plain package fixture
     - encrypted package fixture
     - unsupported encryption fixture
+  - Done: package kind detector added for zip, encrypted OLE, and unsupported OLE containers
 
 ### XML and shared model
 - [ ] XML parsing 유틸 구현

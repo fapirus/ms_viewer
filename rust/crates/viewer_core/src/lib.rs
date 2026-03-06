@@ -11,3 +11,5 @@ pub mod xml;
 
 pub use error::ViewerError;
 pub use model::{DocumentId, DocumentKind, OpenOptions};
+
+pub use crypto::{detect_package_kind_from_bytes, detect_package_kind_from_path, PackageKind};
