@@ -51,13 +51,14 @@
 
 ## Phase 0: Engine foundation
 ### Archive and package layer
-- [ ] OOXML archive reader 구현
+- [x] OOXML archive reader 구현
   - Rust scope: ZIP central directory read, part lookup, lazy entry open
   - Tests:
     - valid zip open
     - missing part lookup
     - invalid zip failure
     - large entry lazy read behavior
+  - Done: path-based OOXML archive open, part lookup, on-demand part read implemented
 - [ ] input abstraction 구현 (`PathSource`, `BytesSource`)
   - Rust scope: common input interface
   - Tests:

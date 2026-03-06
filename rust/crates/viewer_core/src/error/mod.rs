@@ -13,6 +13,8 @@ pub enum ViewerError {
     UnsupportedEncryption,
     #[error("invalid document")]
     InvalidDocument,
+    #[error("io error: {0}")]
+    Io(String),
     #[error("not implemented: {0}")]
     NotImplemented(&'static str),
 }
@@ -25,6 +27,7 @@ impl ViewerError {
             Self::InvalidPassword => ViewerErrorCode::InvalidPassword,
             Self::UnsupportedEncryption => ViewerErrorCode::UnsupportedEncryption,
             Self::InvalidDocument => ViewerErrorCode::InvalidDocument,
+            Self::Io(_) => ViewerErrorCode::IoError,
             Self::NotImplemented(_) => ViewerErrorCode::NotImplemented,
         }
     }
