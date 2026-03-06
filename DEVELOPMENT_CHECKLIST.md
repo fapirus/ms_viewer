@@ -144,7 +144,8 @@
   - Tests:
     - basic table fixture
     - merged cell fallback handling fixture
-- [ ] image reference parser 구현
+- [x] image reference parser 구현
+  - Done: drawing blip relationship resolution, image block emission, missing media relationship validation
   - Rust scope: drawing/image relationship resolution
   - Tests:
     - inline image fixture

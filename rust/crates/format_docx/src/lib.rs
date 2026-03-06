@@ -1,7 +1,8 @@
 use format_shared::{parse_package_relationships, resolve_relationship_target};
 use viewer_core::archive::OoxmlArchive;
 use viewer_core::model::{
-    Block, ListKind, ListMarker, TableCell, TableCellMerge, TableRow, TextRun, TextStyle,
+    Block, ImageReference, ListKind, ListMarker, TableCell, TableCellMerge, TableRow, TextRun,
+    TextStyle,
 };
 use viewer_core::xml::parse_document;
 use viewer_core::ViewerError;
@@ -99,7 +100,12 @@ pub fn parse_paragraph_blocks(
     let mut blocks = Vec::new();
     for child in &body.children {
         match child.local_name() {
-            "p" => blocks.push(parse_paragraph_block(child, &styles, &numbering)),
+            "p" => blocks.extend(parse_paragraph_blocks_from_element(
+                child,
+                &styles,
+                &numbering,
+                package,
+            )?),
             "tbl" => blocks.push(parse_table_block(child, &styles, &numbering)),
             _ => {}
         }
@@ -323,6 +329,38 @@ fn parse_paragraph_runs(
     runs
 }
 
+fn parse_paragraph_blocks_from_element(
+    paragraph: &viewer_core::xml::XmlElement,
+    styles: &StyleCatalog,
+    numbering: &NumberingCatalog,
+    package: &DocxPackage,
+) -> Result<Vec<Block>, ViewerError> {
+    parse_paragraph_blocks_with_media(paragraph, styles, numbering, Some(package))
+}
+
+fn parse_paragraph_blocks_with_media(
+    paragraph: &viewer_core::xml::XmlElement,
+    styles: &StyleCatalog,
+    numbering: &NumberingCatalog,
+    package: Option<&DocxPackage>,
+) -> Result<Vec<Block>, ViewerError> {
+    let runs = parse_paragraph_runs(paragraph, styles);
+    let list = parse_paragraph_list(paragraph, numbering);
+    let images = if let Some(package) = package {
+        parse_paragraph_images(paragraph, package)?
+    } else {
+        Vec::new()
+    };
+
+    let mut blocks = Vec::new();
+    if !runs.is_empty() {
+        blocks.push(Block::Paragraph { runs, list });
+    }
+    blocks.extend(images.into_iter().map(|image| Block::Image { image }));
+
+    Ok(blocks)
+}
+
 fn parse_paragraph_block(
     paragraph: &viewer_core::xml::XmlElement,
     styles: &StyleCatalog,
@@ -438,6 +476,86 @@ fn parse_run(run: &viewer_core::xml::XmlElement, styles: &StyleCatalog) -> TextR
     }
 
     TextRun { text, style }
+}
+
+fn parse_paragraph_images(
+    paragraph: &viewer_core::xml::XmlElement,
+    package: &DocxPackage,
+) -> Result<Vec<ImageReference>, ViewerError> {
+    let mut images = Vec::new();
+
+    for run in &paragraph.children {
+        if run.local_name() != "r" {
+            continue;
+        }
+
+        for child in &run.children {
+            if child.local_name() != "drawing" {
+                continue;
+            }
+
+            images.push(parse_drawing_image(child, package)?);
+        }
+    }
+
+    Ok(images)
+}
+
+fn parse_drawing_image(
+    drawing: &viewer_core::xml::XmlElement,
+    package: &DocxPackage,
+) -> Result<ImageReference, ViewerError> {
+    let blip = find_descendant(drawing, "blip").ok_or(ViewerError::InvalidDocument)?;
+    let relationship_id = blip
+        .attribute("embed")
+        .or_else(|| blip.attribute("link"))
+        .ok_or(ViewerError::InvalidDocument)?;
+    let media = package
+        .media
+        .iter()
+        .find(|relationship| relationship.id == relationship_id)
+        .ok_or(ViewerError::InvalidDocument)?;
+    let doc_pr = find_descendant(drawing, "docPr");
+    let description = doc_pr
+        .and_then(|node| node.attribute("descr").or_else(|| node.attribute("name")))
+        .map(ToString::to_string);
+
+    Ok(ImageReference {
+        resource_id: media.resolved_target.clone(),
+        description,
+        content_type: infer_content_type(&media.resolved_target),
+    })
+}
+
+fn find_descendant<'a>(
+    element: &'a viewer_core::xml::XmlElement,
+    local_name: &str,
+) -> Option<&'a viewer_core::xml::XmlElement> {
+    if element.local_name() == local_name {
+        return Some(element);
+    }
+
+    for child in &element.children {
+        if let Some(found) = find_descendant(child, local_name) {
+            return Some(found);
+        }
+    }
+
+    None
+}
+
+fn infer_content_type(path: &str) -> Option<String> {
+    let ext = path.rsplit('.').next()?;
+    let content_type = match ext {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "bmp" => "image/bmp",
+        "svg" => "image/svg+xml",
+        _ => return None,
+    };
+
+    Some(content_type.to_string())
 }
 
 fn resolve_run_style(run: &viewer_core::xml::XmlElement, styles: &StyleCatalog) -> TextStyle {

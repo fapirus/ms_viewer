@@ -680,6 +680,136 @@ fn parses_merged_cell_fallback_metadata() {
     }
 }
 
+#[test]
+fn parses_inline_image_reference_from_drawing_relationship() {
+    let file = create_docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+              <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+            </Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+              <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+            </Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <w:document
+              xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+              xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"
+              xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"
+              xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+              xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing">
+              <w:body>
+                <w:p>
+                  <w:r>
+                    <w:drawing>
+                      <wp:inline>
+                        <wp:docPr id="1" name="Diagram" descr="System diagram"/>
+                        <a:graphic>
+                          <a:graphicData>
+                            <pic:pic>
+                              <pic:blipFill>
+                                <a:blip r:embed="rImage1"/>
+                              </pic:blipFill>
+                            </pic:pic>
+                          </a:graphicData>
+                        </a:graphic>
+                      </wp:inline>
+                    </w:drawing>
+                  </w:r>
+                </w:p>
+              </w:body>
+            </w:document>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+              <Relationship Id="rImage1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image1.png"/>
+            </Relationships>"#,
+        ),
+        ("word/media/image1.png", "fakepng"),
+    ]);
+    let archive = OoxmlArchive::open_path(file.path()).expect("docx archive should open");
+    let package = parse_docx(&archive).expect("docx package should parse");
+    let blocks = parse_paragraph_blocks(&archive, &package).expect("blocks should parse");
+
+    assert_eq!(blocks.len(), 1);
+    match &blocks[0] {
+        Block::Image { image } => {
+            assert_eq!(image.resource_id, "word/media/image1.png");
+            assert_eq!(image.description.as_deref(), Some("System diagram"));
+            assert_eq!(image.content_type.as_deref(), Some("image/png"));
+        }
+        other => panic!("expected image block, got {other:?}"),
+    }
+}
+
+#[test]
+fn missing_media_relationship_for_drawing_fails() {
+    let file = create_docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+              <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+            </Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+              <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+            </Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <w:document
+              xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+              xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"
+              xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"
+              xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+              <w:body>
+                <w:p>
+                  <w:r>
+                    <w:drawing>
+                      <a:graphic>
+                        <a:graphicData>
+                          <pic:pic>
+                            <pic:blipFill>
+                              <a:blip r:embed="rMissing"/>
+                            </pic:blipFill>
+                          </pic:pic>
+                        </a:graphicData>
+                      </a:graphic>
+                    </w:drawing>
+                  </w:r>
+                </w:p>
+              </w:body>
+            </w:document>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"/>"#,
+        ),
+    ]);
+    let archive = OoxmlArchive::open_path(file.path()).expect("docx archive should open");
+    let package = parse_docx(&archive).expect("docx package should parse");
+
+    let error = parse_paragraph_blocks(&archive, &package).expect_err("missing media should fail");
+
+    assert!(matches!(error, viewer_core::ViewerError::InvalidDocument));
+}
+
 fn create_docx_fixture(entries: &[(&str, &str)]) -> NamedTempFile {
     let mut file = NamedTempFile::new().expect("temp zip");
     {
