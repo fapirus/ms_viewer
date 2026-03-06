@@ -43,10 +43,11 @@
   - Rust test: wrong password / unsupported encryption error mapping test
   - Flutter test: password prompt flow state test
   - Done: initial crypto error mapping and password prompt state model added
-- [ ] Fixture 운영 규칙 문서화
+- [x] Fixture 운영 규칙 문서화
   - Deliverable: `fixtures/README.md`
   - Rust test: fixture discovery smoke test
   - Flutter test: none required
+  - Done: fixture directory convention and discovery smoke test added
 
 ## Phase 0: Engine foundation
 ### Archive and package layer

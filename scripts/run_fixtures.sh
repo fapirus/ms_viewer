@@ -1,4 +1,4 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-cargo test --manifest-path rust/Cargo.toml
+cargo test --manifest-path rust/Cargo.toml --test fixture_discovery
