@@ -5,7 +5,7 @@ use viewer_core::archive::OoxmlArchive;
 use zip::write::SimpleFileOptions;
 use zip::ZipWriter;
 
-use format_docx::{parse_docx, parse_paragraph_blocks, parse_style_catalog};
+use format_docx::{parse_docx, parse_paragraph_blocks, parse_section_layouts, parse_style_catalog};
 use viewer_core::model::{Block, TableCellMerge};
 
 #[test]
@@ -808,6 +808,123 @@ fn missing_media_relationship_for_drawing_fails() {
     let error = parse_paragraph_blocks(&archive, &package).expect_err("missing media should fail");
 
     assert!(matches!(error, viewer_core::ViewerError::InvalidDocument));
+}
+
+#[test]
+fn parses_different_first_page_header_footer_references() {
+    let file = create_docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+              <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+            </Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+              <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+            </Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+              <w:body>
+                <w:p><w:r><w:t>Page 1</w:t></w:r></w:p>
+                <w:sectPr>
+                  <w:headerReference w:type="first" r:id="rFirstHeader"/>
+                  <w:headerReference w:type="default" r:id="rDefaultHeader"/>
+                  <w:footerReference w:type="first" r:id="rFirstFooter"/>
+                </w:sectPr>
+              </w:body>
+            </w:document>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+              <Relationship Id="rFirstHeader" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="first-header.xml"/>
+              <Relationship Id="rDefaultHeader" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="default-header.xml"/>
+              <Relationship Id="rFirstFooter" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="first-footer.xml"/>
+            </Relationships>"#,
+        ),
+        ("word/first-header.xml", "<w:hdr xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"/>"),
+        ("word/default-header.xml", "<w:hdr xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"/>"),
+        ("word/first-footer.xml", "<w:ftr xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"/>"),
+    ]);
+    let archive = OoxmlArchive::open_path(file.path()).expect("docx archive should open");
+    let package = parse_docx(&archive).expect("docx package should parse");
+    let sections = parse_section_layouts(&archive, &package).expect("section layouts should parse");
+
+    assert_eq!(sections.len(), 1);
+    assert_eq!(sections[0].headers.len(), 2);
+    assert_eq!(sections[0].headers[0].target, "word/first-header.xml");
+    assert_eq!(sections[0].headers[1].target, "word/default-header.xml");
+    assert_eq!(sections[0].footers[0].target, "word/first-footer.xml");
+}
+
+#[test]
+fn parses_section_break_header_footer_switch() {
+    let file = create_docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+              <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+            </Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+              <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+            </Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+              <w:body>
+                <w:p>
+                  <w:r><w:t>Section 1</w:t></w:r>
+                  <w:pPr>
+                    <w:sectPr>
+                      <w:headerReference w:type="default" r:id="rHeader1"/>
+                    </w:sectPr>
+                  </w:pPr>
+                </w:p>
+                <w:p><w:r><w:t>Section 2</w:t></w:r></w:p>
+                <w:sectPr>
+                  <w:headerReference w:type="default" r:id="rHeader2"/>
+                  <w:footerReference w:type="default" r:id="rFooter2"/>
+                </w:sectPr>
+              </w:body>
+            </w:document>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+              <Relationship Id="rHeader1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="section1-header.xml"/>
+              <Relationship Id="rHeader2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="section2-header.xml"/>
+              <Relationship Id="rFooter2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="section2-footer.xml"/>
+            </Relationships>"#,
+        ),
+        ("word/section1-header.xml", "<w:hdr xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"/>"),
+        ("word/section2-header.xml", "<w:hdr xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"/>"),
+        ("word/section2-footer.xml", "<w:ftr xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"/>"),
+    ]);
+    let archive = OoxmlArchive::open_path(file.path()).expect("docx archive should open");
+    let package = parse_docx(&archive).expect("docx package should parse");
+    let sections = parse_section_layouts(&archive, &package).expect("section layouts should parse");
+
+    assert_eq!(sections.len(), 2);
+    assert_eq!(sections[0].headers[0].target, "word/section1-header.xml");
+    assert!(sections[0].footers.is_empty());
+    assert_eq!(sections[1].headers[0].target, "word/section2-header.xml");
+    assert_eq!(sections[1].footers[0].target, "word/section2-footer.xml");
 }
 
 fn create_docx_fixture(entries: &[(&str, &str)]) -> NamedTempFile {

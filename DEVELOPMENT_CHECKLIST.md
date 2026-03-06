@@ -150,7 +150,8 @@
   - Tests:
     - inline image fixture
     - missing media relationship fixture
-- [ ] header/footer parser 구현
+- [x] header/footer parser 구현
+  - Done: sectPr section parsing, header/footer relationship resolution, section break handling
   - Rust scope: section linked headers and footers
   - Tests:
     - different first page fixture

@@ -63,6 +63,25 @@ pub struct NumberingCatalog {
     pub numbering_instances: HashMap<u32, u32>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum HeaderFooterKind {
+    Default,
+    First,
+    Even,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HeaderFooterRef {
+    pub kind: HeaderFooterKind,
+    pub target: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SectionLayout {
+    pub headers: Vec<HeaderFooterRef>,
+    pub footers: Vec<HeaderFooterRef>,
+}
+
 pub fn parse_docx(archive: &OoxmlArchive) -> Result<DocxPackage, ViewerError> {
     let relationships = parse_package_relationships(archive)?;
     let main_document = relationships
@@ -242,6 +261,30 @@ pub fn parse_style_catalog(
     })
 }
 
+pub fn parse_section_layouts(
+    archive: &OoxmlArchive,
+    package: &DocxPackage,
+) -> Result<Vec<SectionLayout>, ViewerError> {
+    let xml = archive.read_part(&package.main_document)?;
+    let text = String::from_utf8(xml).map_err(|_| ViewerError::InvalidDocument)?;
+    let root = parse_document(&text)?;
+    let body = root.child("body").ok_or(ViewerError::InvalidDocument)?;
+    let relationships = parse_document_relationships(archive, &package.main_document)?;
+
+    let mut sections = Vec::new();
+    for child in &body.children {
+        if let Some(section) = section_from_element(child, &relationships)? {
+            sections.push(section);
+        }
+    }
+
+    if let Some(section_properties) = body.child("sectPr") {
+        sections.push(parse_section_properties(section_properties, &relationships)?);
+    }
+
+    Ok(sections)
+}
+
 fn parse_document_relationships(
     archive: &OoxmlArchive,
     main_document: &str,
@@ -307,6 +350,75 @@ fn collect_targets(relationships: &[DocxRelationship], relationship_type: &str) 
         .filter(|relationship| relationship.relationship_type == relationship_type)
         .map(|relationship| relationship.resolved_target.clone())
         .collect()
+}
+
+fn section_from_element(
+    element: &viewer_core::xml::XmlElement,
+    relationships: &[DocxRelationship],
+) -> Result<Option<SectionLayout>, ViewerError> {
+    let section_properties = if element.local_name() == "p" {
+        element.child("pPr").and_then(|properties| properties.child("sectPr"))
+    } else {
+        None
+    };
+
+    let Some(section_properties) = section_properties else {
+        return Ok(None);
+    };
+
+    Ok(Some(parse_section_properties(
+        section_properties,
+        relationships,
+    )?))
+}
+
+fn parse_section_properties(
+    section_properties: &viewer_core::xml::XmlElement,
+    relationships: &[DocxRelationship],
+) -> Result<SectionLayout, ViewerError> {
+    let mut headers = Vec::new();
+    let mut footers = Vec::new();
+
+    for child in &section_properties.children {
+        match child.local_name() {
+            "headerReference" => headers.push(resolve_header_footer_reference(
+                child,
+                relationships,
+                HEADER_REL,
+            )?),
+            "footerReference" => footers.push(resolve_header_footer_reference(
+                child,
+                relationships,
+                FOOTER_REL,
+            )?),
+            _ => {}
+        }
+    }
+
+    Ok(SectionLayout { headers, footers })
+}
+
+fn resolve_header_footer_reference(
+    reference: &viewer_core::xml::XmlElement,
+    relationships: &[DocxRelationship],
+    expected_type: &str,
+) -> Result<HeaderFooterRef, ViewerError> {
+    let relationship_id = reference.attribute("id").ok_or(ViewerError::InvalidDocument)?;
+    let relationship = relationships
+        .iter()
+        .find(|relationship| {
+            relationship.id == relationship_id && relationship.relationship_type == expected_type
+        })
+        .ok_or(ViewerError::InvalidDocument)?;
+
+    Ok(HeaderFooterRef {
+        kind: match reference.attribute("type") {
+            Some("first") => HeaderFooterKind::First,
+            Some("even") => HeaderFooterKind::Even,
+            _ => HeaderFooterKind::Default,
+        },
+        target: relationship.resolved_target.clone(),
+    })
 }
 
 fn parse_paragraph_runs(
