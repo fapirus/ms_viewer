@@ -1,0 +1,9 @@
+[package]
+name = "format_docx"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+format_shared = { path = "../format_shared" }
+viewer_core = { path = "../viewer_core" }

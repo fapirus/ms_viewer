@@ -1,0 +1,23 @@
+# FVM
+.fvm/
+
+# Dart / Flutter
+.dart_tool/
+.packages
+.flutter-plugins
+.flutter-plugins-dependencies
+.pub/
+pubspec.lock
+build/
+
+# Rust
+rust/target/
+**/target/
+Cargo.lock
+
+# IDE
+.idea/
+.vscode/*.code-workspace
+
+# macOS
+.DS_Store

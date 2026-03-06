@@ -1,0 +1,4 @@
+name: ms_viewer_workspace
+publish_to: none
+environment:
+  sdk: ^3.9.0
