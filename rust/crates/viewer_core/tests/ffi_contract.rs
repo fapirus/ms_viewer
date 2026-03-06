@@ -1,5 +1,5 @@
 use viewer_core::ffi::{
-    DocumentCapabilities, DocumentSource, OpenDocumentRequest, OpenDocumentSuccess,
+    DocumentCapabilities, DocumentSource, ErrorResponse, OpenDocumentRequest, OpenDocumentSuccess,
     ViewerErrorCode,
 };
 use viewer_core::{DocumentKind, OpenOptions};
@@ -45,4 +45,17 @@ fn error_code_serializes_in_snake_case() {
         .expect("error code should serialize");
 
     assert_eq!(json, "\"password_required\"");
+}
+
+#[test]
+fn error_response_serializes_with_wire_error_code() {
+    let response = ErrorResponse {
+        code: ViewerErrorCode::InvalidDocument,
+        message: "Broken OOXML package.".to_string(),
+    };
+
+    let value = serde_json::to_value(&response).expect("error response should serialize");
+
+    assert_eq!(value["code"], "invalid_document");
+    assert_eq!(value["message"], "Broken OOXML package.");
 }

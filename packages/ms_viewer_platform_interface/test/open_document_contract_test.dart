@@ -22,11 +22,20 @@ void main() {
 
   test('open document error decodes from json-like map', () {
     final error = OpenDocumentError.fromJson({
-      'code': 'passwordRequired',
+      'code': 'password_required',
       'message': 'Password is required to open this document.',
     });
 
     expect(error.code, ViewerErrorCode.passwordRequired);
     expect(error.message, contains('Password'));
+  });
+
+  test('open document error also accepts legacy camelCase code', () {
+    final error = OpenDocumentError.fromJson({
+      'code': 'invalidPassword',
+      'message': 'Password is invalid.',
+    });
+
+    expect(error.code, ViewerErrorCode.invalidPassword);
   });
 }

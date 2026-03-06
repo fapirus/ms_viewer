@@ -66,8 +66,27 @@ class OpenDocumentError {
 
   factory OpenDocumentError.fromJson(Map<String, Object?> json) {
     return OpenDocumentError(
-      code: ViewerErrorCode.values.byName(json['code'] as String),
+      code: _viewerErrorCodeFromWire(json['code'] as String),
       message: json['message'] as String,
     );
   }
+}
+
+ViewerErrorCode _viewerErrorCodeFromWire(String value) {
+  return switch (value) {
+    'unsupported_format' || 'unsupportedFormat' =>
+      ViewerErrorCode.unsupportedFormat,
+    'password_required' || 'passwordRequired' =>
+      ViewerErrorCode.passwordRequired,
+    'invalid_password' || 'invalidPassword' =>
+      ViewerErrorCode.invalidPassword,
+    'unsupported_encryption' || 'unsupportedEncryption' =>
+      ViewerErrorCode.unsupportedEncryption,
+    'io_error' || 'ioError' => ViewerErrorCode.ioError,
+    'invalid_document' || 'invalidDocument' =>
+      ViewerErrorCode.invalidDocument,
+    'not_implemented' || 'notImplemented' =>
+      ViewerErrorCode.notImplemented,
+    _ => throw ArgumentError.value(value, 'value', 'Unknown viewer error code'),
+  };
 }

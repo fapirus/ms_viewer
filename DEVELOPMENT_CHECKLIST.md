@@ -95,7 +95,8 @@
   - Done: parser-facing shared text run, block, and image reference model added
 
 ### FFI and Flutter foundation
-- [ ] Rust error model과 Flutter error mapping 연결
+- [x] Rust error model과 Flutter error mapping 연결
+  - Done: snake_case wire error decoding, Flutter exception mapping, password prompt reducer
   - Tests:
     - Rust error conversion test
     - Flutter error presentation test
