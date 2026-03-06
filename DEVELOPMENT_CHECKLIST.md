@@ -38,10 +38,11 @@
   - Rust test: cache eviction unit test
   - Flutter test: viewport page request smoke test
   - Done: initial LRU cache policy and viewport request model added
-- [ ] Crypto flow 초안 확정
+- [x] Crypto flow 초안 확정
   - Deliverable: `docs/architecture/crypto_flow.md`
   - Rust test: wrong password / unsupported encryption error mapping test
   - Flutter test: password prompt flow state test
+  - Done: initial crypto error mapping and password prompt state model added
 - [ ] Fixture 운영 규칙 문서화
   - Deliverable: `fixtures/README.md`
   - Rust test: fixture discovery smoke test
