@@ -28,10 +28,11 @@
   - Rust test: page/render node shape test
   - Flutter test: render model consume smoke test
   - Done: initial page/text/image/box/selection anchor model added
-- [ ] Font fallback policy 초안 확정
+- [x] Font fallback policy 초안 확정
   - Deliverable: `docs/architecture/font_fallback_policy.md`
   - Rust test: fallback resolution table test
   - Flutter test: font selection policy smoke test
+  - Done: initial platform font mapping and script fallback table added
 - [ ] Cache policy 초안 확정
   - Deliverable: `docs/architecture/cache_policy.md`
   - Rust test: cache eviction unit test

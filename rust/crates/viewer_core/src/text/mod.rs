@@ -1,4 +1,3 @@
-//! text module.
-//!
-//! This starts intentionally small so Rust responsibilities stay obvious while
-//! the document model and FFI contract are still being designed.
+pub mod font_fallback;
+
+pub use font_fallback::{resolve_font_family, Platform, Script};
