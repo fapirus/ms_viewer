@@ -18,80 +18,95 @@
 - 문서가 필요한 경우 `docs/architecture/` 또는 `PROJECT_PLAN.md`에 반영되었다.
 
 ## Global foundation
-- [ ] FFI contract 초안 확정
+- [x] FFI contract 초안 확정
   - Deliverable: `docs/architecture/ffi_contract.md`
   - Rust test: request/response type serialization test
   - Flutter test: contract model decode smoke test
-- [ ] Render model 초안 확정
+  - Done: initial open document request/success/error contract added
+- [x] Render model 초안 확정
   - Deliverable: `docs/architecture/render_model.md`
   - Rust test: page/render node shape test
   - Flutter test: render model consume smoke test
-- [ ] Font fallback policy 초안 확정
+  - Done: initial page/text/image/box/selection anchor model added
+- [x] Font fallback policy 초안 확정
   - Deliverable: `docs/architecture/font_fallback_policy.md`
   - Rust test: fallback resolution table test
   - Flutter test: font selection policy smoke test
-- [ ] Cache policy 초안 확정
+  - Done: initial platform font mapping and script fallback table added
+- [x] Cache policy 초안 확정
   - Deliverable: `docs/architecture/cache_policy.md`
   - Rust test: cache eviction unit test
   - Flutter test: viewport page request smoke test
-- [ ] Crypto flow 초안 확정
+  - Done: initial LRU cache policy and viewport request model added
+- [x] Crypto flow 초안 확정
   - Deliverable: `docs/architecture/crypto_flow.md`
   - Rust test: wrong password / unsupported encryption error mapping test
   - Flutter test: password prompt flow state test
-- [ ] Fixture 운영 규칙 문서화
+  - Done: initial crypto error mapping and password prompt state model added
+- [x] Fixture 운영 규칙 문서화
   - Deliverable: `fixtures/README.md`
   - Rust test: fixture discovery smoke test
   - Flutter test: none required
+  - Done: fixture directory convention and discovery smoke test added
 
 ## Phase 0: Engine foundation
 ### Archive and package layer
-- [ ] OOXML archive reader 구현
+- [x] OOXML archive reader 구현
   - Rust scope: ZIP central directory read, part lookup, lazy entry open
   - Tests:
     - valid zip open
     - missing part lookup
     - invalid zip failure
     - large entry lazy read behavior
-- [ ] input abstraction 구현 (`PathSource`, `BytesSource`)
+  - Done: path-based OOXML archive open, part lookup, on-demand part read implemented
+- [x] input abstraction 구현 (`PathSource`, `BytesSource`)
   - Rust scope: common input interface
   - Tests:
     - same document opens from path and bytes
     - invalid source error mapping
-- [ ] encrypted package 감지 구현
+  - Done: archive source abstraction added for path and in-memory bytes
+- [x] encrypted package 감지 구현
   - Rust scope: encrypted package detection without full parse
   - Tests:
     - plain package fixture
     - encrypted package fixture
     - unsupported encryption fixture
+  - Done: package kind detector added for zip, encrypted OLE, and unsupported OLE containers
 
 ### XML and shared model
-- [ ] XML parsing 유틸 구현
+- [x] XML parsing 유틸 구현
   - Rust scope: namespace aware element traversal, attribute helpers
   - Tests:
     - namespace handling
     - missing attribute handling
     - malformed xml failure
-- [ ] shared OOXML relationship parser 구현
+  - Done: lightweight XML element parser and attribute helpers added
+- [x] shared OOXML relationship parser 구현
   - Rust scope: `_rels`, content types, part resolution
   - Tests:
     - package relationships fixture
     - missing relationship target
-- [ ] shared text/run/style base model 정의
+  - Done: content types, package relationships, and target resolution parser added
+- [x] shared text/run/style base model 정의
   - Rust scope: common text span, block, image reference model
   - Tests:
     - model construction tests
     - serde round-trip tests
+  - Done: parser-facing shared text run, block, and image reference model added
 
 ### FFI and Flutter foundation
-- [ ] Rust error model과 Flutter error mapping 연결
+- [x] Rust error model과 Flutter error mapping 연결
+  - Done: snake_case wire error decoding, Flutter exception mapping, password prompt reducer
   - Tests:
     - Rust error conversion test
     - Flutter error presentation test
-- [ ] document open FFI skeleton 구현
+- [x] document open FFI skeleton 구현
+  - Done: openDocument request/result contract, Rust package open skeleton, default platform not-implemented path
   - Tests:
     - open success smoke test
     - password required state smoke test
-- [ ] Flutter viewer shell 구현
+- [x] Flutter viewer shell 구현
+  - Done: controller open flow, password replay shell, loading/error/password/document placeholder states
   - Flutter scope: placeholder viewport, page switch shell, loading state
   - Tests:
     - widget smoke test

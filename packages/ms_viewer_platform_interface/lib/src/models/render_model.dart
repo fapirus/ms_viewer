@@ -1,0 +1,203 @@
+class RectModel {
+  const RectModel({
+    required this.x,
+    required this.y,
+    required this.width,
+    required this.height,
+  });
+
+  final double x;
+  final double y;
+  final double width;
+  final double height;
+
+  factory RectModel.fromJson(Map<String, Object?> json) {
+    return RectModel(
+      x: (json['x'] as num).toDouble(),
+      y: (json['y'] as num).toDouble(),
+      width: (json['width'] as num).toDouble(),
+      height: (json['height'] as num).toDouble(),
+    );
+  }
+}
+
+class TextRangeModel {
+  const TextRangeModel({required this.start, required this.end});
+
+  final int start;
+  final int end;
+
+  factory TextRangeModel.fromJson(Map<String, Object?> json) {
+    return TextRangeModel(
+      start: json['start'] as int,
+      end: json['end'] as int,
+    );
+  }
+}
+
+class TextStyleModel {
+  const TextStyleModel({
+    required this.fontFamily,
+    required this.fontSize,
+    required this.bold,
+    required this.italic,
+    required this.colorHex,
+  });
+
+  final String fontFamily;
+  final double fontSize;
+  final bool bold;
+  final bool italic;
+  final String colorHex;
+
+  factory TextStyleModel.fromJson(Map<String, Object?> json) {
+    return TextStyleModel(
+      fontFamily: json['fontFamily'] as String,
+      fontSize: (json['fontSize'] as num).toDouble(),
+      bold: json['bold'] as bool? ?? false,
+      italic: json['italic'] as bool? ?? false,
+      colorHex: json['colorHex'] as String,
+    );
+  }
+}
+
+class SelectionAnchorModel {
+  const SelectionAnchorModel({
+    required this.nodeIndex,
+    required this.charIndex,
+    required this.x,
+    required this.y,
+  });
+
+  final int nodeIndex;
+  final int charIndex;
+  final double x;
+  final double y;
+
+  factory SelectionAnchorModel.fromJson(Map<String, Object?> json) {
+    return SelectionAnchorModel(
+      nodeIndex: json['nodeIndex'] as int,
+      charIndex: json['charIndex'] as int,
+      x: (json['x'] as num).toDouble(),
+      y: (json['y'] as num).toDouble(),
+    );
+  }
+}
+
+sealed class RenderNodeModel {
+  const RenderNodeModel();
+
+  factory RenderNodeModel.fromJson(Map<String, Object?> json) {
+    switch (json['type']) {
+      case 'text':
+        return TextRenderNodeModel.fromJson(json);
+      case 'image':
+        return ImageRenderNodeModel.fromJson(json);
+      case 'box':
+        return BoxRenderNodeModel.fromJson(json);
+    }
+
+    throw ArgumentError('Unknown render node type: ${json['type']}');
+  }
+}
+
+class TextRenderNodeModel extends RenderNodeModel {
+  const TextRenderNodeModel({
+    required this.text,
+    required this.bounds,
+    required this.style,
+    required this.range,
+  });
+
+  final String text;
+  final RectModel bounds;
+  final TextStyleModel style;
+  final TextRangeModel range;
+
+  factory TextRenderNodeModel.fromJson(Map<String, Object?> json) {
+    return TextRenderNodeModel(
+      text: json['text'] as String,
+      bounds: RectModel.fromJson(json['bounds'] as Map<String, Object?>),
+      style: TextStyleModel.fromJson(json['style'] as Map<String, Object?>),
+      range: TextRangeModel.fromJson(json['range'] as Map<String, Object?>),
+    );
+  }
+}
+
+class ImageRenderNodeModel extends RenderNodeModel {
+  const ImageRenderNodeModel({
+    required this.resourceId,
+    required this.description,
+    required this.bounds,
+  });
+
+  final String resourceId;
+  final String? description;
+  final RectModel bounds;
+
+  factory ImageRenderNodeModel.fromJson(Map<String, Object?> json) {
+    return ImageRenderNodeModel(
+      resourceId: json['resourceId'] as String,
+      description: json['description'] as String?,
+      bounds: RectModel.fromJson(json['bounds'] as Map<String, Object?>),
+    );
+  }
+}
+
+class BoxRenderNodeModel extends RenderNodeModel {
+  const BoxRenderNodeModel({
+    required this.bounds,
+    required this.fillColorHex,
+    required this.strokeColorHex,
+    required this.strokeWidth,
+  });
+
+  final RectModel bounds;
+  final String? fillColorHex;
+  final String? strokeColorHex;
+  final double strokeWidth;
+
+  factory BoxRenderNodeModel.fromJson(Map<String, Object?> json) {
+    return BoxRenderNodeModel(
+      bounds: RectModel.fromJson(json['bounds'] as Map<String, Object?>),
+      fillColorHex: json['fillColorHex'] as String?,
+      strokeColorHex: json['strokeColorHex'] as String?,
+      strokeWidth: (json['strokeWidth'] as num).toDouble(),
+    );
+  }
+}
+
+class PageRenderModel {
+  const PageRenderModel({
+    required this.pageIndex,
+    required this.width,
+    required this.height,
+    required this.nodes,
+    required this.selectionAnchors,
+  });
+
+  final int pageIndex;
+  final double width;
+  final double height;
+  final List<RenderNodeModel> nodes;
+  final List<SelectionAnchorModel> selectionAnchors;
+
+  factory PageRenderModel.fromJson(Map<String, Object?> json) {
+    final nodesJson = json['nodes'] as List<Object?>? ?? const [];
+    final anchorsJson = json['selectionAnchors'] as List<Object?>? ?? const [];
+
+    return PageRenderModel(
+      pageIndex: json['pageIndex'] as int,
+      width: (json['width'] as num).toDouble(),
+      height: (json['height'] as num).toDouble(),
+      nodes: nodesJson
+          .cast<Map<String, Object?>>()
+          .map(RenderNodeModel.fromJson)
+          .toList(),
+      selectionAnchors: anchorsJson
+          .cast<Map<String, Object?>>()
+          .map(SelectionAnchorModel.fromJson)
+          .toList(),
+    );
+  }
+}
