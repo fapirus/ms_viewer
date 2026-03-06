@@ -74,12 +74,13 @@
   - Done: package kind detector added for zip, encrypted OLE, and unsupported OLE containers
 
 ### XML and shared model
-- [ ] XML parsing 유틸 구현
+- [x] XML parsing 유틸 구현
   - Rust scope: namespace aware element traversal, attribute helpers
   - Tests:
     - namespace handling
     - missing attribute handling
     - malformed xml failure
+  - Done: lightweight XML element parser and attribute helpers added
 - [ ] shared OOXML relationship parser 구현
   - Rust scope: `_rels`, content types, part resolution
   - Tests:
