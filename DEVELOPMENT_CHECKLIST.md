@@ -100,7 +100,8 @@
   - Tests:
     - Rust error conversion test
     - Flutter error presentation test
-- [ ] document open FFI skeleton 구현
+- [x] document open FFI skeleton 구현
+  - Done: openDocument request/result contract, Rust package open skeleton, default platform not-implemented path
   - Tests:
     - open success smoke test
     - password required state smoke test

@@ -1,5 +1,7 @@
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 
+import 'src/models/open_document_contract.dart';
+
 export 'src/models/open_document_contract.dart';
 export 'src/models/render_model.dart';
 
@@ -15,6 +17,15 @@ abstract class MsViewerPlatform extends PlatformInterface {
   static set instance(MsViewerPlatform instance) {
     PlatformInterface.verifyToken(instance, _token);
     _instance = instance;
+  }
+
+  Future<OpenDocumentResult> openDocument(OpenDocumentRequest request) async {
+    return OpenDocumentFailure(
+      const OpenDocumentError(
+        code: ViewerErrorCode.notImplemented,
+        message: 'openDocument is not implemented.',
+      ),
+    );
   }
 }
 

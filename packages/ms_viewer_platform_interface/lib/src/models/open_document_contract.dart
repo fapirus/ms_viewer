@@ -1,3 +1,62 @@
+class OpenOptions {
+  const OpenOptions({
+    this.password,
+    this.preferLazyLoading = true,
+  });
+
+  final String? password;
+  final bool preferLazyLoading;
+
+  Map<String, Object?> toJson() {
+    return {
+      'password': password,
+      'preferLazyLoading': preferLazyLoading,
+    };
+  }
+}
+
+enum DocumentSourceKind { path, bytesBase64 }
+
+class OpenDocumentSource {
+  const OpenDocumentSource._({
+    required this.kind,
+    required this.value,
+  });
+
+  const OpenDocumentSource.path(String value)
+    : this._(kind: DocumentSourceKind.path, value: value);
+
+  const OpenDocumentSource.bytesBase64(String value)
+    : this._(kind: DocumentSourceKind.bytesBase64, value: value);
+
+  final DocumentSourceKind kind;
+  final String value;
+
+  Map<String, Object?> toJson() {
+    return {
+      'kind': kind.name,
+      'value': value,
+    };
+  }
+}
+
+class OpenDocumentRequest {
+  const OpenDocumentRequest({
+    required this.source,
+    this.options = const OpenOptions(),
+  });
+
+  final OpenDocumentSource source;
+  final OpenOptions options;
+
+  Map<String, Object?> toJson() {
+    return {
+      'source': source.toJson(),
+      'options': options.toJson(),
+    };
+  }
+}
+
 enum ViewerErrorCode {
   unsupportedFormat,
   passwordRequired,
@@ -70,6 +129,30 @@ class OpenDocumentError {
       message: json['message'] as String,
     );
   }
+}
+
+sealed class OpenDocumentResult {
+  const OpenDocumentResult();
+
+  factory OpenDocumentResult.fromJson(Map<String, Object?> json) {
+    if (json.containsKey('code')) {
+      return OpenDocumentFailure(OpenDocumentError.fromJson(json));
+    }
+
+    return OpenDocumentOpened(OpenDocumentSuccess.fromJson(json));
+  }
+}
+
+class OpenDocumentOpened extends OpenDocumentResult {
+  const OpenDocumentOpened(this.document);
+
+  final OpenDocumentSuccess document;
+}
+
+class OpenDocumentFailure extends OpenDocumentResult {
+  const OpenDocumentFailure(this.error);
+
+  final OpenDocumentError error;
 }
 
 ViewerErrorCode _viewerErrorCodeFromWire(String value) {
