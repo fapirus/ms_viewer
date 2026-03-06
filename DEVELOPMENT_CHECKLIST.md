@@ -138,7 +138,8 @@
   - Tests:
     - nested list fixture
     - numbering override fixture
-- [ ] table parser 구현
+- [x] table parser 구현
+  - Done: table row/cell model, cell paragraph parsing, gridSpan/vMerge fallback metadata
   - Rust scope: rows, cells, cell text
   - Tests:
     - basic table fixture

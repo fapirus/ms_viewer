@@ -1,4 +1,7 @@
-use viewer_core::model::{Block, ImageReference, ListKind, ListMarker, TextRun, TextStyle};
+use viewer_core::model::{
+    Block, ImageReference, ListKind, ListMarker, TableCell, TableCellMerge, TableRow, TextRun,
+    TextStyle,
+};
 
 #[test]
 fn shared_text_model_can_be_constructed() {
@@ -29,6 +32,21 @@ fn shared_text_model_can_be_constructed() {
             content_type: Some("image/png".to_string()),
         },
     };
+    let table = Block::Table {
+        rows: vec![TableRow {
+            cells: vec![TableCell {
+                blocks: vec![Block::Paragraph {
+                    runs: vec![TextRun {
+                        text: "Cell".to_string(),
+                        style: style.clone(),
+                    }],
+                    list: None,
+                }],
+                column_span: 2,
+                row_merge: Some(TableCellMerge::Restart),
+            }],
+        }],
+    };
 
     match paragraph {
         Block::Paragraph { runs, list } => {
@@ -44,6 +62,14 @@ fn shared_text_model_can_be_constructed() {
             assert_eq!(image.resource_id, "rId5");
         }
         _ => panic!("expected image block"),
+    }
+
+    match table {
+        Block::Table { rows } => {
+            assert_eq!(rows.len(), 1);
+            assert_eq!(rows[0].cells[0].column_span, 2);
+        }
+        _ => panic!("expected table block"),
     }
 }
 

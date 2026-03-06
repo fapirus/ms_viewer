@@ -82,12 +82,36 @@ pub struct ListMarker {
     pub num_id: u32,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum TableCellMerge {
+    Restart,
+    Continue,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct TableCell {
+    pub blocks: Vec<Block>,
+    pub column_span: u16,
+    pub row_merge: Option<TableCellMerge>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct TableRow {
+    pub cells: Vec<TableCell>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum Block {
     Paragraph {
         runs: Vec<TextRun>,
         list: Option<ListMarker>,
+    },
+    Table {
+        rows: Vec<TableRow>,
     },
     Image { image: ImageReference },
 }

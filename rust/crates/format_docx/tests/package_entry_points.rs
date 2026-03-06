@@ -6,7 +6,7 @@ use zip::write::SimpleFileOptions;
 use zip::ZipWriter;
 
 use format_docx::{parse_docx, parse_paragraph_blocks, parse_style_catalog};
-use viewer_core::model::Block;
+use viewer_core::model::{Block, TableCellMerge};
 
 #[test]
 fn parses_main_optional_and_media_entry_points() {
@@ -560,6 +560,123 @@ fn numbering_instance_override_uses_mapped_abstract_numbering() {
             assert_eq!(list.num_id, 42);
         }
         other => panic!("expected paragraph block, got {other:?}"),
+    }
+}
+
+#[test]
+fn parses_basic_table_rows_cells_and_text() {
+    let file = create_docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+              <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+            </Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+              <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+            </Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+              <w:body>
+                <w:tbl>
+                  <w:tr>
+                    <w:tc>
+                      <w:p><w:r><w:t>A1</w:t></w:r></w:p>
+                    </w:tc>
+                    <w:tc>
+                      <w:p><w:r><w:t>B1</w:t></w:r></w:p>
+                    </w:tc>
+                  </w:tr>
+                  <w:tr>
+                    <w:tc>
+                      <w:p><w:r><w:t>A2</w:t></w:r></w:p>
+                    </w:tc>
+                  </w:tr>
+                </w:tbl>
+              </w:body>
+            </w:document>"#,
+        ),
+    ]);
+    let archive = OoxmlArchive::open_path(file.path()).expect("docx archive should open");
+    let package = parse_docx(&archive).expect("docx package should parse");
+    let blocks = parse_paragraph_blocks(&archive, &package).expect("blocks should parse");
+
+    assert_eq!(blocks.len(), 1);
+    match &blocks[0] {
+        Block::Table { rows } => {
+            assert_eq!(rows.len(), 2);
+            assert_eq!(rows[0].cells.len(), 2);
+            assert_eq!(rows[1].cells.len(), 1);
+            match &rows[0].cells[0].blocks[0] {
+                Block::Paragraph { runs, .. } => assert_eq!(runs[0].text, "A1"),
+                other => panic!("expected paragraph block, got {other:?}"),
+            }
+        }
+        other => panic!("expected table block, got {other:?}"),
+    }
+}
+
+#[test]
+fn parses_merged_cell_fallback_metadata() {
+    let file = create_docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+              <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+            </Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+              <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+            </Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+              <w:body>
+                <w:tbl>
+                  <w:tr>
+                    <w:tc>
+                      <w:tcPr>
+                        <w:gridSpan w:val="2"/>
+                        <w:vMerge w:val="restart"/>
+                      </w:tcPr>
+                      <w:p><w:r><w:t>Merged start</w:t></w:r></w:p>
+                    </w:tc>
+                  </w:tr>
+                  <w:tr>
+                    <w:tc>
+                      <w:tcPr><w:vMerge/></w:tcPr>
+                      <w:p><w:r><w:t>Merged continue</w:t></w:r></w:p>
+                    </w:tc>
+                  </w:tr>
+                </w:tbl>
+              </w:body>
+            </w:document>"#,
+        ),
+    ]);
+    let archive = OoxmlArchive::open_path(file.path()).expect("docx archive should open");
+    let package = parse_docx(&archive).expect("docx package should parse");
+    let blocks = parse_paragraph_blocks(&archive, &package).expect("blocks should parse");
+
+    match &blocks[0] {
+        Block::Table { rows } => {
+            assert_eq!(rows[0].cells[0].column_span, 2);
+            assert_eq!(rows[0].cells[0].row_merge, Some(TableCellMerge::Restart));
+            assert_eq!(rows[1].cells[0].row_merge, Some(TableCellMerge::Continue));
+        }
+        other => panic!("expected table block, got {other:?}"),
     }
 }
 

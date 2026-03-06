@@ -1,6 +1,8 @@
 use format_shared::{parse_package_relationships, resolve_relationship_target};
 use viewer_core::archive::OoxmlArchive;
-use viewer_core::model::{Block, ListKind, ListMarker, TextRun, TextStyle};
+use viewer_core::model::{
+    Block, ListKind, ListMarker, TableCell, TableCellMerge, TableRow, TextRun, TextStyle,
+};
 use viewer_core::xml::parse_document;
 use viewer_core::ViewerError;
 
@@ -96,14 +98,11 @@ pub fn parse_paragraph_blocks(
 
     let mut blocks = Vec::new();
     for child in &body.children {
-        if child.local_name() != "p" {
-            continue;
+        match child.local_name() {
+            "p" => blocks.push(parse_paragraph_block(child, &styles, &numbering)),
+            "tbl" => blocks.push(parse_table_block(child, &styles, &numbering)),
+            _ => {}
         }
-
-        blocks.push(Block::Paragraph {
-            runs: parse_paragraph_runs(child, &styles),
-            list: parse_paragraph_list(child, &numbering),
-        });
     }
 
     Ok(blocks)
@@ -322,6 +321,78 @@ fn parse_paragraph_runs(
     }
 
     runs
+}
+
+fn parse_paragraph_block(
+    paragraph: &viewer_core::xml::XmlElement,
+    styles: &StyleCatalog,
+    numbering: &NumberingCatalog,
+) -> Block {
+    Block::Paragraph {
+        runs: parse_paragraph_runs(paragraph, styles),
+        list: parse_paragraph_list(paragraph, numbering),
+    }
+}
+
+fn parse_table_block(
+    table: &viewer_core::xml::XmlElement,
+    styles: &StyleCatalog,
+    numbering: &NumberingCatalog,
+) -> Block {
+    let mut rows = Vec::new();
+
+    for child in &table.children {
+        if child.local_name() != "tr" {
+            continue;
+        }
+
+        let mut cells = Vec::new();
+        for cell in &child.children {
+            if cell.local_name() != "tc" {
+                continue;
+            }
+
+            cells.push(parse_table_cell(cell, styles, numbering));
+        }
+
+        rows.push(TableRow { cells });
+    }
+
+    Block::Table { rows }
+}
+
+fn parse_table_cell(
+    cell: &viewer_core::xml::XmlElement,
+    styles: &StyleCatalog,
+    numbering: &NumberingCatalog,
+) -> TableCell {
+    let properties = cell.child("tcPr");
+    let column_span = properties
+        .and_then(|node| node.child("gridSpan"))
+        .and_then(|node| node.attribute("val"))
+        .and_then(|value| value.parse::<u16>().ok())
+        .unwrap_or(1);
+    let row_merge = properties
+        .and_then(|node| node.child("vMerge"))
+        .map(|node| match node.attribute("val") {
+            Some("restart") => TableCellMerge::Restart,
+            _ => TableCellMerge::Continue,
+        });
+
+    let mut blocks = Vec::new();
+    for child in &cell.children {
+        if child.local_name() != "p" {
+            continue;
+        }
+
+        blocks.push(parse_paragraph_block(child, styles, numbering));
+    }
+
+    TableCell {
+        blocks,
+        column_span,
+        row_merge,
+    }
 }
 
 fn parse_paragraph_list(
