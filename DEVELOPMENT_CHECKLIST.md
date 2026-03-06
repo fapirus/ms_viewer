@@ -33,10 +33,11 @@
   - Rust test: fallback resolution table test
   - Flutter test: font selection policy smoke test
   - Done: initial platform font mapping and script fallback table added
-- [ ] Cache policy 초안 확정
+- [x] Cache policy 초안 확정
   - Deliverable: `docs/architecture/cache_policy.md`
   - Rust test: cache eviction unit test
   - Flutter test: viewport page request smoke test
+  - Done: initial LRU cache policy and viewport request model added
 - [ ] Crypto flow 초안 확정
   - Deliverable: `docs/architecture/crypto_flow.md`
   - Rust test: wrong password / unsupported encryption error mapping test
