@@ -105,7 +105,8 @@
   - Tests:
     - open success smoke test
     - password required state smoke test
-- [ ] Flutter viewer shell 구현
+- [x] Flutter viewer shell 구현
+  - Done: controller open flow, password replay shell, loading/error/password/document placeholder states
   - Flutter scope: placeholder viewport, page switch shell, loading state
   - Tests:
     - widget smoke test
