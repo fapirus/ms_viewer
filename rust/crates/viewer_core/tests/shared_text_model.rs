@@ -1,4 +1,4 @@
-use viewer_core::model::{Block, ImageReference, TextRun, TextStyle};
+use viewer_core::model::{Block, ImageReference, ListKind, ListMarker, TextRun, TextStyle};
 
 #[test]
 fn shared_text_model_can_be_constructed() {
@@ -15,6 +15,11 @@ fn shared_text_model_can_be_constructed() {
             text: "Hello world".to_string(),
             style: style.clone(),
         }],
+        list: Some(ListMarker {
+            level: 0,
+            kind: ListKind::Bullet,
+            num_id: 1,
+        }),
     };
 
     let image = Block::Image {
@@ -26,9 +31,10 @@ fn shared_text_model_can_be_constructed() {
     };
 
     match paragraph {
-        Block::Paragraph { runs } => {
+        Block::Paragraph { runs, list } => {
             assert_eq!(runs.len(), 1);
             assert_eq!(runs[0].style, style);
+            assert_eq!(list.unwrap().kind, ListKind::Bullet);
         }
         _ => panic!("expected paragraph block"),
     }
@@ -54,6 +60,11 @@ fn shared_text_model_round_trips_via_serde() {
                 color_hex: "#222222".to_string(),
             },
         }],
+        list: Some(ListMarker {
+            level: 1,
+            kind: ListKind::Decimal,
+            num_id: 9,
+        }),
     };
 
     let json = serde_json::to_string(&block).expect("block should serialize");

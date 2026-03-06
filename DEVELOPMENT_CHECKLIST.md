@@ -132,7 +132,8 @@
   - Tests:
     - base style inheritance fixture
     - direct formatting override fixture
-- [ ] numbering/list parser 구현
+- [x] numbering/list parser 구현
+  - Done: numbering.xml abstractNum/num mapping, paragraph list marker extraction, nested list levels
   - Rust scope: bullet and decimal list model
   - Tests:
     - nested list fixture

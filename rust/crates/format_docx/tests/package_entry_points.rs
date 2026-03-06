@@ -151,9 +151,10 @@ fn parses_styled_paragraph_runs() {
 
     assert_eq!(blocks.len(), 1);
     match &blocks[0] {
-        Block::Paragraph { runs } => {
+        Block::Paragraph { runs, list } => {
             assert_eq!(runs.len(), 1);
             assert_eq!(runs[0].text, "Styled");
+            assert!(list.is_none());
             assert_eq!(runs[0].style.font_family, "Arial");
             assert_eq!(runs[0].style.font_size, 14.0);
             assert!(runs[0].style.bold);
@@ -218,8 +219,9 @@ fn parses_mixed_runs_and_line_breaks() {
 
     assert_eq!(blocks.len(), 1);
     match &blocks[0] {
-        Block::Paragraph { runs } => {
+        Block::Paragraph { runs, list } => {
             assert_eq!(runs.len(), 2);
+            assert!(list.is_none());
             assert_eq!(runs[0].text, "Hello");
             assert_eq!(runs[0].style.font_family, "Times New Roman");
             assert!(!runs[0].style.bold);
@@ -308,8 +310,9 @@ fn resolves_based_on_style_chain_from_styles_xml() {
     let blocks = parse_paragraph_blocks(&archive, &package).expect("paragraphs should parse");
 
     match &blocks[0] {
-        Block::Paragraph { runs } => {
+        Block::Paragraph { runs, list } => {
             assert_eq!(runs[0].style.font_family, "Aptos");
+            assert!(list.is_none());
             assert_eq!(runs[0].style.font_size, 11.0);
             assert!(runs[0].style.bold);
             assert!(runs[0].style.italic);
@@ -389,10 +392,172 @@ fn direct_formatting_overrides_named_style_values() {
     let blocks = parse_paragraph_blocks(&archive, &package).expect("paragraphs should parse");
 
     match &blocks[0] {
-        Block::Paragraph { runs } => {
+        Block::Paragraph { runs, list } => {
             assert_eq!(runs[0].style.font_family, "Aptos");
+            assert!(list.is_none());
             assert_eq!(runs[0].style.font_size, 15.0);
             assert_eq!(runs[0].style.color_hex, "#FF6600");
+        }
+        other => panic!("expected paragraph block, got {other:?}"),
+    }
+}
+
+#[test]
+fn parses_nested_bullet_and_decimal_list_markers() {
+    let file = create_docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+              <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+              <Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/>
+            </Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+              <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+            </Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+              <w:body>
+                <w:p>
+                  <w:pPr>
+                    <w:numPr>
+                      <w:ilvl w:val="0"/>
+                      <w:numId w:val="7"/>
+                    </w:numPr>
+                  </w:pPr>
+                  <w:r><w:t>Top bullet</w:t></w:r>
+                </w:p>
+                <w:p>
+                  <w:pPr>
+                    <w:numPr>
+                      <w:ilvl w:val="1"/>
+                      <w:numId w:val="7"/>
+                    </w:numPr>
+                  </w:pPr>
+                  <w:r><w:t>Nested decimal</w:t></w:r>
+                </w:p>
+              </w:body>
+            </w:document>"#,
+        ),
+        (
+            "word/numbering.xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+              <w:abstractNum w:abstractNumId="1">
+                <w:lvl w:ilvl="0"><w:numFmt w:val="bullet"/></w:lvl>
+                <w:lvl w:ilvl="1"><w:numFmt w:val="decimal"/></w:lvl>
+              </w:abstractNum>
+              <w:num w:numId="7">
+                <w:abstractNumId w:val="1"/>
+              </w:num>
+            </w:numbering>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+              <Relationship Id="rNumbering" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering" Target="numbering.xml"/>
+            </Relationships>"#,
+        ),
+    ]);
+    let archive = OoxmlArchive::open_path(file.path()).expect("docx archive should open");
+    let package = parse_docx(&archive).expect("docx package should parse");
+    let blocks = parse_paragraph_blocks(&archive, &package).expect("paragraphs should parse");
+
+    match &blocks[0] {
+        Block::Paragraph { list, .. } => {
+            let list = list.as_ref().expect("list marker");
+            assert_eq!(list.kind, viewer_core::model::ListKind::Bullet);
+            assert_eq!(list.level, 0);
+            assert_eq!(list.num_id, 7);
+        }
+        other => panic!("expected paragraph block, got {other:?}"),
+    }
+
+    match &blocks[1] {
+        Block::Paragraph { list, .. } => {
+            let list = list.as_ref().expect("list marker");
+            assert_eq!(list.kind, viewer_core::model::ListKind::Decimal);
+            assert_eq!(list.level, 1);
+        }
+        other => panic!("expected paragraph block, got {other:?}"),
+    }
+}
+
+#[test]
+fn numbering_instance_override_uses_mapped_abstract_numbering() {
+    let file = create_docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+              <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+              <Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/>
+            </Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+              <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+            </Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+              <w:body>
+                <w:p>
+                  <w:pPr>
+                    <w:numPr>
+                      <w:ilvl w:val="0"/>
+                      <w:numId w:val="42"/>
+                    </w:numPr>
+                  </w:pPr>
+                  <w:r><w:t>Overridden list</w:t></w:r>
+                </w:p>
+              </w:body>
+            </w:document>"#,
+        ),
+        (
+            "word/numbering.xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+              <w:abstractNum w:abstractNumId="3">
+                <w:lvl w:ilvl="0"><w:numFmt w:val="decimal"/></w:lvl>
+              </w:abstractNum>
+              <w:abstractNum w:abstractNumId="9">
+                <w:lvl w:ilvl="0"><w:numFmt w:val="bullet"/></w:lvl>
+              </w:abstractNum>
+              <w:num w:numId="42">
+                <w:abstractNumId w:val="9"/>
+              </w:num>
+            </w:numbering>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+              <Relationship Id="rNumbering" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering" Target="numbering.xml"/>
+            </Relationships>"#,
+        ),
+    ]);
+    let archive = OoxmlArchive::open_path(file.path()).expect("docx archive should open");
+    let package = parse_docx(&archive).expect("docx package should parse");
+    let blocks = parse_paragraph_blocks(&archive, &package).expect("paragraphs should parse");
+
+    match &blocks[0] {
+        Block::Paragraph { list, .. } => {
+            let list = list.as_ref().expect("list marker");
+            assert_eq!(list.kind, viewer_core::model::ListKind::Bullet);
+            assert_eq!(list.num_id, 42);
         }
         other => panic!("expected paragraph block, got {other:?}"),
     }

@@ -1,6 +1,6 @@
 use format_shared::{parse_package_relationships, resolve_relationship_target};
 use viewer_core::archive::OoxmlArchive;
-use viewer_core::model::{Block, TextRun, TextStyle};
+use viewer_core::model::{Block, ListKind, ListMarker, TextRun, TextStyle};
 use viewer_core::xml::parse_document;
 use viewer_core::ViewerError;
 
@@ -54,6 +54,12 @@ pub struct ResolvedTextStyle {
     pub color_hex: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct NumberingCatalog {
+    pub abstract_numbering: HashMap<u32, HashMap<u8, ListKind>>,
+    pub numbering_instances: HashMap<u32, u32>,
+}
+
 pub fn parse_docx(archive: &OoxmlArchive) -> Result<DocxPackage, ViewerError> {
     let relationships = parse_package_relationships(archive)?;
     let main_document = relationships
@@ -82,6 +88,7 @@ pub fn parse_paragraph_blocks(
     package: &DocxPackage,
 ) -> Result<Vec<Block>, ViewerError> {
     let styles = parse_style_catalog(archive, package)?;
+    let numbering = parse_numbering_catalog(archive, package)?;
     let xml = archive.read_part(&package.main_document)?;
     let text = String::from_utf8(xml).map_err(|_| ViewerError::InvalidDocument)?;
     let root = parse_document(&text)?;
@@ -95,10 +102,87 @@ pub fn parse_paragraph_blocks(
 
         blocks.push(Block::Paragraph {
             runs: parse_paragraph_runs(child, &styles),
+            list: parse_paragraph_list(child, &numbering),
         });
     }
 
     Ok(blocks)
+}
+
+pub fn parse_numbering_catalog(
+    archive: &OoxmlArchive,
+    package: &DocxPackage,
+) -> Result<NumberingCatalog, ViewerError> {
+    let Some(numbering_part) = &package.numbering else {
+        return Ok(NumberingCatalog {
+            abstract_numbering: HashMap::new(),
+            numbering_instances: HashMap::new(),
+        });
+    };
+
+    let xml = archive.read_part(numbering_part)?;
+    let text = String::from_utf8(xml).map_err(|_| ViewerError::InvalidDocument)?;
+    let root = parse_document(&text)?;
+
+    let mut abstract_numbering = HashMap::new();
+    let mut numbering_instances = HashMap::new();
+
+    for child in &root.children {
+        match child.local_name() {
+            "abstractNum" => {
+                let Some(abstract_num_id) = child
+                    .attribute("abstractNumId")
+                    .and_then(|value| value.parse::<u32>().ok())
+                else {
+                    continue;
+                };
+
+                let mut levels = HashMap::new();
+                for level in &child.children {
+                    if level.local_name() != "lvl" {
+                        continue;
+                    }
+                    let Some(ilvl) = level
+                        .attribute("ilvl")
+                        .and_then(|value| value.parse::<u8>().ok())
+                    else {
+                        continue;
+                    };
+                    let Some(num_fmt) = level
+                        .child("numFmt")
+                        .and_then(|node| node.attribute("val"))
+                    else {
+                        continue;
+                    };
+                    let kind = match num_fmt {
+                        "bullet" => ListKind::Bullet,
+                        _ => ListKind::Decimal,
+                    };
+                    levels.insert(ilvl, kind);
+                }
+                abstract_numbering.insert(abstract_num_id, levels);
+            }
+            "num" => {
+                let Some(num_id) = child.attribute("numId").and_then(|value| value.parse::<u32>().ok()) else {
+                    continue;
+                };
+                let Some(abstract_num_id) = child
+                    .child("abstractNumId")
+                    .and_then(|node| node.attribute("val"))
+                    .and_then(|value| value.parse::<u32>().ok())
+                else {
+                    continue;
+                };
+                numbering_instances.insert(num_id, abstract_num_id);
+            }
+            _ => {}
+        }
+    }
+
+    Ok(NumberingCatalog {
+        abstract_numbering,
+        numbering_instances,
+    })
 }
 
 pub fn parse_style_catalog(
@@ -238,6 +322,36 @@ fn parse_paragraph_runs(
     }
 
     runs
+}
+
+fn parse_paragraph_list(
+    paragraph: &viewer_core::xml::XmlElement,
+    numbering: &NumberingCatalog,
+) -> Option<ListMarker> {
+    let num_pr = paragraph
+        .child("pPr")
+        .and_then(|node| node.child("numPr"))?;
+    let level = num_pr
+        .child("ilvl")
+        .and_then(|node| node.attribute("val"))
+        .and_then(|value| value.parse::<u8>().ok())
+        .unwrap_or(0);
+    let num_id = num_pr
+        .child("numId")
+        .and_then(|node| node.attribute("val"))
+        .and_then(|value| value.parse::<u32>().ok())?;
+    let abstract_num_id = *numbering.numbering_instances.get(&num_id)?;
+    let kind = numbering
+        .abstract_numbering
+        .get(&abstract_num_id)
+        .and_then(|levels| levels.get(&level).cloned())
+        .unwrap_or(ListKind::Decimal);
+
+    Some(ListMarker {
+        level,
+        kind,
+        num_id,
+    })
 }
 
 fn parse_run(run: &viewer_core::xml::XmlElement, styles: &StyleCatalog) -> TextRun {

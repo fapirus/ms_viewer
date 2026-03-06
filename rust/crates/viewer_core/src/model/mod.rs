@@ -67,10 +67,28 @@ pub struct ImageReference {
     pub content_type: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum ListKind {
+    Bullet,
+    Decimal,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ListMarker {
+    pub level: u8,
+    pub kind: ListKind,
+    pub num_id: u32,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum Block {
-    Paragraph { runs: Vec<TextRun> },
+    Paragraph {
+        runs: Vec<TextRun>,
+        list: Option<ListMarker>,
+    },
     Image { image: ImageReference },
 }
 
