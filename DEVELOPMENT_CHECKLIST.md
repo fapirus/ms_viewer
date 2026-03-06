@@ -126,7 +126,8 @@
   - Tests:
     - styled paragraph fixture
     - mixed formatting fixture
-- [ ] style resolution 구현
+- [x] style resolution 구현
+  - Done: docDefaults, character style basedOn chain, direct formatting override merge
   - Rust scope: default style, named style, direct formatting merge
   - Tests:
     - base style inheritance fixture

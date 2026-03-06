@@ -4,6 +4,8 @@ use viewer_core::model::{Block, TextRun, TextStyle};
 use viewer_core::xml::parse_document;
 use viewer_core::ViewerError;
 
+use std::collections::HashMap;
+
 const OFFICE_DOCUMENT_REL: &str =
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument";
 const STYLES_REL: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles";
@@ -29,6 +31,27 @@ pub struct DocxPackage {
     pub headers: Vec<String>,
     pub footers: Vec<String>,
     pub media: Vec<DocxRelationship>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct StyleCatalog {
+    pub default_run_style: ResolvedTextStyle,
+    pub run_styles: HashMap<String, RunStyleDefinition>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct RunStyleDefinition {
+    pub based_on: Option<String>,
+    pub style: ResolvedTextStyle,
+}
+
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct ResolvedTextStyle {
+    pub font_family: Option<String>,
+    pub font_size: Option<f32>,
+    pub bold: Option<bool>,
+    pub italic: Option<bool>,
+    pub color_hex: Option<String>,
 }
 
 pub fn parse_docx(archive: &OoxmlArchive) -> Result<DocxPackage, ViewerError> {
@@ -58,6 +81,7 @@ pub fn parse_paragraph_blocks(
     archive: &OoxmlArchive,
     package: &DocxPackage,
 ) -> Result<Vec<Block>, ViewerError> {
+    let styles = parse_style_catalog(archive, package)?;
     let xml = archive.read_part(&package.main_document)?;
     let text = String::from_utf8(xml).map_err(|_| ViewerError::InvalidDocument)?;
     let root = parse_document(&text)?;
@@ -70,11 +94,63 @@ pub fn parse_paragraph_blocks(
         }
 
         blocks.push(Block::Paragraph {
-            runs: parse_paragraph_runs(child),
+            runs: parse_paragraph_runs(child, &styles),
         });
     }
 
     Ok(blocks)
+}
+
+pub fn parse_style_catalog(
+    archive: &OoxmlArchive,
+    package: &DocxPackage,
+) -> Result<StyleCatalog, ViewerError> {
+    let Some(styles_part) = &package.styles else {
+        return Ok(StyleCatalog {
+            default_run_style: ResolvedTextStyle::default(),
+            run_styles: HashMap::new(),
+        });
+    };
+
+    let xml = archive.read_part(styles_part)?;
+    let text = String::from_utf8(xml).map_err(|_| ViewerError::InvalidDocument)?;
+    let root = parse_document(&text)?;
+
+    let mut default_run_style = ResolvedTextStyle::default();
+    let mut run_styles = HashMap::new();
+
+    for child in &root.children {
+        match child.local_name() {
+            "docDefaults" => {
+                if let Some(rpr_default) = child
+                    .child("rPrDefault")
+                    .and_then(|node| node.child("rPr"))
+                {
+                    default_run_style = parse_resolved_style(Some(rpr_default));
+                }
+            }
+            "style" if child.attribute("type") == Some("character") => {
+                let Some(style_id) = child.attribute("styleId") else {
+                    continue;
+                };
+                let based_on = child
+                    .child("basedOn")
+                    .and_then(|node| node.attribute("val"))
+                    .map(ToString::to_string);
+                let style = parse_resolved_style(child.child("rPr"));
+                run_styles.insert(
+                    style_id.to_string(),
+                    RunStyleDefinition { based_on, style },
+                );
+            }
+            _ => {}
+        }
+    }
+
+    Ok(StyleCatalog {
+        default_run_style,
+        run_styles,
+    })
 }
 
 fn parse_document_relationships(
@@ -144,7 +220,10 @@ fn collect_targets(relationships: &[DocxRelationship], relationship_type: &str) 
         .collect()
 }
 
-fn parse_paragraph_runs(paragraph: &viewer_core::xml::XmlElement) -> Vec<TextRun> {
+fn parse_paragraph_runs(
+    paragraph: &viewer_core::xml::XmlElement,
+    styles: &StyleCatalog,
+) -> Vec<TextRun> {
     let mut runs = Vec::new();
 
     for child in &paragraph.children {
@@ -152,7 +231,7 @@ fn parse_paragraph_runs(paragraph: &viewer_core::xml::XmlElement) -> Vec<TextRun
             continue;
         }
 
-        let run = parse_run(child);
+        let run = parse_run(child, styles);
         if !run.text.is_empty() {
             runs.push(run);
         }
@@ -161,8 +240,8 @@ fn parse_paragraph_runs(paragraph: &viewer_core::xml::XmlElement) -> Vec<TextRun
     runs
 }
 
-fn parse_run(run: &viewer_core::xml::XmlElement) -> TextRun {
-    let style = parse_run_style(run.child("rPr"));
+fn parse_run(run: &viewer_core::xml::XmlElement, styles: &StyleCatalog) -> TextRun {
+    let style = resolve_run_style(run, styles);
     let mut text = String::new();
 
     for child in &run.children {
@@ -176,34 +255,103 @@ fn parse_run(run: &viewer_core::xml::XmlElement) -> TextRun {
     TextRun { text, style }
 }
 
-fn parse_run_style(run_properties: Option<&viewer_core::xml::XmlElement>) -> TextStyle {
-    let mut style = default_text_style();
+fn resolve_run_style(run: &viewer_core::xml::XmlElement, styles: &StyleCatalog) -> TextStyle {
+    let mut resolved = styles.default_run_style.clone();
+    let run_properties = run.child("rPr");
+
+    if let Some(style_id) = run_properties
+        .and_then(|node| node.child("rStyle"))
+        .and_then(|node| node.attribute("val"))
+    {
+        let named_style = resolve_named_style(styles, style_id);
+        merge_resolved_style(&mut resolved, &named_style);
+    }
+
+    let direct_style = parse_resolved_style(run_properties);
+    merge_resolved_style(&mut resolved, &direct_style);
+
+    materialize_text_style(&resolved)
+}
+
+fn resolve_named_style(styles: &StyleCatalog, style_id: &str) -> ResolvedTextStyle {
+    let mut chain = Vec::new();
+    let mut current = Some(style_id);
+
+    while let Some(next_style_id) = current {
+        let Some(style) = styles.run_styles.get(next_style_id) else {
+            break;
+        };
+        chain.push(style.style.clone());
+        current = style.based_on.as_deref();
+    }
+
+    let mut resolved = ResolvedTextStyle::default();
+    for style in chain.into_iter().rev() {
+        merge_resolved_style(&mut resolved, &style);
+    }
+
+    resolved
+}
+
+fn parse_resolved_style(run_properties: Option<&viewer_core::xml::XmlElement>) -> ResolvedTextStyle {
     let Some(run_properties) = run_properties else {
-        return style;
+        return ResolvedTextStyle::default();
     };
 
-    style.bold = run_properties.child("b").is_some();
-    style.italic = run_properties.child("i").is_some();
+    let font_family = run_properties
+        .child("rFonts")
+        .and_then(|fonts| fonts.attribute("ascii").or_else(|| fonts.attribute("hAnsi")))
+        .map(ToString::to_string);
+    let font_size = run_properties
+        .child("sz")
+        .and_then(|node| node.attribute("val"))
+        .and_then(|value| value.parse::<f32>().ok())
+        .map(|half_points| half_points / 2.0);
+    let color_hex = run_properties
+        .child("color")
+        .and_then(|node| node.attribute("val"))
+        .filter(|value| value.len() == 6)
+        .map(|value| format!("#{value}"));
 
-    if let Some(fonts) = run_properties.child("rFonts") {
-        if let Some(font_family) = fonts.attribute("ascii").or_else(|| fonts.attribute("hAnsi")) {
-            style.font_family = font_family.to_string();
-        }
+    ResolvedTextStyle {
+        font_family,
+        font_size,
+        bold: run_properties.child("b").map(|_| true),
+        italic: run_properties.child("i").map(|_| true),
+        color_hex,
     }
+}
 
-    if let Some(size) = run_properties.child("sz").and_then(|node| node.attribute("val")) {
-        if let Ok(half_points) = size.parse::<f32>() {
-            style.font_size = half_points / 2.0;
-        }
+fn merge_resolved_style(target: &mut ResolvedTextStyle, source: &ResolvedTextStyle) {
+    if let Some(font_family) = &source.font_family {
+        target.font_family = Some(font_family.clone());
     }
-
-    if let Some(color) = run_properties.child("color").and_then(|node| node.attribute("val")) {
-        if color.len() == 6 {
-            style.color_hex = format!("#{color}");
-        }
+    if let Some(font_size) = source.font_size {
+        target.font_size = Some(font_size);
     }
+    if let Some(bold) = source.bold {
+        target.bold = Some(bold);
+    }
+    if let Some(italic) = source.italic {
+        target.italic = Some(italic);
+    }
+    if let Some(color_hex) = &source.color_hex {
+        target.color_hex = Some(color_hex.clone());
+    }
+}
 
-    style
+fn materialize_text_style(style: &ResolvedTextStyle) -> TextStyle {
+    let fallback = default_text_style();
+    TextStyle {
+        font_family: style
+            .font_family
+            .clone()
+            .unwrap_or(fallback.font_family),
+        font_size: style.font_size.unwrap_or(fallback.font_size),
+        bold: style.bold.unwrap_or(fallback.bold),
+        italic: style.italic.unwrap_or(fallback.italic),
+        color_hex: style.color_hex.clone().unwrap_or(fallback.color_hex),
+    }
 }
 
 fn default_text_style() -> TextStyle {

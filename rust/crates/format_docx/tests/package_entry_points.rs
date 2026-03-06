@@ -5,7 +5,7 @@ use viewer_core::archive::OoxmlArchive;
 use zip::write::SimpleFileOptions;
 use zip::ZipWriter;
 
-use format_docx::{parse_docx, parse_paragraph_blocks};
+use format_docx::{parse_docx, parse_paragraph_blocks, parse_style_catalog};
 use viewer_core::model::Block;
 
 #[test]
@@ -131,6 +131,18 @@ fn parses_styled_paragraph_runs() {
               </w:body>
             </w:document>"#,
         ),
+        (
+            "word/styles.xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"/>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+              <Relationship Id="rStyle" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+            </Relationships>"#,
+        ),
     ]);
     let archive = OoxmlArchive::open_path(file.path()).expect("docx archive should open");
     let package = parse_docx(&archive).expect("docx package should parse");
@@ -186,6 +198,18 @@ fn parses_mixed_runs_and_line_breaks() {
               </w:body>
             </w:document>"#,
         ),
+        (
+            "word/styles.xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"/>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+              <Relationship Id="rStyle" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+            </Relationships>"#,
+        ),
     ]);
     let archive = OoxmlArchive::open_path(file.path()).expect("docx archive should open");
     let package = parse_docx(&archive).expect("docx package should parse");
@@ -202,6 +226,173 @@ fn parses_mixed_runs_and_line_breaks() {
             assert_eq!(runs[1].text, "World\nAgain");
             assert!(runs[1].style.italic);
             assert_eq!(runs[1].style.color_hex, "#000000");
+        }
+        other => panic!("expected paragraph block, got {other:?}"),
+    }
+}
+
+#[test]
+fn resolves_based_on_style_chain_from_styles_xml() {
+    let file = create_docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+              <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+              <Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>
+            </Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+              <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+            </Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+              <w:body>
+                <w:p>
+                  <w:r>
+                    <w:rPr><w:rStyle w:val="Emphasis"/></w:rPr>
+                    <w:t>Styled chain</w:t>
+                  </w:r>
+                </w:p>
+              </w:body>
+            </w:document>"#,
+        ),
+        (
+            "word/styles.xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+              <w:docDefaults>
+                <w:rPrDefault>
+                  <w:rPr>
+                    <w:rFonts w:ascii="Calibri"/>
+                    <w:sz w:val="22"/>
+                    <w:color w:val="333333"/>
+                  </w:rPr>
+                </w:rPrDefault>
+              </w:docDefaults>
+              <w:style w:type="character" w:styleId="BaseChar">
+                <w:rPr>
+                  <w:i/>
+                  <w:color w:val="00AA00"/>
+                </w:rPr>
+              </w:style>
+              <w:style w:type="character" w:styleId="Emphasis">
+                <w:basedOn w:val="BaseChar"/>
+                <w:rPr>
+                  <w:b/>
+                  <w:rFonts w:ascii="Aptos"/>
+                </w:rPr>
+              </w:style>
+            </w:styles>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+              <Relationship Id="rStyle" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+            </Relationships>"#,
+        ),
+    ]);
+    let archive = OoxmlArchive::open_path(file.path()).expect("docx archive should open");
+    let package = parse_docx(&archive).expect("docx package should parse");
+
+    let catalog = parse_style_catalog(&archive, &package).expect("styles should parse");
+    assert_eq!(catalog.default_run_style.font_family.as_deref(), Some("Calibri"));
+
+    let blocks = parse_paragraph_blocks(&archive, &package).expect("paragraphs should parse");
+
+    match &blocks[0] {
+        Block::Paragraph { runs } => {
+            assert_eq!(runs[0].style.font_family, "Aptos");
+            assert_eq!(runs[0].style.font_size, 11.0);
+            assert!(runs[0].style.bold);
+            assert!(runs[0].style.italic);
+            assert_eq!(runs[0].style.color_hex, "#00AA00");
+        }
+        other => panic!("expected paragraph block, got {other:?}"),
+    }
+}
+
+#[test]
+fn direct_formatting_overrides_named_style_values() {
+    let file = create_docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+              <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+              <Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>
+            </Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+              <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+            </Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+              <w:body>
+                <w:p>
+                  <w:r>
+                    <w:rPr>
+                      <w:rStyle w:val="Accent"/>
+                      <w:color w:val="FF6600"/>
+                      <w:sz w:val="30"/>
+                    </w:rPr>
+                    <w:t>Override me</w:t>
+                  </w:r>
+                </w:p>
+              </w:body>
+            </w:document>"#,
+        ),
+        (
+            "word/styles.xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+              <w:docDefaults>
+                <w:rPrDefault>
+                  <w:rPr>
+                    <w:rFonts w:ascii="Calibri"/>
+                    <w:sz w:val="22"/>
+                  </w:rPr>
+                </w:rPrDefault>
+              </w:docDefaults>
+              <w:style w:type="character" w:styleId="Accent">
+                <w:rPr>
+                  <w:rFonts w:ascii="Aptos"/>
+                  <w:color w:val="0000FF"/>
+                </w:rPr>
+              </w:style>
+            </w:styles>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+              <Relationship Id="rStyle" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+            </Relationships>"#,
+        ),
+    ]);
+    let archive = OoxmlArchive::open_path(file.path()).expect("docx archive should open");
+    let package = parse_docx(&archive).expect("docx package should parse");
+
+    let blocks = parse_paragraph_blocks(&archive, &package).expect("paragraphs should parse");
+
+    match &blocks[0] {
+        Block::Paragraph { runs } => {
+            assert_eq!(runs[0].style.font_family, "Aptos");
+            assert_eq!(runs[0].style.font_size, 15.0);
+            assert_eq!(runs[0].style.color_hex, "#FF6600");
         }
         other => panic!("expected paragraph block, got {other:?}"),
     }
