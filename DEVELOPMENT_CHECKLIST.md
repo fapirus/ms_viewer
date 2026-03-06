@@ -158,7 +158,8 @@
     - section break fixture
 
 ### DOCX layout layer
-- [ ] page box model 구현
+- [x] page box model 구현
+  - Done: sectPr page size/margin parsing and content frame calculation
   - Rust scope: page size, margins, content frame
   - Tests:
     - page metrics fixture

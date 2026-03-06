@@ -82,6 +82,30 @@ pub struct SectionLayout {
     pub footers: Vec<HeaderFooterRef>,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct PageMargins {
+    pub top: f32,
+    pub right: f32,
+    pub bottom: f32,
+    pub left: f32,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ContentFrame {
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct PageBox {
+    pub width: f32,
+    pub height: f32,
+    pub margins: PageMargins,
+    pub content: ContentFrame,
+}
+
 pub fn parse_docx(archive: &OoxmlArchive) -> Result<DocxPackage, ViewerError> {
     let relationships = parse_package_relationships(archive)?;
     let main_document = relationships
@@ -285,6 +309,29 @@ pub fn parse_section_layouts(
     Ok(sections)
 }
 
+pub fn parse_page_boxes(
+    archive: &OoxmlArchive,
+    package: &DocxPackage,
+) -> Result<Vec<PageBox>, ViewerError> {
+    let xml = archive.read_part(&package.main_document)?;
+    let text = String::from_utf8(xml).map_err(|_| ViewerError::InvalidDocument)?;
+    let root = parse_document(&text)?;
+    let body = root.child("body").ok_or(ViewerError::InvalidDocument)?;
+
+    let mut page_boxes = Vec::new();
+    for child in &body.children {
+        if let Some(section_properties) = section_properties_from_element(child) {
+            page_boxes.push(parse_page_box(section_properties));
+        }
+    }
+
+    if let Some(section_properties) = body.child("sectPr") {
+        page_boxes.push(parse_page_box(section_properties));
+    }
+
+    Ok(page_boxes)
+}
+
 fn parse_document_relationships(
     archive: &OoxmlArchive,
     main_document: &str,
@@ -356,11 +403,7 @@ fn section_from_element(
     element: &viewer_core::xml::XmlElement,
     relationships: &[DocxRelationship],
 ) -> Result<Option<SectionLayout>, ViewerError> {
-    let section_properties = if element.local_name() == "p" {
-        element.child("pPr").and_then(|properties| properties.child("sectPr"))
-    } else {
-        None
-    };
+    let section_properties = section_properties_from_element(element);
 
     let Some(section_properties) = section_properties else {
         return Ok(None);
@@ -370,6 +413,16 @@ fn section_from_element(
         section_properties,
         relationships,
     )?))
+}
+
+fn section_properties_from_element(
+    element: &viewer_core::xml::XmlElement,
+) -> Option<&viewer_core::xml::XmlElement> {
+    if element.local_name() == "p" {
+        element.child("pPr").and_then(|properties| properties.child("sectPr"))
+    } else {
+        None
+    }
 }
 
 fn parse_section_properties(
@@ -419,6 +472,57 @@ fn resolve_header_footer_reference(
         },
         target: relationship.resolved_target.clone(),
     })
+}
+
+fn parse_page_box(section_properties: &viewer_core::xml::XmlElement) -> PageBox {
+    let (width, height) = section_properties
+        .child("pgSz")
+        .map(|node| {
+            let width = node
+                .attribute("w")
+                .and_then(parse_twips_value)
+                .unwrap_or(612.0);
+            let height = node
+                .attribute("h")
+                .and_then(parse_twips_value)
+                .unwrap_or(792.0);
+            (width, height)
+        })
+        .unwrap_or((612.0, 792.0));
+
+    let margins = section_properties
+        .child("pgMar")
+        .map(|node| PageMargins {
+            top: node.attribute("top").and_then(parse_twips_value).unwrap_or(72.0),
+            right: node.attribute("right").and_then(parse_twips_value).unwrap_or(72.0),
+            bottom: node
+                .attribute("bottom")
+                .and_then(parse_twips_value)
+                .unwrap_or(72.0),
+            left: node.attribute("left").and_then(parse_twips_value).unwrap_or(72.0),
+        })
+        .unwrap_or(PageMargins {
+            top: 72.0,
+            right: 72.0,
+            bottom: 72.0,
+            left: 72.0,
+        });
+
+    PageBox {
+        width,
+        height,
+        content: ContentFrame {
+            x: margins.left,
+            y: margins.top,
+            width: (width - margins.left - margins.right).max(0.0),
+            height: (height - margins.top - margins.bottom).max(0.0),
+        },
+        margins,
+    }
+}
+
+fn parse_twips_value(value: &str) -> Option<f32> {
+    value.parse::<f32>().ok().map(|twips| twips / 20.0)
 }
 
 fn parse_paragraph_runs(

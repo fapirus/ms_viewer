@@ -5,7 +5,10 @@ use viewer_core::archive::OoxmlArchive;
 use zip::write::SimpleFileOptions;
 use zip::ZipWriter;
 
-use format_docx::{parse_docx, parse_paragraph_blocks, parse_section_layouts, parse_style_catalog};
+use format_docx::{
+    parse_docx, parse_page_boxes, parse_paragraph_blocks, parse_section_layouts,
+    parse_style_catalog,
+};
 use viewer_core::model::{Block, TableCellMerge};
 
 #[test]
@@ -925,6 +928,51 @@ fn parses_section_break_header_footer_switch() {
     assert!(sections[0].footers.is_empty());
     assert_eq!(sections[1].headers[0].target, "word/section2-header.xml");
     assert_eq!(sections[1].footers[0].target, "word/section2-footer.xml");
+}
+
+#[test]
+fn parses_page_metrics_from_section_properties() {
+    let file = create_docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+              <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+            </Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+              <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+            </Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+              <w:body>
+                <w:sectPr>
+                  <w:pgSz w:w="12240" w:h="15840"/>
+                  <w:pgMar w:top="1440" w:right="1800" w:bottom="1440" w:left="1800"/>
+                </w:sectPr>
+              </w:body>
+            </w:document>"#,
+        ),
+    ]);
+    let archive = OoxmlArchive::open_path(file.path()).expect("docx archive should open");
+    let package = parse_docx(&archive).expect("docx package should parse");
+    let pages = parse_page_boxes(&archive, &package).expect("page boxes should parse");
+
+    assert_eq!(pages.len(), 1);
+    assert_eq!(pages[0].width, 612.0);
+    assert_eq!(pages[0].height, 792.0);
+    assert_eq!(pages[0].margins.top, 72.0);
+    assert_eq!(pages[0].margins.left, 90.0);
+    assert_eq!(pages[0].content.x, 90.0);
+    assert_eq!(pages[0].content.y, 72.0);
+    assert_eq!(pages[0].content.width, 432.0);
+    assert_eq!(pages[0].content.height, 648.0);
 }
 
 fn create_docx_fixture(entries: &[(&str, &str)]) -> NamedTempFile {
