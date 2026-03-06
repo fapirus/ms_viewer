@@ -59,11 +59,12 @@
     - invalid zip failure
     - large entry lazy read behavior
   - Done: path-based OOXML archive open, part lookup, on-demand part read implemented
-- [ ] input abstraction 구현 (`PathSource`, `BytesSource`)
+- [x] input abstraction 구현 (`PathSource`, `BytesSource`)
   - Rust scope: common input interface
   - Tests:
     - same document opens from path and bytes
     - invalid source error mapping
+  - Done: archive source abstraction added for path and in-memory bytes
 - [ ] encrypted package 감지 구현
   - Rust scope: encrypted package detection without full parse
   - Tests:
