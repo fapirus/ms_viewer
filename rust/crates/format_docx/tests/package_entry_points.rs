@@ -1,0 +1,114 @@
+use std::io::Write;
+
+use tempfile::NamedTempFile;
+use viewer_core::archive::OoxmlArchive;
+use zip::write::SimpleFileOptions;
+use zip::ZipWriter;
+
+use format_docx::parse_docx;
+
+#[test]
+fn parses_main_optional_and_media_entry_points() {
+    let file = create_docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+              <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+            </Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+              <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+            </Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"/>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+              <Relationship Id="rStyle" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+              <Relationship Id="rNumbering" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering" Target="numbering.xml"/>
+              <Relationship Id="rHeader" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/>
+              <Relationship Id="rFooter" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/>
+              <Relationship Id="rImage" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image1.png"/>
+            </Relationships>"#,
+        ),
+        ("word/styles.xml", "<w:styles xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"/>"),
+        ("word/numbering.xml", "<w:numbering xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"/>"),
+        ("word/header1.xml", "<w:hdr xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"/>"),
+        ("word/footer1.xml", "<w:ftr xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"/>"),
+        ("word/media/image1.png", "fakepng"),
+    ]);
+    let archive = OoxmlArchive::open_path(file.path()).expect("docx archive should open");
+
+    let package = parse_docx(&archive).expect("docx package should parse");
+
+    assert_eq!(package.main_document, "word/document.xml");
+    assert_eq!(package.styles.as_deref(), Some("word/styles.xml"));
+    assert_eq!(package.numbering.as_deref(), Some("word/numbering.xml"));
+    assert_eq!(package.headers, vec!["word/header1.xml"]);
+    assert_eq!(package.footers, vec!["word/footer1.xml"]);
+    assert_eq!(package.media.len(), 1);
+    assert_eq!(package.media[0].resolved_target, "word/media/image1.png");
+  }
+
+#[test]
+fn missing_optional_parts_are_treated_as_empty() {
+    let file = create_docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+              <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+            </Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+              <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+            </Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"/>"#,
+        ),
+    ]);
+    let archive = OoxmlArchive::open_path(file.path()).expect("docx archive should open");
+
+    let package = parse_docx(&archive).expect("docx package should parse");
+
+    assert_eq!(package.main_document, "word/document.xml");
+    assert!(package.styles.is_none());
+    assert!(package.numbering.is_none());
+    assert!(package.headers.is_empty());
+    assert!(package.footers.is_empty());
+    assert!(package.media.is_empty());
+}
+
+fn create_docx_fixture(entries: &[(&str, &str)]) -> NamedTempFile {
+    let mut file = NamedTempFile::new().expect("temp zip");
+    {
+        let writer = file.as_file_mut();
+        let mut zip = ZipWriter::new(writer);
+
+        for (name, contents) in entries {
+            zip.start_file(*name, SimpleFileOptions::default())
+                .expect("zip entry should start");
+            zip.write_all(contents.as_bytes())
+                .expect("zip entry should write");
+        }
+
+        zip.finish().expect("zip should finish");
+    }
+
+    file
+}

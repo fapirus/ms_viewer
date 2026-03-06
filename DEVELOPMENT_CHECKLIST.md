@@ -114,7 +114,8 @@
 
 ## Phase 1: DOCX MVP
 ### DOCX parse layer
-- [ ] DOCX package entry points 구현
+- [x] DOCX package entry points 구현
+  - Done: main document, styles, numbering, header/footer, media relationship entry points
   - Rust scope: main document, styles, numbering, media, header/footer lookup
   - Tests:
     - minimal docx fixture
