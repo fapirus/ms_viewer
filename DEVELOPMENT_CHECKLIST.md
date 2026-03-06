@@ -18,10 +18,11 @@
 - 문서가 필요한 경우 `docs/architecture/` 또는 `PROJECT_PLAN.md`에 반영되었다.
 
 ## Global foundation
-- [ ] FFI contract 초안 확정
+- [x] FFI contract 초안 확정
   - Deliverable: `docs/architecture/ffi_contract.md`
   - Rust test: request/response type serialization test
   - Flutter test: contract model decode smoke test
+  - Done: initial open document request/success/error contract added
 - [ ] Render model 초안 확정
   - Deliverable: `docs/architecture/render_model.md`
   - Rust test: page/render node shape test

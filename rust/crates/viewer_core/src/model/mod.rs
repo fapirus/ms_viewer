@@ -10,6 +10,7 @@ pub enum DocumentKind {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub struct OpenOptions {
     pub password: Option<String>,
     pub prefer_lazy_loading: bool,
