@@ -81,11 +81,12 @@
     - missing attribute handling
     - malformed xml failure
   - Done: lightweight XML element parser and attribute helpers added
-- [ ] shared OOXML relationship parser 구현
+- [x] shared OOXML relationship parser 구현
   - Rust scope: `_rels`, content types, part resolution
   - Tests:
     - package relationships fixture
     - missing relationship target
+  - Done: content types, package relationships, and target resolution parser added
 - [ ] shared text/run/style base model 정의
   - Rust scope: common text span, block, image reference model
   - Tests:
