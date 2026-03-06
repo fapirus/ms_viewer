@@ -5,7 +5,8 @@ use viewer_core::archive::OoxmlArchive;
 use zip::write::SimpleFileOptions;
 use zip::ZipWriter;
 
-use format_docx::parse_docx;
+use format_docx::{parse_docx, parse_paragraph_blocks};
+use viewer_core::model::Block;
 
 #[test]
 fn parses_main_optional_and_media_entry_points() {
@@ -92,6 +93,118 @@ fn missing_optional_parts_are_treated_as_empty() {
     assert!(package.headers.is_empty());
     assert!(package.footers.is_empty());
     assert!(package.media.is_empty());
+}
+
+#[test]
+fn parses_styled_paragraph_runs() {
+    let file = create_docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+              <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+            </Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+              <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+            </Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+              <w:body>
+                <w:p>
+                  <w:r>
+                    <w:rPr>
+                      <w:rFonts w:ascii="Arial"/>
+                      <w:sz w:val="28"/>
+                      <w:b/>
+                      <w:color w:val="FF0000"/>
+                    </w:rPr>
+                    <w:t>Styled</w:t>
+                  </w:r>
+                </w:p>
+              </w:body>
+            </w:document>"#,
+        ),
+    ]);
+    let archive = OoxmlArchive::open_path(file.path()).expect("docx archive should open");
+    let package = parse_docx(&archive).expect("docx package should parse");
+
+    let blocks = parse_paragraph_blocks(&archive, &package).expect("paragraphs should parse");
+
+    assert_eq!(blocks.len(), 1);
+    match &blocks[0] {
+        Block::Paragraph { runs } => {
+            assert_eq!(runs.len(), 1);
+            assert_eq!(runs[0].text, "Styled");
+            assert_eq!(runs[0].style.font_family, "Arial");
+            assert_eq!(runs[0].style.font_size, 14.0);
+            assert!(runs[0].style.bold);
+            assert!(!runs[0].style.italic);
+            assert_eq!(runs[0].style.color_hex, "#FF0000");
+        }
+        other => panic!("expected paragraph block, got {other:?}"),
+    }
+}
+
+#[test]
+fn parses_mixed_runs_and_line_breaks() {
+    let file = create_docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+              <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+            </Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+              <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+            </Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+              <w:body>
+                <w:p>
+                  <w:r><w:t>Hello</w:t></w:r>
+                  <w:r>
+                    <w:rPr><w:i/></w:rPr>
+                    <w:t>World</w:t>
+                    <w:br/>
+                    <w:t>Again</w:t>
+                  </w:r>
+                </w:p>
+              </w:body>
+            </w:document>"#,
+        ),
+    ]);
+    let archive = OoxmlArchive::open_path(file.path()).expect("docx archive should open");
+    let package = parse_docx(&archive).expect("docx package should parse");
+
+    let blocks = parse_paragraph_blocks(&archive, &package).expect("paragraphs should parse");
+
+    assert_eq!(blocks.len(), 1);
+    match &blocks[0] {
+        Block::Paragraph { runs } => {
+            assert_eq!(runs.len(), 2);
+            assert_eq!(runs[0].text, "Hello");
+            assert_eq!(runs[0].style.font_family, "Times New Roman");
+            assert!(!runs[0].style.bold);
+            assert_eq!(runs[1].text, "World\nAgain");
+            assert!(runs[1].style.italic);
+            assert_eq!(runs[1].style.color_hex, "#000000");
+        }
+        other => panic!("expected paragraph block, got {other:?}"),
+    }
 }
 
 fn create_docx_fixture(entries: &[(&str, &str)]) -> NamedTempFile {

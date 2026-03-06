@@ -1,5 +1,6 @@
 use format_shared::{parse_package_relationships, resolve_relationship_target};
 use viewer_core::archive::OoxmlArchive;
+use viewer_core::model::{Block, TextRun, TextStyle};
 use viewer_core::xml::parse_document;
 use viewer_core::ViewerError;
 
@@ -51,6 +52,29 @@ pub fn parse_docx(archive: &OoxmlArchive) -> Result<DocxPackage, ViewerError> {
             .filter(|relationship| relationship.relationship_type == IMAGE_REL)
             .collect(),
     })
+}
+
+pub fn parse_paragraph_blocks(
+    archive: &OoxmlArchive,
+    package: &DocxPackage,
+) -> Result<Vec<Block>, ViewerError> {
+    let xml = archive.read_part(&package.main_document)?;
+    let text = String::from_utf8(xml).map_err(|_| ViewerError::InvalidDocument)?;
+    let root = parse_document(&text)?;
+    let body = root.child("body").ok_or(ViewerError::InvalidDocument)?;
+
+    let mut blocks = Vec::new();
+    for child in &body.children {
+        if child.local_name() != "p" {
+            continue;
+        }
+
+        blocks.push(Block::Paragraph {
+            runs: parse_paragraph_runs(child),
+        });
+    }
+
+    Ok(blocks)
 }
 
 fn parse_document_relationships(
@@ -118,4 +142,76 @@ fn collect_targets(relationships: &[DocxRelationship], relationship_type: &str) 
         .filter(|relationship| relationship.relationship_type == relationship_type)
         .map(|relationship| relationship.resolved_target.clone())
         .collect()
+}
+
+fn parse_paragraph_runs(paragraph: &viewer_core::xml::XmlElement) -> Vec<TextRun> {
+    let mut runs = Vec::new();
+
+    for child in &paragraph.children {
+        if child.local_name() != "r" {
+            continue;
+        }
+
+        let run = parse_run(child);
+        if !run.text.is_empty() {
+            runs.push(run);
+        }
+    }
+
+    runs
+}
+
+fn parse_run(run: &viewer_core::xml::XmlElement) -> TextRun {
+    let style = parse_run_style(run.child("rPr"));
+    let mut text = String::new();
+
+    for child in &run.children {
+        match child.local_name() {
+            "t" => text.push_str(&child.text),
+            "br" => text.push('\n'),
+            _ => {}
+        }
+    }
+
+    TextRun { text, style }
+}
+
+fn parse_run_style(run_properties: Option<&viewer_core::xml::XmlElement>) -> TextStyle {
+    let mut style = default_text_style();
+    let Some(run_properties) = run_properties else {
+        return style;
+    };
+
+    style.bold = run_properties.child("b").is_some();
+    style.italic = run_properties.child("i").is_some();
+
+    if let Some(fonts) = run_properties.child("rFonts") {
+        if let Some(font_family) = fonts.attribute("ascii").or_else(|| fonts.attribute("hAnsi")) {
+            style.font_family = font_family.to_string();
+        }
+    }
+
+    if let Some(size) = run_properties.child("sz").and_then(|node| node.attribute("val")) {
+        if let Ok(half_points) = size.parse::<f32>() {
+            style.font_size = half_points / 2.0;
+        }
+    }
+
+    if let Some(color) = run_properties.child("color").and_then(|node| node.attribute("val")) {
+        if color.len() == 6 {
+            style.color_hex = format!("#{color}");
+        }
+    }
+
+    style
+}
+
+fn default_text_style() -> TextStyle {
+    TextStyle {
+        font_family: "Times New Roman".to_string(),
+        font_size: 12.0,
+        bold: false,
+        italic: false,
+        color_hex: "#000000".to_string(),
+    }
 }

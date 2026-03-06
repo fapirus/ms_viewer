@@ -120,7 +120,8 @@
   - Tests:
     - minimal docx fixture
     - missing optional parts fixture
-- [ ] paragraph and run parser 구현
+- [x] paragraph and run parser 구현
+  - Done: paragraph block parsing, direct run formatting, inline line break handling
   - Rust scope: paragraphs, runs, line breaks, basic inline formatting
   - Tests:
     - styled paragraph fixture
