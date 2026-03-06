@@ -1,6 +1,7 @@
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 
 export 'src/models/open_document_contract.dart';
+export 'src/models/render_model.dart';
 
 abstract class MsViewerPlatform extends PlatformInterface {
   MsViewerPlatform() : super(token: _token);

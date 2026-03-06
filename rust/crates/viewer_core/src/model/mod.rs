@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 pub type DocumentId = String;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
 pub enum DocumentKind {
     Docx,
     Pptx,
@@ -23,4 +24,83 @@ impl Default for OpenOptions {
             prefer_lazy_loading: true,
         }
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Rect {
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct TextRange {
+    pub start: u32,
+    pub end: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct TextStyle {
+    pub font_family: String,
+    pub font_size: f32,
+    pub bold: bool,
+    pub italic: bool,
+    pub color_hex: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct TextNode {
+    pub text: String,
+    pub bounds: Rect,
+    pub style: TextStyle,
+    pub range: TextRange,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ImageNode {
+    pub resource_id: String,
+    pub description: Option<String>,
+    pub bounds: Rect,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct BoxNode {
+    pub bounds: Rect,
+    pub fill_color_hex: Option<String>,
+    pub stroke_color_hex: Option<String>,
+    pub stroke_width: f32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum RenderNode {
+    Text(TextNode),
+    Image(ImageNode),
+    Box(BoxNode),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SelectionAnchor {
+    pub node_index: u32,
+    pub char_index: u32,
+    pub x: f32,
+    pub y: f32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PageRenderModel {
+    pub page_index: u32,
+    pub width: f32,
+    pub height: f32,
+    pub nodes: Vec<RenderNode>,
+    pub selection_anchors: Vec<SelectionAnchor>,
 }

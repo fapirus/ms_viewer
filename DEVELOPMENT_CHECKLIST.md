@@ -23,10 +23,11 @@
   - Rust test: request/response type serialization test
   - Flutter test: contract model decode smoke test
   - Done: initial open document request/success/error contract added
-- [ ] Render model 초안 확정
+- [x] Render model 초안 확정
   - Deliverable: `docs/architecture/render_model.md`
   - Rust test: page/render node shape test
   - Flutter test: render model consume smoke test
+  - Done: initial page/text/image/box/selection anchor model added
 - [ ] Font fallback policy 초안 확정
   - Deliverable: `docs/architecture/font_fallback_policy.md`
   - Rust test: fallback resolution table test
