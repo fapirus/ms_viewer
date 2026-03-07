@@ -10,6 +10,29 @@
 - 체크는 코드와 테스트가 모두 들어간 뒤에만 한다.
 - 새 범위가 생기면 이 문서에 먼저 체크박스로 추가한 뒤 작업한다.
 - 로컬 `issue/` 폴더는 실제 문서와 시각 비교 스크린샷 분석용으로 사용하고, 원인 고정 후에는 최소 재현 fixture를 `fixtures/regression/`에 추가한다.
+- 각 포맷에서 발견한 후속 품질/성능/호환성 debt는 즉시 `Phase 4: Hardening`에 체크박스로 추가하고, 해당 포맷 phase에는 이유와 차단 여부만 남긴다.
+- `format_*` crate 내부 MVP 작업은 병렬 가능하지만, `viewer_core`, `viewer_ffi`, `packages/ms_viewer*`, `examples/flutter_demo`를 건드리는 작업은 직렬로 처리한다.
+- demo app 실연동 phase는 공유 표면이 크므로 서로 병렬 진행하지 않는다.
+- 병렬 브랜치에서 공통 계약 변경이 필요해지면 작은 통합 커밋을 `develop`에 먼저 반영한 뒤 각 phase 브랜치가 이를 따라간다.
+
+## Parallel work boundary
+### 병렬 가능 구간
+- `rust/crates/format_pptx/`와 그 하위 테스트
+- `rust/crates/format_xlsx/`와 그 하위 테스트
+- 포맷별 fixture 추가: `fixtures/pptx/`, `fixtures/xlsx/`, `fixtures/regression/`의 포맷 전용 케이스
+
+### 직렬 처리 구간
+- `rust/crates/viewer_core/`
+- `rust/crates/viewer_ffi/`
+- `packages/ms_viewer_platform_interface/`
+- `packages/ms_viewer/`
+- `examples/flutter_demo/`
+- 공통 문서와 체크리스트: `DEVELOPMENT_CHECKLIST.md`, `PROJECT_PLAN.md`, `docs/architecture/`
+
+### 병렬 작업 규칙
+- `PPTX`, `XLSX`는 포맷 전용 parser/layout/search 모델 단계까지는 병렬 진행 가능하다.
+- render model, FFI contract, Flutter controller/widget, demo app을 건드리는 시점부터는 직렬 구간으로 전환한다.
+- 공통 파일 수정이 필요하면 해당 작업은 별도 통합 커밋으로 잘게 나눠 먼저 병합한다.
 
 ## Definition of done
 하나의 체크박스를 완료로 표시하려면 아래 조건을 만족해야 한다.
@@ -394,6 +417,10 @@
     - 최소 재현 fixture 회귀 테스트가 추가되었다
 
 ## Phase 2: PPTX MVP
+### MVP scope note
+- 이 phase는 가능한 한 `format_pptx`와 포맷 전용 fixture 내부에서 닫는다.
+- shared render model 또는 공통 text metrics 변경이 필요해지면 즉시 작업을 멈추고 `develop` 기준 공통 통합 작업으로 전환한다.
+
 ### PPTX parse layer
 - [ ] PPTX slide tree parser 구현
 - [ ] slide master/layout/theme link parser 구현
@@ -418,6 +445,11 @@
     - text selection
 
 ## Phase 2.5: PPTX demo real integration
+### Serialized integration gate
+- 이 phase는 `viewer_ffi`, `packages/ms_viewer*`, `examples/flutter_demo`를 건드린다.
+- 다른 포맷 demo phase와 병렬 진행하지 않는다.
+- 권장 브랜치 전략: `PPTX MVP` 브랜치와 별도 `PPTX demo integration` 브랜치로 분리한다.
+
 ### Rust and FFI
 - [ ] PPTX slide render model FFI endpoint 연결
   - Tests:
@@ -449,7 +481,40 @@
     - dropped pptx opens through real engine path
     - first slide render matches real model
 
+## Phase 2.6: PPTX visual parity pass
+### Visual regression triage
+- [ ] issue 기반 PPTX 시각 회귀 분류 규칙 정리
+  - Scope:
+    - slide 배치, 텍스트 박스 정렬, shape/image fit, theme font 차이를 `issue/` 기준으로 분류
+    - 최소 재현 fixture 후보를 `fixtures/regression/`에 승격
+
+### Geometry and typography
+- [ ] PPTX 텍스트 박스 정렬과 줄바꿈 보정
+  - Tests:
+    - centered title regression fixture
+    - mixed font line break regression fixture
+- [ ] PPTX shape/image transform 및 crop 보정
+  - Tests:
+    - image crop regression fixture
+    - rotated shape bounds regression fixture
+- [ ] PPTX theme font와 기본 스타일 메트릭 보정
+  - Tests:
+    - theme font regression fixture
+    - line spacing regression fixture
+
+### Acceptance
+- [ ] PPTX visual parity acceptance pass
+  - Acceptance checks:
+    - 주요 issue slide가 빈 화면 없이 렌더된다
+    - 텍스트 박스 정렬과 줄바꿈이 허용 범위 내에 있다
+    - image/shape 배치가 허용 범위 내에 있다
+    - 최소 재현 fixture 회귀 테스트가 추가되었다
+
 ## Phase 3: XLSX MVP
+### MVP scope note
+- 이 phase는 가능한 한 `format_xlsx`와 포맷 전용 fixture 내부에서 닫는다.
+- 공통 grid/render/search 계약 변경이 필요해지면 즉시 작업을 멈추고 `develop` 기준 공통 통합 작업으로 전환한다.
+
 ### XLSX parse layer
 - [ ] workbook and worksheet parser 구현
 - [ ] shared strings parser 구현
@@ -477,6 +542,11 @@
     - cached formula display
 
 ## Phase 3.5: XLSX demo real integration
+### Serialized integration gate
+- 이 phase는 `viewer_ffi`, `packages/ms_viewer*`, `examples/flutter_demo`를 건드린다.
+- 다른 포맷 demo phase와 병렬 진행하지 않는다.
+- 권장 브랜치 전략: `XLSX MVP` 브랜치와 별도 `XLSX demo integration` 브랜치로 분리한다.
+
 ### Rust and FFI
 - [ ] XLSX visible sheet window FFI endpoint 연결
   - Tests:
@@ -508,7 +578,42 @@
     - dropped xlsx opens through real engine path
     - visible sheet window render matches real model
 
+## Phase 3.6: XLSX visual parity and large-sheet pass
+### Visual regression triage
+- [ ] issue 기반 XLSX 시각 회귀 분류 규칙 정리
+  - Scope:
+    - column width, row height, merged cell, frozen pane, large-sheet viewport 차이를 `issue/` 기준으로 분류
+    - 최소 재현 fixture 후보를 `fixtures/regression/`에 승격
+
+### Layout and viewport fidelity
+- [ ] XLSX column width/row height/merged cell 배치 보정
+  - Tests:
+    - merged cell layout regression fixture
+    - row height regression fixture
+- [ ] XLSX frozen pane와 visible window virtualization 보정
+  - Tests:
+    - frozen pane viewport regression fixture
+    - large-sheet scroll stability regression fixture
+- [ ] XLSX number/date format 및 기본 타이포그래피 보정
+  - Tests:
+    - number/date display regression fixture
+    - mixed width text regression fixture
+
+### Acceptance
+- [ ] XLSX visual parity acceptance pass
+  - Acceptance checks:
+    - 주요 issue sheet가 빈 영역/잘린 영역 없이 렌더된다
+    - column width와 row height가 허용 범위 내에 있다
+    - frozen pane과 visible window가 안정적으로 동작한다
+    - 최소 재현 fixture 회귀 테스트가 추가되었다
+
 ## Phase 4: Hardening
+- [ ] deferred hardening backlog sweep
+  - Scope:
+    - `DOCX/PPTX/XLSX` phase에서 미룬 품질/성능/호환성 debt를 전수 검토
+    - 중복 항목 정리와 우선순위 재배치
+  - Output:
+    - `PROJECT_PLAN.md`와 이 문서의 hardening backlog 동기화
 - [ ] password flow end-to-end polish
   - Tests:
     - wrong password retry
@@ -532,6 +637,18 @@
 - [ ] fallback font regression pass
   - Tests:
     - platform fixture review set
+- [ ] cross-format visual parity backlog pass
+  - Scope:
+    - DOCX/PPTX/XLSX에서 남긴 시각 충실도 잔여 항목을 공통 정책과 포맷별 정책으로 다시 나눠 처리
+  - Tests:
+    - issue screenshot review set
+    - representative real-world review documents
+- [ ] coverage tooling and threshold 정리
+  - Scope:
+    - Rust coverage 도구 도입
+    - Flutter package coverage threshold 기준 고정
+  - Output:
+    - coverage 실행 명령과 기준 문서화
 - [ ] Linux feasibility review
   - Output: decision note added to `PROJECT_PLAN.md`
 
