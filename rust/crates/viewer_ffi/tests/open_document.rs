@@ -224,6 +224,44 @@ fn paragraph_spacing_regression_fixture_preserves_style_metrics() {
 }
 
 #[test]
+fn floating_table_regression_fixture_preserves_centered_bounds() {
+    let path = regression_fixture_path("docx_floating_table_intro.docx");
+    let response = get_page_render_model(GetPageRenderModelRequest {
+        source: DocumentSource::Path(path.display().to_string()),
+        document_id: format!("path:{}", path.display()),
+        page_index: 0,
+        options: OpenOptions::default(),
+    });
+
+    match response {
+        GetPageRenderModelResponse::Success(page) => {
+            let table_boxes = page
+                .nodes
+                .iter()
+                .filter_map(|node| match node {
+                    viewer_core::model::RenderNode::Box(table_box)
+                        if table_box.stroke_color_hex.as_deref() == Some("#CBD5E1") =>
+                    {
+                        Some(table_box)
+                    }
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+
+            let outer_table = table_boxes
+                .iter()
+                .find(|table_box| table_box.bounds.width > 200.0)
+                .expect("outer table box should exist");
+
+            assert!((outer_table.bounds.width - 223.9).abs() < 0.5);
+            assert!((outer_table.bounds.x - 185.1).abs() < 1.0);
+            assert!((outer_table.bounds.y - 120.0).abs() < 0.5);
+        }
+        other => panic!("expected page render model, got {other:?}"),
+    }
+}
+
+#[test]
 fn opens_xlsx_bytes_request_from_json() {
     let file = create_package(&[
         (

@@ -784,11 +784,14 @@ fn parses_basic_table_rows_cells_and_text() {
         Block::Table {
             rows,
             column_widths,
+            layout,
         } => {
             assert_eq!(rows.len(), 2);
             assert_eq!(rows[0].cells.len(), 2);
             assert_eq!(rows[1].cells.len(), 1);
             assert!(column_widths.is_empty());
+            assert_eq!(layout.alignment, viewer_core::model::TableAlignment::Left);
+            assert!(layout.floating.is_none());
             match &rows[0].cells[0].blocks[0] {
                 Block::Paragraph { runs, .. } => assert_eq!(runs[0].text, "A1"),
                 other => panic!("expected paragraph block, got {other:?}"),
@@ -850,6 +853,73 @@ fn parses_merged_cell_fallback_metadata() {
             assert_eq!(rows[0].cells[0].column_span, 2);
             assert_eq!(rows[0].cells[0].row_merge, Some(TableCellMerge::Restart));
             assert_eq!(rows[1].cells[0].row_merge, Some(TableCellMerge::Continue));
+        }
+        other => panic!("expected table block, got {other:?}"),
+    }
+}
+
+#[test]
+fn parses_floating_table_layout_metadata() {
+    let file = create_docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+              <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+            </Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+              <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+            </Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+              <w:body>
+                <w:tbl>
+                  <w:tblPr>
+                    <w:tblpPr w:leftFromText="120" w:rightFromText="120" w:vertAnchor="page" w:horzAnchor="margin" w:tblpXSpec="center" w:tblpY="2400"/>
+                    <w:tblW w:w="2400" w:type="dxa"/>
+                    <w:jc w:val="center"/>
+                  </w:tblPr>
+                  <w:tblGrid>
+                    <w:gridCol w:w="1200"/>
+                    <w:gridCol w:w="1200"/>
+                  </w:tblGrid>
+                  <w:tr>
+                    <w:tc><w:p><w:r><w:t>A</w:t></w:r></w:p></w:tc>
+                    <w:tc><w:p><w:r><w:t>B</w:t></w:r></w:p></w:tc>
+                  </w:tr>
+                </w:tbl>
+              </w:body>
+            </w:document>"#,
+        ),
+    ]);
+    let archive = OoxmlArchive::open_path(file.path()).expect("docx archive should open");
+    let package = parse_docx(&archive).expect("docx package should parse");
+    let blocks = parse_paragraph_blocks(&archive, &package).expect("blocks should parse");
+
+    match &blocks[0] {
+        Block::Table { layout, .. } => {
+            assert_eq!(layout.preferred_width, Some(120.0));
+            assert_eq!(layout.alignment, viewer_core::model::TableAlignment::Center);
+            let floating = layout.floating.as_ref().expect("floating table");
+            assert_eq!(
+                floating.horz_anchor,
+                viewer_core::model::TableAnchor::Margin
+            );
+            assert_eq!(floating.vert_anchor, viewer_core::model::TableAnchor::Page);
+            assert_eq!(
+                floating.x_position,
+                Some(viewer_core::model::TableHorizontalPosition::Center)
+            );
+            assert_eq!(floating.y, Some(120.0));
+            assert_eq!(floating.left_from_text, 6.0);
+            assert_eq!(floating.right_from_text, 6.0);
         }
         other => panic!("expected table block, got {other:?}"),
     }
@@ -1575,6 +1645,69 @@ fn splits_table_rows_across_pages_when_needed() {
         .sum::<usize>();
 
     assert_eq!(total_rows, 4);
+}
+
+#[test]
+fn lays_out_centered_floating_table_using_preferred_width() {
+    let file = create_docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+              <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+            </Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+              <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+            </Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+              <w:body>
+                <w:p><w:r><w:t>Intro</w:t></w:r></w:p>
+                <w:tbl>
+                  <w:tblPr>
+                    <w:tblpPr w:leftFromText="142" w:rightFromText="142" w:vertAnchor="page" w:horzAnchor="margin" w:tblpXSpec="center" w:tblpY="2400"/>
+                    <w:tblW w:w="0" w:type="auto"/>
+                  </w:tblPr>
+                  <w:tblGrid>
+                    <w:gridCol w:w="2239"/>
+                    <w:gridCol w:w="2239"/>
+                  </w:tblGrid>
+                  <w:tr>
+                    <w:tc><w:p><w:r><w:t>학과</w:t></w:r></w:p></w:tc>
+                    <w:tc><w:p><w:r><w:t>컴퓨터공학과</w:t></w:r></w:p></w:tc>
+                  </w:tr>
+                </w:tbl>
+                <w:sectPr>
+                  <w:pgSz w:w="11906" w:h="16838"/>
+                  <w:pgMar w:top="1701" w:right="1440" w:bottom="1440" w:left="1440"/>
+                </w:sectPr>
+              </w:body>
+            </w:document>"#,
+        ),
+    ]);
+    let archive = OoxmlArchive::open_path(file.path()).expect("docx archive should open");
+    let package = parse_docx(&archive).expect("docx package should parse");
+    let pages = layout_document(&archive, &package).expect("layout should succeed");
+
+    let floating_table = pages[0]
+        .blocks
+        .iter()
+        .find_map(|block| match block {
+            format_docx::LaidOutBlock::Table { x, y, width, .. } => Some((*x, *y, *width)),
+            _ => None,
+        })
+        .expect("floating table should exist");
+
+    assert!((floating_table.2 - 223.9).abs() < 0.5);
+    assert!((floating_table.0 - 185.1).abs() < 1.0);
+    assert!((floating_table.1 - 120.0).abs() < 0.5);
 }
 
 #[test]

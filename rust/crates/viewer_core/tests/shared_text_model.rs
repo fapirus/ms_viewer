@@ -1,6 +1,7 @@
 use viewer_core::model::{
-    Block, ImageReference, ListKind, ListMarker, ParagraphMetrics, TableCell, TableCellMerge,
-    TableRow, TextRun, TextStyle,
+    Block, FloatingTablePosition, ImageReference, ListKind, ListMarker, ParagraphMetrics,
+    TableAlignment, TableAnchor, TableCell, TableCellMerge, TableHorizontalPosition, TableLayout,
+    TableRow, TableVerticalPosition, TextRun, TextStyle,
 };
 
 #[test]
@@ -59,6 +60,20 @@ fn shared_text_model_can_be_constructed() {
             }],
         }],
         column_widths: vec![120.0, 240.0],
+        layout: TableLayout {
+            preferred_width: Some(240.0),
+            alignment: TableAlignment::Center,
+            floating: Some(FloatingTablePosition {
+                horz_anchor: TableAnchor::Margin,
+                vert_anchor: TableAnchor::Page,
+                x: None,
+                y: Some(480.0),
+                x_position: Some(TableHorizontalPosition::Center),
+                y_position: Some(TableVerticalPosition::Top),
+                left_from_text: 6.0,
+                right_from_text: 6.0,
+            }),
+        },
     };
 
     match paragraph {
@@ -86,10 +101,13 @@ fn shared_text_model_can_be_constructed() {
         Block::Table {
             rows,
             column_widths,
+            layout,
         } => {
             assert_eq!(rows.len(), 1);
             assert_eq!(rows[0].cells[0].column_span, 2);
             assert_eq!(column_widths, vec![120.0, 240.0]);
+            assert_eq!(layout.preferred_width, Some(240.0));
+            assert_eq!(layout.alignment, TableAlignment::Center);
         }
         _ => panic!("expected table block"),
     }

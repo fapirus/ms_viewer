@@ -341,6 +341,17 @@
     - table cell image node를 page render model에 포함
     - `fixtures/regression/docx_table_inline_image.docx` 추가
     - synthetic image-in-table test, path-based regression test, Flutter image sizing widget test 추가
+- [x] DOCX floating table positioning 보정
+  - Rust scope:
+    - `w:tblpPr`, `w:tblW`, `w:jc` 기반 float/center/preferred width 반영
+    - floating table이 inline flow 전체 폭을 점유하지 않도록 레이아웃 분리
+  - Tests:
+    - floating table metadata parser test
+    - centered floating table layout regression fixture
+  - Done:
+    - `TableLayout`/`FloatingTablePosition` 모델 추가
+    - centered floating table의 실제 bounds를 `page render model`에서 회귀 검증
+    - `fixtures/regression/docx_floating_table_intro.docx` 추가
 
 ### Typography and spacing
 - [x] DOCX 문단 간격과 기본 스타일 메트릭 보정

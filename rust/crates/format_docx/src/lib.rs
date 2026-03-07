@@ -2,9 +2,10 @@ use base64::Engine;
 use format_shared::{parse_package_relationships, resolve_relationship_target};
 use viewer_core::archive::OoxmlArchive;
 use viewer_core::model::{
-    Block, BoxNode, ImageNode, ImageReference, ListKind, ListMarker, PageRenderModel,
-    ParagraphMetrics, Rect, RenderNode, SelectionAnchor, TableCell, TableCellMerge, TableRow,
-    TextNode, TextRange, TextRun, TextStyle,
+    Block, BoxNode, FloatingTablePosition, ImageNode, ImageReference, ListKind, ListMarker,
+    PageRenderModel, ParagraphMetrics, Rect, RenderNode, SelectionAnchor, TableAlignment,
+    TableAnchor, TableCell, TableCellMerge, TableHorizontalPosition, TableLayout, TableRow,
+    TableVerticalPosition, TextNode, TextRange, TextRun, TextStyle,
 };
 use viewer_core::search::{search_pages, SearchMatch, SearchPage};
 use viewer_core::text::Script;
@@ -175,6 +176,15 @@ pub struct LaidOutTableRow {
     pub y: f32,
     pub height: f32,
     pub cells: Vec<LaidOutTableCell>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct LaidOutTablePlacement {
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+    pub rows: Vec<LaidOutTableRow>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -604,64 +614,84 @@ pub fn layout_document(
             Block::Table {
                 rows,
                 column_widths,
+                layout,
             } => {
-                let mut table_start_y = cursor_y;
-                let mut laid_out_rows = Vec::new();
+                let table_width =
+                    resolve_table_width(&layout, default_page_box.content.width, &column_widths);
 
-                for row in rows {
-                    let row_height = estimate_table_row_height(
-                        &row,
-                        default_page_box.content.width,
+                if let Some(floating) = &layout.floating {
+                    let placement = layout_floating_table(
+                        rows,
                         &column_widths,
+                        &layout,
+                        floating,
+                        &default_page_box,
                     );
-                    if cursor_y + row_height > content_bottom && !laid_out_rows.is_empty() {
+                    pages
+                        .last_mut()
+                        .expect("page exists")
+                        .blocks
+                        .push(LaidOutBlock::Table {
+                            x: placement.x,
+                            y: placement.y,
+                            width: placement.width,
+                            height: placement.height,
+                            rows: placement.rows,
+                        });
+                } else {
+                    let mut table_start_y = cursor_y;
+                    let mut laid_out_rows = Vec::new();
+
+                    for row in rows {
+                        let row_height =
+                            estimate_table_row_height(&row, table_width, &column_widths);
+                        if cursor_y + row_height > content_bottom && !laid_out_rows.is_empty() {
+                            let table_height = cursor_y - table_start_y;
+                            pages.last_mut().expect("page exists").blocks.push(
+                                LaidOutBlock::Table {
+                                    x: resolve_table_x(&default_page_box, table_width, &layout),
+                                    y: table_start_y,
+                                    width: table_width,
+                                    height: table_height,
+                                    rows: laid_out_rows,
+                                },
+                            );
+                            start_new_page(&mut pages, &mut cursor_y, &default_page_box);
+                            table_start_y = cursor_y;
+                            laid_out_rows = Vec::new();
+                        } else if cursor_y + row_height > content_bottom {
+                            start_new_page(&mut pages, &mut cursor_y, &default_page_box);
+                            table_start_y = cursor_y;
+                        }
+
+                        laid_out_rows.push(layout_table_row(
+                            &row,
+                            resolve_table_x(&default_page_box, table_width, &layout),
+                            cursor_y,
+                            table_width,
+                            row_height,
+                            &column_widths,
+                        ));
+                        cursor_y += row_height;
+                    }
+
+                    if !laid_out_rows.is_empty() {
                         let table_height = cursor_y - table_start_y;
                         pages
                             .last_mut()
                             .expect("page exists")
                             .blocks
                             .push(LaidOutBlock::Table {
-                                x: default_page_box.content.x,
+                                x: resolve_table_x(&default_page_box, table_width, &layout),
                                 y: table_start_y,
-                                width: default_page_box.content.width,
+                                width: table_width,
                                 height: table_height,
                                 rows: laid_out_rows,
                             });
-                        start_new_page(&mut pages, &mut cursor_y, &default_page_box);
-                        table_start_y = cursor_y;
-                        laid_out_rows = Vec::new();
-                    } else if cursor_y + row_height > content_bottom {
-                        start_new_page(&mut pages, &mut cursor_y, &default_page_box);
-                        table_start_y = cursor_y;
                     }
 
-                    laid_out_rows.push(layout_table_row(
-                        &row,
-                        default_page_box.content.x,
-                        cursor_y,
-                        default_page_box.content.width,
-                        row_height,
-                        &column_widths,
-                    ));
-                    cursor_y += row_height;
+                    cursor_y += 12.0;
                 }
-
-                if !laid_out_rows.is_empty() {
-                    let table_height = cursor_y - table_start_y;
-                    pages
-                        .last_mut()
-                        .expect("page exists")
-                        .blocks
-                        .push(LaidOutBlock::Table {
-                            x: default_page_box.content.x,
-                            y: table_start_y,
-                            width: default_page_box.content.width,
-                            height: table_height,
-                            rows: laid_out_rows,
-                        });
-                }
-
-                cursor_y += 12.0;
             }
             Block::Image { image } => {
                 let (image_width, image_height) =
@@ -1182,6 +1212,114 @@ fn start_new_page(pages: &mut Vec<DocxPageLayout>, cursor_y: &mut f32, page_box:
     *cursor_y = page_box.content.y;
 }
 
+fn layout_floating_table(
+    rows: Vec<TableRow>,
+    column_widths: &[f32],
+    layout: &TableLayout,
+    floating: &FloatingTablePosition,
+    page_box: &PageBox,
+) -> LaidOutTablePlacement {
+    let table_width = resolve_table_width(layout, page_box.content.width, column_widths);
+    let x = resolve_floating_table_x(page_box, table_width, floating);
+    let start_y = resolve_floating_table_y(page_box, 0.0, floating);
+    let mut rows_layout = Vec::new();
+    let mut cursor_y = start_y;
+
+    for row in rows {
+        let row_height = estimate_table_row_height(&row, table_width, column_widths);
+        rows_layout.push(layout_table_row(
+            &row,
+            x,
+            cursor_y,
+            table_width,
+            row_height,
+            column_widths,
+        ));
+        cursor_y += row_height;
+    }
+
+    LaidOutTablePlacement {
+        x,
+        y: start_y,
+        width: table_width,
+        height: cursor_y - start_y,
+        rows: rows_layout,
+    }
+}
+
+fn resolve_table_width(layout: &TableLayout, content_width: f32, column_widths: &[f32]) -> f32 {
+    let preferred_width = layout
+        .preferred_width
+        .map(|width| {
+            if width <= 1.0 {
+                content_width * width
+            } else {
+                width
+            }
+        })
+        .or_else(|| {
+            let sum = column_widths.iter().sum::<f32>();
+            (sum > 0.0).then_some(sum)
+        });
+
+    preferred_width
+        .unwrap_or(content_width)
+        .min(content_width)
+        .max(24.0)
+}
+
+fn resolve_table_x(page_box: &PageBox, table_width: f32, layout: &TableLayout) -> f32 {
+    match layout.alignment {
+        TableAlignment::Center => {
+            page_box.content.x + ((page_box.content.width - table_width) / 2.0)
+        }
+        TableAlignment::Right => page_box.content.x + (page_box.content.width - table_width),
+        TableAlignment::Left => page_box.content.x,
+    }
+}
+
+fn resolve_floating_table_x(
+    page_box: &PageBox,
+    table_width: f32,
+    floating: &FloatingTablePosition,
+) -> f32 {
+    let (anchor_x, anchor_width) = match floating.horz_anchor {
+        TableAnchor::Page => (0.0, page_box.width),
+        TableAnchor::Margin | TableAnchor::Text => (page_box.content.x, page_box.content.width),
+    };
+
+    if let Some(position) = floating.x_position.as_ref() {
+        return match position {
+            TableHorizontalPosition::Center => anchor_x + ((anchor_width - table_width) / 2.0),
+            TableHorizontalPosition::Right => anchor_x + (anchor_width - table_width),
+            TableHorizontalPosition::Left => anchor_x,
+        };
+    }
+
+    floating.x.unwrap_or(anchor_x)
+}
+
+fn resolve_floating_table_y(
+    page_box: &PageBox,
+    table_height: f32,
+    floating: &FloatingTablePosition,
+) -> f32 {
+    let (anchor_y, anchor_height) = match floating.vert_anchor {
+        TableAnchor::Page => (0.0, page_box.height),
+        TableAnchor::Margin | TableAnchor::Text => (page_box.content.y, page_box.content.height),
+    };
+
+    if let Some(position) = floating.y_position.as_ref() {
+        return match position {
+            TableVerticalPosition::Top => anchor_y,
+            TableVerticalPosition::Center => anchor_y + ((anchor_height - table_height) / 2.0),
+            TableVerticalPosition::Bottom => anchor_y + (anchor_height - table_height),
+        };
+    }
+
+    floating.y.unwrap_or(anchor_y)
+}
+
 fn layout_table_row(
     row: &TableRow,
     x: f32,
@@ -1488,6 +1626,7 @@ fn parse_table_block(
     numbering: &NumberingCatalog,
     package: &DocxPackage,
 ) -> Result<Block, ViewerError> {
+    let layout = parse_table_layout(table);
     let column_widths = table
         .child("tblGrid")
         .map(|grid| {
@@ -1520,6 +1659,89 @@ fn parse_table_block(
     Ok(Block::Table {
         rows,
         column_widths,
+        layout,
+    })
+}
+
+fn parse_table_layout(table: &viewer_core::xml::XmlElement) -> TableLayout {
+    let properties = table.child("tblPr");
+    let preferred_width = properties
+        .and_then(|node| node.child("tblW"))
+        .and_then(parse_table_width);
+    let alignment = properties
+        .and_then(|node| node.child("jc"))
+        .and_then(|node| node.attribute("val"))
+        .map(|value| match value {
+            "center" => TableAlignment::Center,
+            "right" => TableAlignment::Right,
+            _ => TableAlignment::Left,
+        })
+        .unwrap_or(TableAlignment::Left);
+    let floating = properties
+        .and_then(|node| node.child("tblpPr"))
+        .map(parse_floating_table_position);
+
+    TableLayout {
+        preferred_width,
+        alignment,
+        floating,
+    }
+}
+
+fn parse_table_width(node: &viewer_core::xml::XmlElement) -> Option<f32> {
+    let width_type = node.attribute("type").unwrap_or("auto");
+    let width = node.attribute("w")?;
+
+    match width_type {
+        "dxa" => parse_twips_value(width),
+        "pct" => width
+            .parse::<f32>()
+            .ok()
+            .map(|value| (value / 50.0) / 100.0),
+        _ => None,
+    }
+}
+
+fn parse_floating_table_position(node: &viewer_core::xml::XmlElement) -> FloatingTablePosition {
+    FloatingTablePosition {
+        horz_anchor: parse_table_anchor(node.attribute("horzAnchor")),
+        vert_anchor: parse_table_anchor(node.attribute("vertAnchor")),
+        x: node.attribute("tblpX").and_then(parse_twips_value),
+        y: node.attribute("tblpY").and_then(parse_twips_value),
+        x_position: parse_horizontal_position(node.attribute("tblpXSpec")),
+        y_position: parse_vertical_position(node.attribute("tblpYSpec")),
+        left_from_text: node
+            .attribute("leftFromText")
+            .and_then(parse_twips_value)
+            .unwrap_or(0.0),
+        right_from_text: node
+            .attribute("rightFromText")
+            .and_then(parse_twips_value)
+            .unwrap_or(0.0),
+    }
+}
+
+fn parse_table_anchor(value: Option<&str>) -> TableAnchor {
+    match value {
+        Some("page") => TableAnchor::Page,
+        Some("text") => TableAnchor::Text,
+        _ => TableAnchor::Margin,
+    }
+}
+
+fn parse_horizontal_position(value: Option<&str>) -> Option<TableHorizontalPosition> {
+    value.map(|position| match position {
+        "center" => TableHorizontalPosition::Center,
+        "right" => TableHorizontalPosition::Right,
+        _ => TableHorizontalPosition::Left,
+    })
+}
+
+fn parse_vertical_position(value: Option<&str>) -> Option<TableVerticalPosition> {
+    value.map(|position| match position {
+        "center" => TableVerticalPosition::Center,
+        "bottom" => TableVerticalPosition::Bottom,
+        _ => TableVerticalPosition::Top,
     })
 }
 

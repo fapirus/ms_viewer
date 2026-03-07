@@ -113,6 +113,59 @@ pub struct TableRow {
     pub cells: Vec<TableCell>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum TableAlignment {
+    Left,
+    Center,
+    Right,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum TableAnchor {
+    Margin,
+    Page,
+    Text,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum TableHorizontalPosition {
+    Left,
+    Center,
+    Right,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum TableVerticalPosition {
+    Top,
+    Center,
+    Bottom,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct FloatingTablePosition {
+    pub horz_anchor: TableAnchor,
+    pub vert_anchor: TableAnchor,
+    pub x: Option<f32>,
+    pub y: Option<f32>,
+    pub x_position: Option<TableHorizontalPosition>,
+    pub y_position: Option<TableVerticalPosition>,
+    pub left_from_text: f32,
+    pub right_from_text: f32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct TableLayout {
+    pub preferred_width: Option<f32>,
+    pub alignment: TableAlignment,
+    pub floating: Option<FloatingTablePosition>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum Block {
@@ -124,6 +177,7 @@ pub enum Block {
     Table {
         rows: Vec<TableRow>,
         column_widths: Vec<f32>,
+        layout: TableLayout,
     },
     Image {
         image: ImageReference,

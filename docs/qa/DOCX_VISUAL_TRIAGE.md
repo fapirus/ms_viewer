@@ -13,7 +13,7 @@
 | Case | 기준 자료 | 현재 증상 | 원인 가설 | 우선순위 | 난이도 | 체크리스트 항목 | 최소 재현 fixture 후보 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `hello` | `issue/word/hello/1.png`, `2.png`, viewer 스크린샷 2장 | 페이지 1/2 경계가 Word와 다르고, 페이지 2 텍스트가 과소 렌더된다 | `w:lastRenderedPageBreak` 힌트를 무시하고 자체 줄배치만으로 페이지를 나눔. carry-over height와 빈 문단 spacing도 함께 영향 | P0 | 높음 | `DOCX 페이지 단위 계산 보정` | `docx_rendered_page_break.docx` |
-| `infinity` page 1 | `issue/word/infinity/1.png`, viewer page 1 스크린샷 | 표 시작 위치, 표 크기, 표 하단 이후 문단 흐름이 Word와 다르다 | `w:tblpPr`가 있는 floating table을 inline table처럼 처리하고 있음. preferred width, table position, cell padding 반영 부족 | P0 | 높음 | `DOCX 표 크기와 셀 내부 줄바꿈 보정` | `docx_floating_table_intro.docx` |
+| `infinity` page 1 | `issue/word/infinity/1.png`, viewer page 1 스크린샷 | 표 시작 위치, 표 크기, 표 하단 이후 문단 흐름이 Word와 다르다 | `w:tblpPr`가 있는 floating table을 inline table처럼 처리하고 있음. preferred width, table position, cell padding 반영 부족 | P0 | 높음 | `DOCX floating table positioning 보정` | `docx_floating_table_intro.docx` |
 | `infinity` page 4-5 | `issue/word/infinity/4.png`, `5.png`, viewer page 4-5 스크린샷 | 표 셀 내부 이미지가 빠지고 텍스트만 좁게 배치된다 | 표 셀 내부 `w:drawing`을 cell text flatten 과정에서 버리고 있음. row height도 이미지 크기를 반영하지 않음 | P0 | 높음 | `DOCX 표 내부 이미지 및 inline image 렌더 보정` | `docx_table_with_inline_images.docx` |
 | `infinity` 전체 | viewer page 2-8 스크린샷 | 문단 간격과 표/문단 사이 여백이 Word보다 빽빽하다 | `before/after`, line spacing, style paragraph metrics를 대부분 기본값으로 처리 | P1 | 중상 | `DOCX 문단 간격과 기본 스타일 메트릭 보정` | `docx_spacing_variants.docx` |
 | `hello`, `infinity` 공통 | viewer 스크린샷 전반 | 글자폭과 줄바꿈이 Word와 완전히 일치하지 않는다 | 추정 문자폭 기반 line breaking 한계. 실제 폰트 메트릭과 fallback 정밀도가 부족 | P2 | 매우 높음 | `DOCX 폰트 메트릭과 fallback 정밀도 보정` | `docx_cjk_width_mix.docx` |
@@ -30,11 +30,12 @@
   - `acceptance pass`를 닫기 전에 실제 macOS 데모에서 최신 스크린샷을 한 번 더 비교하는 편이 맞다.
 - `infinity`
   - 표 내부 이미지 누락은 해소됐다.
-  - 1페이지 표 위치와 크기는 Word와 아직 차이가 있다.
-  - 원인은 `floating table`을 여전히 inline table처럼 배치하는 구조 한계다.
+  - 1페이지 표 위치와 크기 차이는 `floating table` 처리 추가로 크게 줄었다.
+  - 실제 page model 기준 table outer bounds는 `x=185.7`, `y=619.5`, `width=223.9`로 고정된다.
+  - 남은 차이는 주로 Word 기본 폰트/테마 폰트 해석과 미세한 행 높이 차이 쪽이다.
 - 결론
   - 자동 테스트 기준으로는 `DOCX visual parity` 직전 상태다.
-  - 실제 시각 수용 기준으로는 `floating table positioning`을 별도 후속 작업으로 추가하는 편이 더 정확하다.
+  - 실제 시각 수용 기준으로는 최신 데모 스크린샷을 다시 받아 `hello`와 `infinity`를 한 번 더 비교한 뒤 acceptance를 닫는 편이 맞다.
 
 ## 추가 제안
 - `issue/word/JINWOOK/` 케이스를 같은 형식으로 추가하는 편이 좋다.
