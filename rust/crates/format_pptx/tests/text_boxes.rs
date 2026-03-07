@@ -3,6 +3,7 @@ use std::io::Write;
 
 use format_pptx::{
     parse_slide_text_boxes, SlidePlaceholderKind, SlidePlaceholderReference, SlideTextAlignment,
+    SlideTextVerticalAnchor,
 };
 use tempfile::tempdir;
 use viewer_core::archive::OoxmlArchive;
@@ -51,7 +52,7 @@ fn parses_slide_text_boxes_with_placeholder_bounds_and_runs() {
           </a:xfrm>
         </p:spPr>
         <p:txBody>
-          <a:bodyPr />
+          <a:bodyPr anchor="ctr" />
           <a:lstStyle />
           <a:p>
             <a:pPr algn="ctr" />
@@ -125,6 +126,7 @@ fn parses_slide_text_boxes_with_placeholder_bounds_and_runs() {
     );
     assert_eq!(title.bounds.as_ref().expect("bounds").x, 457_200);
     assert_eq!(title.bounds.as_ref().expect("bounds").width, 8_229_600);
+    assert_eq!(title.vertical_anchor, SlideTextVerticalAnchor::Center);
     assert_eq!(title.paragraphs.len(), 1);
     assert_eq!(
         title.paragraphs[0].alignment,

@@ -164,6 +164,14 @@ pub enum SlideTextAlignment {
     Justified,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SlideTextVerticalAnchor {
+    #[default]
+    Top,
+    Center,
+    Bottom,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct SlideTextRunStyle {
     pub bold: Option<bool>,
@@ -236,6 +244,7 @@ pub struct SlideTextBox {
     pub name: String,
     pub bounds: Option<EmuRectangle>,
     pub insets: SlideTextInsets,
+    pub vertical_anchor: SlideTextVerticalAnchor,
     wrap_none: bool,
     pub placeholder: Option<SlidePlaceholderReference>,
     style_sheet: SlideTextStyleSheet,
@@ -1636,6 +1645,10 @@ fn parse_text_box_shape_with_context(
         .map(parse_text_insets)
         .transpose()?
         .unwrap_or_default();
+    let vertical_anchor = body_properties
+        .map(parse_text_vertical_anchor)
+        .transpose()?
+        .unwrap_or_default();
     let wrap_none = body_properties.and_then(|body_properties| body_properties.attribute("wrap"))
         == Some("none");
     let placeholder = parse_placeholder_reference(non_visual)?;
@@ -1651,6 +1664,7 @@ fn parse_text_box_shape_with_context(
         name,
         bounds,
         insets,
+        vertical_anchor,
         wrap_none,
         placeholder,
         style_sheet,
@@ -2256,6 +2270,16 @@ fn parse_text_insets(body_properties: &XmlElement) -> Result<SlideTextInsets, Vi
     })
 }
 
+fn parse_text_vertical_anchor(
+    body_properties: &XmlElement,
+) -> Result<SlideTextVerticalAnchor, ViewerError> {
+    Ok(match body_properties.attribute("anchor") {
+        Some("ctr") => SlideTextVerticalAnchor::Center,
+        Some("b") => SlideTextVerticalAnchor::Bottom,
+        _ => SlideTextVerticalAnchor::Top,
+    })
+}
+
 fn parse_graphic_frame_table(
     graphic_frame: &XmlElement,
     coordinate_transform: &CoordinateTransform,
@@ -2780,6 +2804,7 @@ fn build_table_nodes(
                     name: table.name.clone(),
                     bounds: Some(cell_bounds),
                     insets: cell.margins.clone(),
+                    vertical_anchor: SlideTextVerticalAnchor::Top,
                     wrap_none: false,
                     placeholder: None,
                     style_sheet,
@@ -2868,75 +2893,47 @@ fn build_text_nodes(
     let bottom_inset = emu_to_points(text_box.insets.bottom);
     let content_width = (emu_to_points(bounds.width) - left_inset - right_inset).max(1.0);
     let base_x = emu_to_points(bounds.x) + left_inset;
-    let mut cursor_y = emu_to_points(bounds.y) + top_inset;
-    let max_bottom = emu_to_points(bounds.y + bounds.height) - bottom_inset;
+    let base_y = emu_to_points(bounds.y) + top_inset;
+    let available_height = (emu_to_points(bounds.height) - top_inset - bottom_inset).max(0.0);
+    let max_bottom = base_y + available_height;
+    let prepared_paragraphs =
+        prepare_text_box_paragraphs(text_box, theme_context, base_x, content_width);
+    let content_height = prepared_paragraphs
+        .iter()
+        .map(PreparedParagraph::total_height)
+        .sum::<f32>();
+    let extra_vertical_space = (available_height - content_height).max(0.0);
+    let mut cursor_y = match text_box.vertical_anchor {
+        SlideTextVerticalAnchor::Top => base_y,
+        SlideTextVerticalAnchor::Center => base_y + (extra_vertical_space / 2.0),
+        SlideTextVerticalAnchor::Bottom => base_y + extra_vertical_space,
+    };
 
-    'paragraphs: for paragraph in &text_box.paragraphs {
-        let resolved_style = resolve_paragraph_style_for_layout(text_box, paragraph);
-        let alignment = resolved_style
-            .alignment
-            .as_ref()
-            .map(slide_alignment_to_paragraph_alignment)
-            .unwrap_or(ParagraphAlignment::Left);
-        let paragraph_font_size = paragraph_default_font_size(
-            paragraph,
-            &resolved_style.default_run_style,
-            theme_context,
-        );
-        let spacing_before = resolve_spacing_points(
-            resolved_style.spacing_before.as_ref(),
-            paragraph_font_size,
-            0.0,
-        );
-        if cursor_y + spacing_before > max_bottom {
+    'paragraphs: for paragraph in prepared_paragraphs {
+        if cursor_y + paragraph.spacing_before > max_bottom {
             break;
         }
-        cursor_y += spacing_before;
+        cursor_y += paragraph.spacing_before;
 
-        let margin_left = resolved_style
-            .margin_left_emu
-            .map(emu_to_points)
-            .unwrap_or_else(|| paragraph.level.unwrap_or(0) as f32 * 18.0)
-            .max(0.0);
-        let indent = emu_to_points(resolved_style.indent_emu.unwrap_or(0));
-        let line_base_x = if indent > 0.0 {
-            base_x + margin_left + indent
-        } else {
-            base_x + margin_left
-        };
-        let line_available_width = (content_width - (line_base_x - base_x)).max(1.0);
-        let bullet_x = (base_x + margin_left + indent).max(base_x);
-        let bullet_style = resolve_bullet_text_style(
-            resolved_style.bullet.as_ref(),
-            &resolved_style.default_run_style,
-            theme_context,
-        );
-        let wrap_width = if text_box.wrap_none {
-            f32::MAX
-        } else {
-            line_available_width
-        };
-        let lines = wrap_paragraph_lines(
-            paragraph,
-            &resolved_style.default_run_style,
-            theme_context,
-            wrap_width,
-        );
-
-        for (line_index, line) in lines.into_iter().enumerate() {
-            let line_height = resolve_line_height(
-                line.max_font_size.max(paragraph_font_size),
-                resolved_style.line_spacing.as_ref(),
-            );
+        for (line_index, (line, line_height)) in paragraph
+            .lines
+            .into_iter()
+            .zip(paragraph.line_heights.into_iter())
+            .enumerate()
+        {
             if cursor_y + line_height > max_bottom {
                 break 'paragraphs;
             }
 
-            let mut cursor_x =
-                resolve_line_x(line_base_x, line_available_width, line.width, &alignment);
+            let mut cursor_x = resolve_line_x(
+                paragraph.line_base_x,
+                paragraph.line_available_width,
+                line.width,
+                &paragraph.alignment,
+            );
 
             if line_index == 0 {
-                if let Some((bullet_text, bullet_style)) = bullet_style.as_ref() {
+                if let Some((bullet_text, bullet_style)) = paragraph.bullet_style.as_ref() {
                     let bullet_width = estimate_text_width(bullet_text, bullet_style);
                     push_text_node(
                         nodes,
@@ -2944,7 +2941,7 @@ fn build_text_nodes(
                         text_offset,
                         bullet_text.clone(),
                         Rect {
-                            x: bullet_x,
+                            x: paragraph.bullet_x,
                             y: cursor_y,
                             width: bullet_width.max(1.0),
                             height: line_height,
@@ -2968,16 +2965,96 @@ fn build_text_nodes(
             cursor_y += line_height;
         }
 
-        let spacing_after = resolve_spacing_points(
-            resolved_style.spacing_after.as_ref(),
-            paragraph_font_size,
-            6.0,
-        );
-        if cursor_y + spacing_after > max_bottom {
+        if cursor_y + paragraph.spacing_after > max_bottom {
             break;
         }
-        cursor_y += spacing_after;
+        cursor_y += paragraph.spacing_after;
     }
+}
+
+fn prepare_text_box_paragraphs(
+    text_box: &SlideTextBox,
+    theme_context: Option<&ThemeContext>,
+    base_x: f32,
+    content_width: f32,
+) -> Vec<PreparedParagraph> {
+    text_box
+        .paragraphs
+        .iter()
+        .map(|paragraph| {
+            let resolved_style = resolve_paragraph_style_for_layout(text_box, paragraph);
+            let alignment = resolved_style
+                .alignment
+                .as_ref()
+                .map(slide_alignment_to_paragraph_alignment)
+                .unwrap_or(ParagraphAlignment::Left);
+            let paragraph_font_size = paragraph_default_font_size(
+                paragraph,
+                &resolved_style.default_run_style,
+                theme_context,
+            );
+            let spacing_before = resolve_spacing_points(
+                resolved_style.spacing_before.as_ref(),
+                paragraph_font_size,
+                0.0,
+            );
+            let spacing_after = resolve_spacing_points(
+                resolved_style.spacing_after.as_ref(),
+                paragraph_font_size,
+                6.0,
+            );
+            let margin_left = resolved_style
+                .margin_left_emu
+                .map(emu_to_points)
+                .unwrap_or_else(|| paragraph.level.unwrap_or(0) as f32 * 18.0)
+                .max(0.0);
+            let indent = emu_to_points(resolved_style.indent_emu.unwrap_or(0));
+            let line_base_x = if indent > 0.0 {
+                base_x + margin_left + indent
+            } else {
+                base_x + margin_left
+            };
+            let line_available_width = (content_width - (line_base_x - base_x)).max(1.0);
+            let bullet_x = (base_x + margin_left + indent).max(base_x);
+            let bullet_style = resolve_bullet_text_style(
+                resolved_style.bullet.as_ref(),
+                &resolved_style.default_run_style,
+                theme_context,
+            );
+            let wrap_width = if text_box.wrap_none {
+                f32::MAX
+            } else {
+                line_available_width
+            };
+            let lines = wrap_paragraph_lines(
+                paragraph,
+                &resolved_style.default_run_style,
+                theme_context,
+                wrap_width,
+            );
+            let line_heights = lines
+                .iter()
+                .map(|line| {
+                    resolve_line_height(
+                        line.max_font_size.max(paragraph_font_size),
+                        resolved_style.line_spacing.as_ref(),
+                    )
+                })
+                .collect();
+
+            PreparedParagraph {
+                alignment,
+                spacing_before,
+                spacing_after,
+                line_base_x,
+                line_available_width,
+                bullet_x,
+                bullet_style,
+                lines,
+                line_heights,
+            }
+        })
+        .collect()
 }
 
 fn slide_alignment_to_paragraph_alignment(alignment: &SlideTextAlignment) -> ParagraphAlignment {
@@ -3194,6 +3271,25 @@ struct WrappedLine {
     spans: Vec<WrappedTextSpan>,
     width: f32,
     max_font_size: f32,
+}
+
+#[derive(Debug, Clone)]
+struct PreparedParagraph {
+    alignment: ParagraphAlignment,
+    spacing_before: f32,
+    spacing_after: f32,
+    line_base_x: f32,
+    line_available_width: f32,
+    bullet_x: f32,
+    bullet_style: Option<(String, TextStyle)>,
+    lines: Vec<WrappedLine>,
+    line_heights: Vec<f32>,
+}
+
+impl PreparedParagraph {
+    fn total_height(&self) -> f32 {
+        self.spacing_before + self.line_heights.iter().sum::<f32>() + self.spacing_after
+    }
 }
 
 #[derive(Debug, Clone)]

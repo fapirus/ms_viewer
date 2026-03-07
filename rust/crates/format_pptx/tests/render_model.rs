@@ -1378,3 +1378,81 @@ fn render_model_preserves_shape_image_order_and_visual_attributes() {
     assert_eq!(overlay.fill_color_hex.as_deref(), Some("#FFFFFF80"));
     assert!(overlay.corner_radius.unwrap_or_default() > 0.0);
 }
+
+#[test]
+fn render_model_applies_vertical_center_anchor_inside_text_box() {
+    let dir = tempdir().expect("tempdir should exist");
+    let path = dir.path().join("render-model-vertical-anchor.pptx");
+    create_zip(
+        &path,
+        &[(
+            "ppt/slides/slide1.xml",
+            br#"
+<p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+       xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <p:cSld>
+    <p:spTree>
+      <p:sp>
+        <p:nvSpPr>
+          <p:cNvPr id="2" name="Centered Card" />
+          <p:cNvSpPr />
+          <p:nvPr />
+        </p:nvSpPr>
+        <p:spPr>
+          <a:xfrm>
+            <a:off x="1270000" y="1270000" />
+            <a:ext cx="3048000" cy="1524000" />
+          </a:xfrm>
+          <a:prstGeom prst="roundRect"><a:avLst /></a:prstGeom>
+          <a:solidFill><a:srgbClr val="EEEEEE" /></a:solidFill>
+        </p:spPr>
+        <p:txBody>
+          <a:bodyPr anchor="ctr" lIns="127000" rIns="127000" tIns="127000" bIns="127000" />
+          <a:lstStyle />
+          <a:p>
+            <a:r>
+              <a:rPr sz="2000"><a:latin typeface="Aptos" /></a:rPr>
+              <a:t>Centered label</a:t>
+            </a:r>
+          </a:p>
+        </p:txBody>
+      </p:sp>
+    </p:spTree>
+  </p:cSld>
+</p:sld>
+"#,
+        )],
+    );
+
+    let archive = OoxmlArchive::open_path(&path).expect("archive should open");
+    let slide_tree = PptxSlideTree {
+        presentation_part: "ppt/presentation.xml".to_string(),
+        presentation_size: Some(PresentationSize {
+            width_emu: 9_144_000,
+            height_emu: 6_858_000,
+        }),
+        slides: vec![SlideReference {
+            slide_id: 256,
+            relationship_id: "rIdSlide1".to_string(),
+            part_name: "ppt/slides/slide1.xml".to_string(),
+            layout_part_name: None,
+            notes_part_name: None,
+            has_transition: false,
+            ignored_animation_nodes: 0,
+        }],
+        slide_masters: Vec::new(),
+    };
+
+    let page = build_slide_render_model(&archive, &slide_tree, 0).expect("render model");
+    let text = page
+        .nodes
+        .iter()
+        .find_map(|node| match node {
+            RenderNode::Text(node) => Some(node),
+            _ => None,
+        })
+        .expect("text node");
+
+    assert!(text.bounds.y > 135.0);
+    assert!(text.bounds.y < 155.0);
+}

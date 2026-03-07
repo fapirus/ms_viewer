@@ -655,6 +655,13 @@
     - last-glyph clipping regression fixture
     - mixed Korean/Latin title wrapping regression fixture
     - `wrap=\"none\"` text box regression fixture
+- [x] PPTX text box vertical anchor 보정
+  - Notes:
+    - `fixday` slide 5~6은 `bodyPr anchor=\"ctr\"`를 많이 사용하지만, 엔진은 상단 기준으로만 텍스트를 배치하고 있었다
+    - 카드/오버레이 내부 텍스트 배치가 어긋나는 핵심 원인이므로 visual parity 전에 반영한다
+  - Tests:
+    - `anchor=\"ctr\"` parser regression fixture
+    - centered card vertical placement regression fixture
 - [x] PPTX shape/image transform 및 crop 보정
   - Tests:
     - image crop regression fixture
