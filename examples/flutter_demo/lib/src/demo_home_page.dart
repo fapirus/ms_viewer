@@ -24,11 +24,13 @@ class DemoHomePage extends StatefulWidget {
     required this.viewerPlatform,
     required this.assetBundle,
     this.pickFiles = _defaultPickFiles,
+    this.supportsDesktopDropOverride,
   });
 
   final platform.MsViewerPlatform viewerPlatform;
   final AssetBundle assetBundle;
   final DemoFilePicker pickFiles;
+  final bool? supportsDesktopDropOverride;
 
   @override
   State<DemoHomePage> createState() => _DemoHomePageState();
@@ -42,10 +44,11 @@ class _DemoHomePageState extends State<DemoHomePage> {
   bool _dragging = false;
 
   bool get _supportsDesktopDrop =>
-      !kIsWeb &&
-      (defaultTargetPlatform == TargetPlatform.macOS ||
-          defaultTargetPlatform == TargetPlatform.windows ||
-          defaultTargetPlatform == TargetPlatform.linux);
+      widget.supportsDesktopDropOverride ??
+      (!kIsWeb &&
+          (defaultTargetPlatform == TargetPlatform.macOS ||
+              defaultTargetPlatform == TargetPlatform.windows ||
+              defaultTargetPlatform == TargetPlatform.linux));
 
   @override
   void initState() {
@@ -77,13 +80,15 @@ class _DemoHomePageState extends State<DemoHomePage> {
   }
 
   Future<void> _openDroppedFiles(List<XFile> files) async {
-    final added = <DemoDocumentEntry>[];
-    for (final file in files) {
-      if (file.path.isEmpty) {
-        continue;
-      }
-      added.add(_importedEntry(file.path, DemoDocumentOrigin.dropped));
-    }
+    await handleDroppedPaths(
+      files.map((file) => file.path).where((path) => path.isNotEmpty).toList(),
+    );
+  }
+
+  Future<void> handleDroppedPaths(List<String> paths) async {
+    final added = paths
+        .map((path) => _importedEntry(path, DemoDocumentOrigin.dropped))
+        .toList(growable: false);
     if (added.isEmpty) {
       return;
     }
@@ -92,7 +97,7 @@ class _DemoHomePageState extends State<DemoHomePage> {
       _imports.insertAll(0, added.reversed);
       _dragging = false;
     });
-    unawaited(_selectEntry(added.first));
+    await _selectEntry(added.first);
   }
 
   DemoDocumentEntry _importedEntry(String path, DemoDocumentOrigin origin) {
@@ -147,7 +152,8 @@ class _DemoHomePageState extends State<DemoHomePage> {
       return;
     }
 
-    if (entry.origin == DemoDocumentOrigin.picked &&
+    if ((entry.origin == DemoDocumentOrigin.picked ||
+            entry.origin == DemoDocumentOrigin.dropped) &&
         entry.kind == DocumentKind.docx &&
         entry.location != null) {
       await _controller.openDocument(

@@ -276,7 +276,8 @@
     - password-required 오류 표시
   - Tests:
     - picked docx open smoke test
-- [ ] demo desktop drop DOCX 실연동
+- [x] demo desktop drop DOCX 실연동
+  - Done: dropped docx now uses same real path open flow as picked docx, smoke covers dropped path open
   - Demo scope:
     - dropped `.docx`를 실제 engine으로 open
   - Tests:

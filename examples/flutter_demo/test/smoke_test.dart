@@ -40,6 +40,7 @@ void main() {
           viewerPlatform: fakePlatform,
           assetBundle: _FakeAssetBundle(),
           pickFiles: () async => const ['/tmp/picked.docx'],
+          supportsDesktopDropOverride: true,
         ),
       ),
     );
@@ -51,6 +52,28 @@ void main() {
     expect(fakePlatform.openCallCount, 2);
     expect(fakePlatform.openSourceKinds.last, platform.DocumentSourceKind.path);
     expect(find.text('picked.docx'), findsWidgets);
+  });
+
+  testWidgets('demo app opens dropped docx through path source', (tester) async {
+    final fakePlatform = _FakeDemoPlatform();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: DemoHomePage(
+          viewerPlatform: fakePlatform,
+          assetBundle: _FakeAssetBundle(),
+          pickFiles: () async => const [],
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final state = tester.state(find.byType(DemoHomePage)) as dynamic;
+    await state.handleDroppedPaths(const ['/tmp/dropped.docx']);
+    await tester.pumpAndSettle();
+
+    expect(fakePlatform.openCallCount, 2);
+    expect(fakePlatform.openSourceKinds.last, platform.DocumentSourceKind.path);
+    expect(find.text('dropped.docx'), findsWidgets);
   });
 }
 
