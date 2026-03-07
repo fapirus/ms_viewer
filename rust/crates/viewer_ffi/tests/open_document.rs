@@ -408,6 +408,119 @@ fn fetches_first_docx_page_render_model() {
 }
 
 #[test]
+fn fetches_first_pptx_slide_render_model() {
+    let file = create_package(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+              <Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/>
+              <Override PartName="/ppt/slides/slide1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>
+            </Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+              <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="ppt/presentation.xml"/>
+            </Relationships>"#,
+        ),
+        (
+            "ppt/presentation.xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <p:presentation xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+                            xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+              <p:sldSz cx="9144000" cy="6858000" />
+              <p:sldIdLst>
+                <p:sldId id="256" r:id="rId2" />
+              </p:sldIdLst>
+            </p:presentation>"#,
+        ),
+        (
+            "ppt/_rels/presentation.xml.rels",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+              <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide1.xml"/>
+            </Relationships>"#,
+        ),
+        (
+            "ppt/slides/slide1.xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+                   xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+              <p:cSld>
+                <p:spTree>
+                  <p:sp>
+                    <p:nvSpPr>
+                      <p:cNvPr id="2" name="Title 1" />
+                      <p:cNvSpPr />
+                      <p:nvPr>
+                        <p:ph type="title" />
+                      </p:nvPr>
+                    </p:nvSpPr>
+                    <p:spPr>
+                      <a:xfrm>
+                        <a:off x="127000" y="254000" />
+                        <a:ext cx="3048000" cy="914400" />
+                      </a:xfrm>
+                    </p:spPr>
+                    <p:txBody>
+                      <a:bodyPr />
+                      <a:lstStyle />
+                      <a:p>
+                        <a:pPr algn="ctr" />
+                        <a:r>
+                          <a:rPr sz="2400" b="1">
+                            <a:latin typeface="Aptos" />
+                          </a:rPr>
+                          <a:t>PPTX Title</a:t>
+                        </a:r>
+                      </a:p>
+                    </p:txBody>
+                  </p:sp>
+                </p:spTree>
+              </p:cSld>
+            </p:sld>"#,
+        ),
+        (
+            "ppt/slides/_rels/slide1.xml.rels",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships" />"#,
+        ),
+    ]);
+    let path = file.path().to_string_lossy().to_string();
+    let document_id = format!("path:{path}");
+
+    let response = get_page_render_model(GetPageRenderModelRequest {
+        source: DocumentSource::Path(path),
+        document_id,
+        page_index: 0,
+        options: OpenOptions::default(),
+    });
+
+    match response {
+        GetPageRenderModelResponse::Success(page) => {
+            let text_nodes = page
+                .nodes
+                .iter()
+                .filter_map(|node| match node {
+                    viewer_core::model::RenderNode::Text(text) => Some(text),
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+
+            assert_eq!(page.page_index, 0);
+            assert_eq!(page.width, 720.0);
+            assert_eq!(page.height, 540.0);
+            assert_eq!(text_nodes.len(), 1);
+            assert_eq!(text_nodes[0].text, "PPTX Title");
+            assert!(!page.selection_anchors.is_empty());
+        }
+        other => panic!("expected page render model, got {other:?}"),
+    }
+}
+
+#[test]
 fn invalid_page_index_maps_to_invalid_document_error() {
     let file = create_package(&[
         (
@@ -433,6 +546,77 @@ fn invalid_page_index_maps_to_invalid_document_error() {
                 <w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"/></w:sectPr>
               </w:body>
             </w:document>"#,
+        ),
+    ]);
+    let path = file.path().to_string_lossy().to_string();
+
+    let response = get_page_render_model(GetPageRenderModelRequest {
+        source: DocumentSource::Path(path),
+        document_id: "unused".to_string(),
+        page_index: 9,
+        options: OpenOptions::default(),
+    });
+
+    match response {
+        GetPageRenderModelResponse::Error(error) => {
+            assert_eq!(
+                error.code,
+                viewer_core::wire::ViewerErrorCode::InvalidDocument
+            );
+        }
+        other => panic!("expected error, got {other:?}"),
+    }
+}
+
+#[test]
+fn invalid_pptx_slide_index_maps_to_invalid_document_error() {
+    let file = create_package(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+              <Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/>
+              <Override PartName="/ppt/slides/slide1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>
+            </Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+              <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="ppt/presentation.xml"/>
+            </Relationships>"#,
+        ),
+        (
+            "ppt/presentation.xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <p:presentation xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+                            xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+              <p:sldSz cx="9144000" cy="6858000" />
+              <p:sldIdLst>
+                <p:sldId id="256" r:id="rId2" />
+              </p:sldIdLst>
+            </p:presentation>"#,
+        ),
+        (
+            "ppt/_rels/presentation.xml.rels",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+              <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide1.xml"/>
+            </Relationships>"#,
+        ),
+        (
+            "ppt/slides/slide1.xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
+              <p:cSld>
+                <p:spTree />
+              </p:cSld>
+            </p:sld>"#,
+        ),
+        (
+            "ppt/slides/_rels/slide1.xml.rels",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships" />"#,
         ),
     ]);
     let path = file.path().to_string_lossy().to_string();

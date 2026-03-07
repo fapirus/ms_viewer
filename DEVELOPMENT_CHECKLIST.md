@@ -554,7 +554,10 @@
 - 권장 브랜치 전략: `PPTX MVP` 브랜치와 별도 `PPTX demo integration` 브랜치로 분리한다.
 
 ### Rust and FFI
-- [ ] PPTX slide render model FFI endpoint 연결
+- [x] PPTX slide render model FFI endpoint 연결
+  - Done:
+    - `viewer_ffi`에서 문서 kind를 감지해 PPTX는 `build_slide_render_model(...)`로 slide fetch 분기
+    - DOCX/XLSX 경로와 충돌하지 않도록 source -> archive helper 분리
   - Tests:
     - first slide fetch fixture test
     - invalid slide index error mapping test
