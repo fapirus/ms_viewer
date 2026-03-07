@@ -99,6 +99,28 @@ void main() {
     expect(find.text('dropped.docx'), findsWidgets);
   });
 
+  testWidgets('demo app opens dropped pptx through path source', (tester) async {
+    final fakePlatform = _FakeDemoPlatform();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: DemoHomePage(
+          viewerPlatform: fakePlatform,
+          assetBundle: _FakeAssetBundle(),
+          pickFiles: () async => const [],
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final state = tester.state(find.byType(DemoHomePage)) as dynamic;
+    await state.handleDroppedPaths(const ['/tmp/dropped.pptx']);
+    await tester.pumpAndSettle();
+
+    expect(fakePlatform.openCallCount, 2);
+    expect(fakePlatform.openSourceKinds.last, platform.DocumentSourceKind.path);
+    expect(find.text('dropped.pptx'), findsWidgets);
+  });
+
   testWidgets('demo app opens fixture pptx through bytes source', (tester) async {
     final fakePlatform = _FakeDemoPlatform();
     await tester.pumpWidget(

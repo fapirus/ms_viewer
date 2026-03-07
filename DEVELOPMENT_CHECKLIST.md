@@ -598,7 +598,10 @@
   - Done:
     - picked `.pptx` import가 실제 engine path open을 타도록 분기 확장
     - picked `.pptx` smoke test 추가
-- [ ] demo desktop drop PPTX 실연동
+- [x] demo desktop drop PPTX 실연동
+  - Done:
+    - dropped `.pptx` import가 실제 engine path open을 타도록 분기 확장
+    - dropped `.pptx` smoke test 추가
 - [ ] PPTX demo real integration acceptance pass
   - Acceptance checks:
     - fixture pptx opens through real engine path

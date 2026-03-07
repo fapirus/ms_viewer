@@ -116,7 +116,7 @@ class _DemoHomePageState extends State<DemoHomePage> {
       (DemoDocumentOrigin.dropped, 'docx') =>
         'External DOCX file. Real engine open is wired in the desktop demo.',
       (DemoDocumentOrigin.dropped, 'pptx') =>
-        'External PPTX file. Desktop drop wiring is handled in the next demo step.',
+        'External PPTX file. Real engine open is wired in the desktop demo.',
       (_, 'xlsx') => 'XLSX parser and renderer are not implemented yet.',
       (_, 'pptx') =>
         'External PPTX file. Real engine open will be wired in the desktop demo.',
@@ -188,7 +188,7 @@ class _DemoHomePageState extends State<DemoHomePage> {
     }
 
     if (entry.origin == DemoDocumentOrigin.dropped) {
-      return entry.kind == DocumentKind.docx;
+      return entry.kind == DocumentKind.docx || entry.kind == DocumentKind.pptx;
     }
 
     return false;
