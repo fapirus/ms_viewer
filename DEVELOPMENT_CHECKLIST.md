@@ -293,13 +293,14 @@
 
 ## Phase 1.6: DOCX visual parity pass
 ### Visual regression triage
-- [ ] issue 기반 DOCX 시각 회귀 분류 규칙 정리
+- [x] issue 기반 DOCX 시각 회귀 분류 규칙 정리
   - Scope:
     - `issue/word/*` 기준으로 페이지 분할, 표, 이미지, 간격, 폰트 차이를 분류
     - 각 이슈는 원인 가설과 재현 조건을 남기고 최소 재현 fixture 후보를 뽑는다
   - Done:
     - 우선순위 테이블 작성
     - 회귀 방지용 최소 fixture 후보 확정
+    - `docs/qa/DOCX_VISUAL_TRIAGE.md`에 현재 실문서 분류 결과 반영
 
 ### Pagination correctness
 - [ ] DOCX 페이지 단위 계산 보정
