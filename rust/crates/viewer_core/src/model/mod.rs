@@ -50,6 +50,8 @@ pub struct TextStyle {
     pub bold: bool,
     pub italic: bool,
     pub color_hex: String,
+    pub gradient_end_color_hex: Option<String>,
+    pub gradient_angle_degrees: Option<f32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

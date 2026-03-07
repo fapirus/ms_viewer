@@ -633,18 +633,20 @@
     - 수동 점검에서 잔존 여부 확인
 
 ### Geometry and typography
-- [ ] PPTX 텍스트 박스 정렬과 줄바꿈 보정
+- [x] PPTX 텍스트 박스 정렬과 줄바꿈 보정
   - Tests:
     - centered title regression fixture
     - mixed font line break regression fixture
+    - bullet/default paragraph indent regression fixture
 - [ ] PPTX shape/image transform 및 crop 보정
   - Tests:
     - image crop regression fixture
     - rotated shape bounds regression fixture
-- [ ] PPTX theme font와 기본 스타일 메트릭 보정
+- [x] PPTX theme font와 기본 스타일 메트릭 보정
   - Tests:
     - theme font regression fixture
     - line spacing regression fixture
+    - gradient title/default fill regression fixture
 
 ### Acceptance
 - [ ] PPTX visual parity acceptance pass

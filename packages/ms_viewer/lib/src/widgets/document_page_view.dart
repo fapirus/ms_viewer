@@ -164,6 +164,7 @@ class _PageRenderPainter extends CustomPainter {
           final painter = buildRenderTextPainter(
             node: node,
             platform: platform,
+            scaleX: scaleX,
             scaleY: scaleY,
           )..layout();
           painter.paint(
@@ -251,6 +252,7 @@ Shader _buildLinearGradientShader(
 TextPainter buildRenderTextPainter({
   required TextRenderNodeModel node,
   required ViewerPlatform platform,
+  required double scaleX,
   required double scaleY,
 }) {
   final script = scriptKindForText(node.text);
@@ -259,6 +261,26 @@ TextPainter buildRenderTextPainter({
     requested: node.style.fontFamily,
     script: script,
   );
+
+  final baseColor = _parseColor(node.style.colorHex) ?? Colors.black;
+  final gradientEndColor = _parseColor(node.style.gradientEndColorHex);
+  final Paint? foreground;
+  if (gradientEndColor == null) {
+    foreground = null;
+  } else {
+    foreground = Paint()
+      ..shader = _buildLinearGradientShader(
+        Rect.fromLTWH(
+          0,
+          0,
+          node.bounds.width * scaleX,
+          node.bounds.height * scaleY,
+        ),
+        baseColor,
+        gradientEndColor,
+        node.style.gradientAngleDegrees ?? 0,
+      );
+  }
 
   return TextPainter(
     text: TextSpan(
@@ -273,7 +295,8 @@ TextPainter buildRenderTextPainter({
         fontSize: node.style.fontSize * scaleY,
         fontWeight: node.style.bold ? FontWeight.w700 : FontWeight.w400,
         fontStyle: node.style.italic ? FontStyle.italic : FontStyle.normal,
-        color: _parseColor(node.style.colorHex),
+        color: foreground == null ? baseColor : null,
+        foreground: foreground,
       ),
     ),
     textDirection: TextDirection.ltr,

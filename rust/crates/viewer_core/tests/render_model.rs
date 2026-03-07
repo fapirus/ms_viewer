@@ -22,6 +22,8 @@ fn page_render_model_serializes_with_expected_shape() {
                 bold: false,
                 italic: false,
                 color_hex: "#000000".to_string(),
+                gradient_end_color_hex: None,
+                gradient_angle_degrees: None,
             },
             range: TextRange { start: 0, end: 5 },
         })],

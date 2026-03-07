@@ -100,4 +100,35 @@ void main() {
     expect(node.contentType, 'image/png');
     expect(node.dataBase64, 'aGVsbG8=');
   });
+
+  test('page render model decodes gradient text style fields', () {
+    final page = PageRenderModel.fromJson({
+      'pageIndex': 0,
+      'width': 720.0,
+      'height': 540.0,
+      'nodes': [
+        {
+          'type': 'text',
+          'text': 'Theme Title',
+          'bounds': {'x': 32.0, 'y': 48.0, 'width': 240.0, 'height': 54.0},
+          'style': {
+            'fontFamily': '맑은 고딕',
+            'fontSize': 48.0,
+            'bold': true,
+            'italic': false,
+            'colorHex': '#003EA7',
+            'gradientEndColorHex': '#70AD47',
+            'gradientAngleDegrees': 32.0,
+          },
+          'range': {'start': 0, 'end': 11},
+        },
+      ],
+      'selectionAnchors': const [],
+    });
+
+    final node = page.nodes.single as TextRenderNodeModel;
+    expect(node.style.colorHex, '#003EA7');
+    expect(node.style.gradientEndColorHex, '#70AD47');
+    expect(node.style.gradientAngleDegrees, 32.0);
+  });
 }

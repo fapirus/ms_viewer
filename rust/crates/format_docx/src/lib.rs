@@ -2408,6 +2408,8 @@ fn materialize_text_style_for_script(style: &ResolvedTextStyle, script: Script) 
         bold: style.bold.unwrap_or(fallback.bold),
         italic: style.italic.unwrap_or(fallback.italic),
         color_hex: style.color_hex.clone().unwrap_or(fallback.color_hex),
+        gradient_end_color_hex: None,
+        gradient_angle_degrees: None,
     }
 }
 
@@ -2551,5 +2553,7 @@ fn default_text_style() -> TextStyle {
         bold: false,
         italic: false,
         color_hex: "#000000".to_string(),
+        gradient_end_color_hex: None,
+        gradient_angle_degrees: None,
     }
 }

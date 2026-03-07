@@ -22,6 +22,7 @@ void main() {
     final painter = buildRenderTextPainter(
       node: node,
       platform: ViewerPlatform.macOs,
+      scaleX: 1.0,
       scaleY: 1.0,
     )..layout();
 
@@ -227,5 +228,33 @@ void main() {
 
     expect(find.byType(DocumentPageView), findsOneWidget);
     expect(find.byType(CustomPaint), findsWidgets);
+  });
+
+  test('render text painter supports gradient text styles', () {
+    final node = TextRenderNodeModel.fromJson({
+      'type': 'text',
+      'text': 'Theme Title',
+      'bounds': {'x': 32.0, 'y': 48.0, 'width': 240.0, 'height': 54.0},
+      'style': {
+        'fontFamily': '맑은 고딕',
+        'fontSize': 48.0,
+        'bold': true,
+        'italic': false,
+        'colorHex': '#003EA7',
+        'gradientEndColorHex': '#70AD47',
+        'gradientAngleDegrees': 32.0,
+      },
+      'range': {'start': 0, 'end': 11},
+    });
+
+    final painter = buildRenderTextPainter(
+      node: node,
+      platform: ViewerPlatform.macOs,
+      scaleX: 1.0,
+      scaleY: 1.0,
+    )..layout();
+
+    expect(painter.maxLines, 1);
+    expect(painter.didExceedMaxLines, isFalse);
   });
 }

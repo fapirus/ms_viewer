@@ -164,12 +164,45 @@ pub enum SlideTextAlignment {
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct SlideTextRunStyle {
-    pub bold: bool,
-    pub italic: bool,
+    pub bold: Option<bool>,
+    pub italic: Option<bool>,
     pub font_size_centipoints: Option<u32>,
     pub font_face: Option<String>,
     pub east_asia_font_face: Option<String>,
-    pub color: Option<String>,
+    pub fill: Option<ShapeFill>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum SlideBulletStyle {
+    None,
+    Character {
+        character: String,
+        font_face: Option<String>,
+        fill: Option<ShapeFill>,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum SlideSpacing {
+    Points(i64),
+    Percent(i32),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+struct SlideParagraphStyle {
+    alignment: Option<SlideTextAlignment>,
+    margin_left_emu: Option<i64>,
+    indent_emu: Option<i64>,
+    line_spacing: Option<SlideSpacing>,
+    spacing_before: Option<SlideSpacing>,
+    spacing_after: Option<SlideSpacing>,
+    bullet: Option<SlideBulletStyle>,
+    default_run_style: SlideTextRunStyle,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+struct SlideTextStyleSheet {
+    levels: HashMap<u32, SlideParagraphStyle>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -182,6 +215,7 @@ pub struct SlideTextRun {
 pub struct SlideTextParagraph {
     pub alignment: Option<SlideTextAlignment>,
     pub level: Option<u32>,
+    style_overrides: SlideParagraphStyle,
     pub runs: Vec<SlideTextRun>,
 }
 
@@ -200,6 +234,7 @@ pub struct SlideTextBox {
     pub bounds: Option<EmuRectangle>,
     pub insets: SlideTextInsets,
     pub placeholder: Option<SlidePlaceholderReference>,
+    style_sheet: SlideTextStyleSheet,
     pub paragraphs: Vec<SlideTextParagraph>,
 }
 
@@ -231,6 +266,8 @@ pub struct SlideTable {
 struct ThemeContext {
     scheme_colors: HashMap<String, String>,
     color_mapping: HashMap<String, String>,
+    font_scheme: ThemeFontScheme,
+    text_styles: MasterTextStyles,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -245,6 +282,26 @@ struct CoordinateTransform {
 struct PlaceholderTemplate {
     bounds: Option<EmuRectangle>,
     insets: SlideTextInsets,
+    style_sheet: SlideTextStyleSheet,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+struct ThemeFontScheme {
+    major_latin: Option<String>,
+    minor_latin: Option<String>,
+    major_east_asia: Option<String>,
+    minor_east_asia: Option<String>,
+    major_complex_script: Option<String>,
+    minor_complex_script: Option<String>,
+    major_hang: Option<String>,
+    minor_hang: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+struct MasterTextStyles {
+    title: SlideTextStyleSheet,
+    body: SlideTextStyleSheet,
+    other: SlideTextStyleSheet,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -261,6 +318,76 @@ struct PartContent {
     shapes: Vec<BasicShape>,
     images: Vec<SlideImage>,
     tables: Vec<SlideTable>,
+}
+
+impl SlideTextStyleSheet {
+    fn merge_missing_from(&mut self, fallback: &Self) {
+        for (level, paragraph_style) in &fallback.levels {
+            self.levels
+                .entry(*level)
+                .and_modify(|current| current.merge_missing_from(paragraph_style))
+                .or_insert_with(|| paragraph_style.clone());
+        }
+    }
+
+    fn resolve(&self, level: u32) -> SlideParagraphStyle {
+        self.levels
+            .get(&level)
+            .cloned()
+            .or_else(|| self.levels.get(&0).cloned())
+            .unwrap_or_default()
+    }
+}
+
+impl SlideParagraphStyle {
+    fn merge_missing_from(&mut self, fallback: &Self) {
+        if self.alignment.is_none() {
+            self.alignment = fallback.alignment.clone();
+        }
+        if self.margin_left_emu.is_none() {
+            self.margin_left_emu = fallback.margin_left_emu;
+        }
+        if self.indent_emu.is_none() {
+            self.indent_emu = fallback.indent_emu;
+        }
+        if self.line_spacing.is_none() {
+            self.line_spacing = fallback.line_spacing.clone();
+        }
+        if self.spacing_before.is_none() {
+            self.spacing_before = fallback.spacing_before.clone();
+        }
+        if self.spacing_after.is_none() {
+            self.spacing_after = fallback.spacing_after.clone();
+        }
+        if self.bullet.is_none() {
+            self.bullet = fallback.bullet.clone();
+        }
+        self.default_run_style
+            .merge_missing_from(&fallback.default_run_style);
+    }
+}
+
+impl SlideTextRunStyle {
+    fn merge_missing_from(&mut self, fallback: &Self) {
+        if self.bold.is_none() {
+            self.bold = fallback.bold;
+        }
+        if self.italic.is_none() {
+            self.italic = fallback.italic;
+        }
+        if self.font_size_centipoints.is_none() {
+            self.font_size_centipoints = fallback.font_size_centipoints;
+        }
+        if self.font_face.is_none() {
+            self.font_face = fallback.font_face.clone();
+        }
+        if self.east_asia_font_face.is_none() {
+            self.east_asia_font_face = fallback.east_asia_font_face.clone();
+        }
+        if self.fill.is_none() {
+            self.fill = fallback.fill.clone();
+        }
+    }
 }
 
 impl CoordinateTransform {
@@ -367,7 +494,7 @@ pub fn build_slide_render_model(
         .unwrap_or(540.0);
 
     let theme = resolve_slide_theme_context(archive, slide_tree, slide);
-    let render_content = collect_render_content(archive, slide_tree, slide)?;
+    let render_content = collect_render_content(archive, slide_tree, slide, theme.as_ref())?;
     let mut nodes = Vec::new();
     let mut anchors = Vec::new();
     let mut text_offset = 0u32;
@@ -416,13 +543,18 @@ pub fn build_slide_render_model(
         }));
     }
 
-    let render_content = collect_render_content(archive, slide_tree, slide)?;
     for table in &render_content.tables {
         build_table_nodes(table, theme.as_ref(), &mut nodes, &mut anchors, &mut text_offset);
     }
 
     for text_box in render_content.text_boxes.iter().cloned() {
-        build_text_nodes(&text_box, &mut nodes, &mut anchors, &mut text_offset);
+        build_text_nodes(
+            &text_box,
+            theme.as_ref(),
+            &mut nodes,
+            &mut anchors,
+            &mut text_offset,
+        );
     }
 
     Ok(PageRenderModel {
@@ -532,6 +664,7 @@ fn collect_render_content(
     archive: &OoxmlArchive,
     slide_tree: &PptxSlideTree,
     slide: &SlideReference,
+    theme_context: Option<&ThemeContext>,
 ) -> Result<PartContent, ViewerError> {
     let mut content = PartContent::default();
     let master = resolve_slide_master_reference(slide_tree, slide);
@@ -554,6 +687,9 @@ fn collect_render_content(
     let mut slide_content = collect_part_content(archive, &slide.part_name, true)?;
     let placeholder_catalog = build_placeholder_catalog(layout_content.as_ref(), master_content.as_ref());
     apply_placeholder_templates(&mut slide_content.text_boxes, &placeholder_catalog);
+    if let Some(theme_context) = theme_context {
+        apply_master_text_styles(&mut slide_content.text_boxes, &theme_context.text_styles);
+    }
     append_all_part_content(&mut content, slide_content);
 
     Ok(content)
@@ -596,6 +732,7 @@ fn build_placeholder_catalog(
                 PlaceholderTemplate {
                     bounds: text_box.bounds.clone(),
                     insets: text_box.insets.clone(),
+                    style_sheet: text_box.style_sheet.clone(),
                 },
             );
         }
@@ -612,6 +749,7 @@ fn build_placeholder_catalog(
                 PlaceholderTemplate {
                     bounds: text_box.bounds.clone(),
                     insets: text_box.insets.clone(),
+                    style_sheet: text_box.style_sheet.clone(),
                 },
             );
         }
@@ -643,6 +781,8 @@ fn apply_placeholder_templates(
         if text_box.insets == SlideTextInsets::default() {
             text_box.insets = template.insets.clone();
         }
+
+        text_box.style_sheet.merge_missing_from(&template.style_sheet);
     }
 }
 
@@ -654,6 +794,24 @@ fn find_placeholder_by_kind<'a>(
         .iter()
         .find(|(candidate, _)| candidate.kind == placeholder.kind)
         .map(|(_, template)| template)
+}
+
+fn apply_master_text_styles(text_boxes: &mut [SlideTextBox], text_styles: &MasterTextStyles) {
+    for text_box in text_boxes {
+        let fallback_style = match text_box.placeholder.as_ref().map(|placeholder| &placeholder.kind) {
+            Some(SlidePlaceholderKind::Title | SlidePlaceholderKind::CenteredTitle) => {
+                &text_styles.title
+            }
+            Some(
+                SlidePlaceholderKind::Body
+                | SlidePlaceholderKind::Subtitle
+                | SlidePlaceholderKind::Object,
+            ) => &text_styles.body,
+            _ => &text_styles.other,
+        };
+
+        text_box.style_sheet.merge_missing_from(fallback_style);
+    }
 }
 
 fn collect_shape_tree_content(
@@ -777,7 +935,8 @@ fn resolve_slide_theme_context(
     let master = resolve_slide_master_reference(slide_tree, slide)?;
     let theme_part_name = master.theme_part_name.as_deref()?;
     let theme_root = read_part_root(archive, theme_part_name).ok()?;
-    let clr_scheme = theme_root.child("themeElements")?.child("clrScheme")?;
+    let theme_elements = theme_root.child("themeElements")?;
+    let clr_scheme = theme_elements.child("clrScheme")?;
     let master_root = read_part_root(archive, &master.part_name).ok()?;
     let clr_map = master_root.child("clrMap")?;
 
@@ -798,9 +957,17 @@ fn resolve_slide_theme_context(
         }
     }
 
+    let font_scheme = theme_elements
+        .child("fontScheme")
+        .map(parse_theme_font_scheme)
+        .unwrap_or_default();
+    let text_styles = parse_master_text_styles(&master_root);
+
     Some(ThemeContext {
         scheme_colors,
         color_mapping,
+        font_scheme,
+        text_styles,
     })
 }
 
@@ -815,6 +982,88 @@ fn parse_theme_color(color: &XmlElement) -> Option<String> {
                 .and_then(|system| system.attribute("lastClr"))
                 .map(|value| format!("#{value}"))
         })
+}
+
+fn parse_theme_font_scheme(font_scheme: &XmlElement) -> ThemeFontScheme {
+    ThemeFontScheme {
+        major_latin: font_scheme
+            .child("majorFont")
+            .and_then(|font| font.child("latin"))
+            .and_then(|font| font.attribute("typeface"))
+            .map(ToOwned::to_owned),
+        minor_latin: font_scheme
+            .child("minorFont")
+            .and_then(|font| font.child("latin"))
+            .and_then(|font| font.attribute("typeface"))
+            .map(ToOwned::to_owned),
+        major_east_asia: font_scheme
+            .child("majorFont")
+            .and_then(|font| font.child("ea"))
+            .and_then(|font| font.attribute("typeface"))
+            .filter(|value| !value.is_empty())
+            .map(ToOwned::to_owned),
+        minor_east_asia: font_scheme
+            .child("minorFont")
+            .and_then(|font| font.child("ea"))
+            .and_then(|font| font.attribute("typeface"))
+            .filter(|value| !value.is_empty())
+            .map(ToOwned::to_owned),
+        major_complex_script: font_scheme
+            .child("majorFont")
+            .and_then(|font| font.child("cs"))
+            .and_then(|font| font.attribute("typeface"))
+            .filter(|value| !value.is_empty())
+            .map(ToOwned::to_owned),
+        minor_complex_script: font_scheme
+            .child("minorFont")
+            .and_then(|font| font.child("cs"))
+            .and_then(|font| font.attribute("typeface"))
+            .filter(|value| !value.is_empty())
+            .map(ToOwned::to_owned),
+        major_hang: find_theme_script_font(font_scheme.child("majorFont"), "Hang"),
+        minor_hang: find_theme_script_font(font_scheme.child("minorFont"), "Hang"),
+    }
+}
+
+fn find_theme_script_font(font_root: Option<&XmlElement>, script: &str) -> Option<String> {
+    let font_root = font_root?;
+    font_root
+        .children
+        .iter()
+        .find(|child| child.local_name() == "font" && child.attribute("script") == Some(script))
+        .and_then(|font| font.attribute("typeface"))
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+}
+
+fn parse_master_text_styles(master_root: &XmlElement) -> MasterTextStyles {
+    let Some(text_styles) = master_root.child("txStyles") else {
+        return MasterTextStyles::default();
+    };
+
+    MasterTextStyles {
+        title: text_styles
+            .child("titleStyle")
+            .map(parse_text_style_sheet)
+            .transpose()
+            .ok()
+            .flatten()
+            .unwrap_or_default(),
+        body: text_styles
+            .child("bodyStyle")
+            .map(parse_text_style_sheet)
+            .transpose()
+            .ok()
+            .flatten()
+            .unwrap_or_default(),
+        other: text_styles
+            .child("otherStyle")
+            .map(parse_text_style_sheet)
+            .transpose()
+            .ok()
+            .flatten()
+            .unwrap_or_default(),
+    }
 }
 
 pub fn parse_part_relationships(
@@ -1054,6 +1303,11 @@ fn parse_text_box_shape_with_context(
         .transpose()?
         .unwrap_or_default();
     let placeholder = parse_placeholder_reference(non_visual)?;
+    let style_sheet = text_body
+        .child("lstStyle")
+        .map(parse_text_style_sheet)
+        .transpose()?
+        .unwrap_or_default();
     let paragraphs = parse_text_paragraphs(text_body)?;
 
     Ok(Some(SlideTextBox {
@@ -1062,6 +1316,7 @@ fn parse_text_box_shape_with_context(
         bounds,
         insets,
         placeholder,
+        style_sheet,
         paragraphs,
     }))
 }
@@ -1295,6 +1550,121 @@ fn parse_gradient_fill(gradient_fill: &XmlElement) -> Result<ShapeFill, ViewerEr
     })
 }
 
+fn parse_text_style_sheet(style_root: &XmlElement) -> Result<SlideTextStyleSheet, ViewerError> {
+    let mut sheet = SlideTextStyleSheet::default();
+
+    for child in &style_root.children {
+        let level = match child.local_name() {
+            "lvl1pPr" => 0,
+            "lvl2pPr" => 1,
+            "lvl3pPr" => 2,
+            "lvl4pPr" => 3,
+            "lvl5pPr" => 4,
+            "lvl6pPr" => 5,
+            "lvl7pPr" => 6,
+            "lvl8pPr" => 7,
+            "lvl9pPr" => 8,
+            _ => continue,
+        };
+
+        sheet.levels.insert(level, parse_paragraph_style(child)?);
+    }
+
+    Ok(sheet)
+}
+
+fn parse_paragraph_style(paragraph_properties: &XmlElement) -> Result<SlideParagraphStyle, ViewerError> {
+    let alignment = paragraph_properties
+        .attribute("algn")
+        .and_then(parse_alignment);
+    let margin_left_emu = parse_i64_optional_attribute(paragraph_properties, "marL")?;
+    let indent_emu = parse_i64_optional_attribute(paragraph_properties, "indent")?;
+    let line_spacing = paragraph_properties
+        .child("lnSpc")
+        .map(parse_slide_spacing)
+        .transpose()?;
+    let spacing_before = paragraph_properties
+        .child("spcBef")
+        .map(parse_slide_spacing)
+        .transpose()?;
+    let spacing_after = paragraph_properties
+        .child("spcAft")
+        .map(parse_slide_spacing)
+        .transpose()?;
+    let bullet = parse_bullet_style(paragraph_properties)?;
+    let default_run_style = paragraph_properties
+        .child("defRPr")
+        .map(parse_text_run_style)
+        .transpose()?
+        .unwrap_or_default();
+
+    Ok(SlideParagraphStyle {
+        alignment,
+        margin_left_emu,
+        indent_emu,
+        line_spacing,
+        spacing_before,
+        spacing_after,
+        bullet,
+        default_run_style,
+    })
+}
+
+fn parse_slide_spacing(spacing: &XmlElement) -> Result<SlideSpacing, ViewerError> {
+    if let Some(points) = spacing
+        .child("spcPts")
+        .and_then(|value| value.attribute("val"))
+    {
+        return points
+            .parse::<i64>()
+            .map(SlideSpacing::Points)
+            .map_err(|_| ViewerError::InvalidDocument);
+    }
+
+    if let Some(percent) = spacing
+        .child("spcPct")
+        .and_then(|value| value.attribute("val"))
+    {
+        return percent
+            .parse::<i32>()
+            .map(SlideSpacing::Percent)
+            .map_err(|_| ViewerError::InvalidDocument);
+    }
+
+    Err(ViewerError::InvalidDocument)
+}
+
+fn parse_bullet_style(
+    paragraph_properties: &XmlElement,
+) -> Result<Option<SlideBulletStyle>, ViewerError> {
+    if paragraph_properties.child("buNone").is_some() {
+        return Ok(Some(SlideBulletStyle::None));
+    }
+
+    let Some(character) = paragraph_properties
+        .child("buChar")
+        .and_then(|bullet| bullet.attribute("char"))
+    else {
+        return Ok(None);
+    };
+
+    let font_face = paragraph_properties
+        .child("buFont")
+        .and_then(|font| font.attribute("typeface"))
+        .map(ToOwned::to_owned);
+    let fill = paragraph_properties
+        .child("buClr")
+        .map(parse_color_value)
+        .transpose()?
+        .map(ShapeFill::Solid);
+
+    Ok(Some(SlideBulletStyle::Character {
+        character: character.to_string(),
+        font_face,
+        fill,
+    }))
+}
+
 fn parse_text_paragraphs(text_body: &XmlElement) -> Result<Vec<SlideTextParagraph>, ViewerError> {
     let mut paragraphs = Vec::new();
     for child in &text_body.children {
@@ -1309,10 +1679,12 @@ fn parse_text_paragraphs(text_body: &XmlElement) -> Result<Vec<SlideTextParagrap
 }
 
 fn parse_text_paragraph(paragraph: &XmlElement) -> Result<SlideTextParagraph, ViewerError> {
-    let alignment = paragraph
+    let style_overrides = paragraph
         .child("pPr")
-        .and_then(|properties| properties.attribute("algn"))
-        .and_then(parse_alignment);
+        .map(parse_paragraph_style)
+        .transpose()?
+        .unwrap_or_default();
+    let alignment = style_overrides.alignment.clone();
     let level = paragraph
         .child("pPr")
         .and_then(|properties| properties.attribute("lvl"))
@@ -1346,6 +1718,7 @@ fn parse_text_paragraph(paragraph: &XmlElement) -> Result<SlideTextParagraph, Vi
     Ok(SlideTextParagraph {
         alignment,
         level,
+        style_overrides,
         runs,
     })
 }
@@ -1369,8 +1742,8 @@ fn parse_text_run_style(run_properties: &XmlElement) -> Result<SlideTextRunStyle
         .attribute("sz")
         .map(|size| size.parse::<u32>().map_err(|_| ViewerError::InvalidDocument))
         .transpose()?;
-    let bold = run_properties.attribute("b") == Some("1");
-    let italic = run_properties.attribute("i") == Some("1");
+    let bold = run_properties.attribute("b").map(|value| value == "1");
+    let italic = run_properties.attribute("i").map(|value| value == "1");
     let font_face = run_properties
         .child("latin")
         .and_then(|latin| latin.attribute("typeface"))
@@ -1379,11 +1752,13 @@ fn parse_text_run_style(run_properties: &XmlElement) -> Result<SlideTextRunStyle
         .child("ea")
         .and_then(|east_asia| east_asia.attribute("typeface"))
         .map(ToOwned::to_owned);
-    let color = run_properties
-        .child("solidFill")
-        .and_then(|fill| fill.child("srgbClr"))
-        .and_then(|color| color.attribute("val"))
-        .map(|value| format!("#{value}"));
+    let fill = if let Some(fill) = run_properties.child("gradFill") {
+        Some(parse_gradient_fill(fill)?)
+    } else if let Some(fill) = run_properties.child("solidFill") {
+        Some(ShapeFill::Solid(parse_color_value(fill)?))
+    } else {
+        None
+    };
 
     Ok(SlideTextRunStyle {
         bold,
@@ -1391,28 +1766,63 @@ fn parse_text_run_style(run_properties: &XmlElement) -> Result<SlideTextRunStyle
         font_size_centipoints,
         font_face,
         east_asia_font_face,
-        color,
+        fill,
     })
 }
 
 fn parse_color_value(fill: &XmlElement) -> Result<String, ViewerError> {
-    if let Some(rgb) = fill.child("srgbClr").and_then(|color| color.attribute("val")) {
-        return Ok(format!("#{rgb}"));
+    if let Some(color) = fill.child("srgbClr") {
+        let value = color
+            .attribute("val")
+            .map(|rgb| format!("#{rgb}"))
+            .ok_or(ViewerError::InvalidDocument)?;
+        return Ok(append_color_modifiers(value, color));
     }
 
-    if let Some(system) = fill.child("sysClr").and_then(|color| color.attribute("lastClr")) {
-        return Ok(format!("#{system}"));
+    if let Some(color) = fill.child("sysClr") {
+        let value = color
+            .attribute("lastClr")
+            .map(|system| format!("#{system}"))
+            .ok_or(ViewerError::InvalidDocument)?;
+        return Ok(append_color_modifiers(value, color));
     }
 
-    if let Some(scheme) = fill.child("schemeClr").and_then(|color| color.attribute("val")) {
-        return Ok(format!("scheme:{scheme}"));
+    if let Some(color) = fill.child("schemeClr") {
+        let value = color
+            .attribute("val")
+            .map(|scheme| format!("scheme:{scheme}"))
+            .ok_or(ViewerError::InvalidDocument)?;
+        return Ok(append_color_modifiers(value, color));
     }
 
-    if let Some(preset) = fill.child("prstClr").and_then(|color| color.attribute("val")) {
-        return Ok(format!("preset:{preset}"));
+    if let Some(color) = fill.child("prstClr") {
+        let value = color
+            .attribute("val")
+            .map(|preset| format!("preset:{preset}"))
+            .ok_or(ViewerError::InvalidDocument)?;
+        return Ok(append_color_modifiers(value, color));
     }
 
     Err(ViewerError::InvalidDocument)
+}
+
+fn append_color_modifiers(mut base: String, color: &XmlElement) -> String {
+    for child in &color.children {
+        let Some(value) = child.attribute("val") else {
+            continue;
+        };
+        match child.local_name() {
+            "lumMod" | "lumOff" | "tint" | "shade" | "alpha" => {
+                base.push(';');
+                base.push_str(child.local_name());
+                base.push('=');
+                base.push_str(value);
+            }
+            _ => {}
+        }
+    }
+
+    base
 }
 
 fn parse_image_crop(src_rect: &XmlElement) -> Result<ImageCrop, ViewerError> {
@@ -1667,23 +2077,90 @@ fn resolve_render_color(
     color: &str,
     theme_context: Option<&ThemeContext>,
 ) -> Option<String> {
-    if color.starts_with('#') {
-        return Some(color.to_string());
+    let mut parts = color.split(';');
+    let base = parts.next()?;
+    let mut resolved = if base.starts_with('#') {
+        base.to_string()
+    } else if let Some(theme_context) = theme_context {
+        resolve_theme_color_reference(base, theme_context)?
+    } else {
+        return None;
+    };
+
+    for modifier in parts {
+        let (name, value) = modifier.split_once('=')?;
+        resolved = apply_color_modifier(&resolved, name, value)?;
     }
 
-    let Some(theme_context) = theme_context else {
-        return None;
-    };
-    let Some(scheme) = color.strip_prefix("scheme:") else {
-        return None;
-    };
+    Some(resolved)
+}
 
-    let mapped_scheme = theme_context
-        .color_mapping
-        .get(scheme)
-        .map(String::as_str)
-        .unwrap_or(scheme);
-    theme_context.scheme_colors.get(mapped_scheme).cloned()
+fn resolve_theme_color_reference(base: &str, theme_context: &ThemeContext) -> Option<String> {
+    if let Some(scheme) = base.strip_prefix("scheme:") {
+        let mapped_scheme = theme_context
+            .color_mapping
+            .get(scheme)
+            .map(String::as_str)
+            .unwrap_or(scheme);
+        return theme_context.scheme_colors.get(mapped_scheme).cloned();
+    }
+
+    if let Some(preset) = base.strip_prefix("preset:") {
+        return match preset {
+            "white" => Some("#FFFFFF".to_string()),
+            "black" => Some("#000000".to_string()),
+            "ltGray" => Some("#D3D3D3".to_string()),
+            "dkGray" => Some("#696969".to_string()),
+            _ => None,
+        };
+    }
+
+    None
+}
+
+fn apply_color_modifier(color_hex: &str, name: &str, value: &str) -> Option<String> {
+    let (mut red, mut green, mut blue) = parse_rgb_hex(color_hex)?;
+    let amount = value.parse::<f32>().ok()? / 100_000.0;
+
+    match name {
+        "lumMod" | "shade" => {
+            red = ((red as f32) * amount).round().clamp(0.0, 255.0) as u8;
+            green = ((green as f32) * amount).round().clamp(0.0, 255.0) as u8;
+            blue = ((blue as f32) * amount).round().clamp(0.0, 255.0) as u8;
+        }
+        "lumOff" => {
+            red = ((red as f32) + (255.0 * amount)).round().clamp(0.0, 255.0) as u8;
+            green = ((green as f32) + (255.0 * amount)).round().clamp(0.0, 255.0) as u8;
+            blue = ((blue as f32) + (255.0 * amount)).round().clamp(0.0, 255.0) as u8;
+        }
+        "tint" => {
+            red = ((red as f32) + ((255.0 - red as f32) * amount))
+                .round()
+                .clamp(0.0, 255.0) as u8;
+            green = ((green as f32) + ((255.0 - green as f32) * amount))
+                .round()
+                .clamp(0.0, 255.0) as u8;
+            blue = ((blue as f32) + ((255.0 - blue as f32) * amount))
+                .round()
+                .clamp(0.0, 255.0) as u8;
+        }
+        "alpha" => {}
+        _ => return Some(color_hex.to_string()),
+    }
+
+    Some(format!("#{red:02X}{green:02X}{blue:02X}"))
+}
+
+fn parse_rgb_hex(color_hex: &str) -> Option<(u8, u8, u8)> {
+    let normalized = color_hex.strip_prefix('#')?;
+    if normalized.len() != 6 {
+        return None;
+    }
+
+    let red = u8::from_str_radix(&normalized[0..2], 16).ok()?;
+    let green = u8::from_str_radix(&normalized[2..4], 16).ok()?;
+    let blue = u8::from_str_radix(&normalized[4..6], 16).ok()?;
+    Some((red, green, blue))
 }
 
 fn build_table_nodes(
@@ -1761,8 +2238,10 @@ fn build_table_nodes(
                     bounds: Some(cell_bounds),
                     insets: cell.margins.clone(),
                     placeholder: None,
+                    style_sheet: SlideTextStyleSheet::default(),
                     paragraphs: cell.paragraphs.clone(),
                 },
+                theme_context,
                 nodes,
                 anchors,
                 text_offset,
@@ -1778,6 +2257,7 @@ fn build_table_nodes(
 
 fn build_text_nodes(
     text_box: &SlideTextBox,
+    theme_context: Option<&ThemeContext>,
     nodes: &mut Vec<RenderNode>,
     anchors: &mut Vec<SelectionAnchor>,
     text_offset: &mut u32,
@@ -1796,32 +2276,78 @@ fn build_text_nodes(
     let max_bottom = emu_to_points(bounds.y + bounds.height) - bottom_inset;
 
     'paragraphs: for paragraph in &text_box.paragraphs {
-        let alignment = paragraph
+        let resolved_style = resolve_paragraph_style_for_layout(text_box, paragraph);
+        let alignment = resolved_style
             .alignment
             .as_ref()
             .map(slide_alignment_to_paragraph_alignment)
             .unwrap_or(ParagraphAlignment::Left);
-        let paragraph_font_size = paragraph_default_font_size(paragraph);
-        let paragraph_spacing = (paragraph_font_size * 0.2).max(4.0);
-        let indent = paragraph.level.unwrap_or(0) as f32 * 18.0;
-        let line_base_x = base_x + indent;
-        let line_available_width = (content_width - indent).max(1.0);
-        let lines = wrap_paragraph_lines(paragraph, line_available_width);
+        let paragraph_font_size =
+            paragraph_default_font_size(paragraph, &resolved_style.default_run_style, theme_context);
+        let spacing_before =
+            resolve_spacing_points(resolved_style.spacing_before.as_ref(), paragraph_font_size, 0.0);
+        if cursor_y + spacing_before > max_bottom {
+            break;
+        }
+        cursor_y += spacing_before;
 
-        for line in lines {
-            if cursor_y + line.height > max_bottom {
+        let margin_left = resolved_style
+            .margin_left_emu
+            .map(emu_to_points)
+            .unwrap_or_else(|| paragraph.level.unwrap_or(0) as f32 * 18.0)
+            .max(0.0);
+        let indent = emu_to_points(resolved_style.indent_emu.unwrap_or(0));
+        let line_base_x = if indent > 0.0 {
+            base_x + margin_left + indent
+        } else {
+            base_x + margin_left
+        };
+        let line_available_width = (content_width - (line_base_x - base_x)).max(1.0);
+        let bullet_x = (base_x + margin_left + indent).max(base_x);
+        let bullet_style =
+            resolve_bullet_text_style(resolved_style.bullet.as_ref(), &resolved_style.default_run_style, theme_context);
+        let lines = wrap_paragraph_lines(
+            paragraph,
+            &resolved_style.default_run_style,
+            theme_context,
+            line_available_width,
+        );
+
+        for (line_index, line) in lines.into_iter().enumerate() {
+            let line_height =
+                resolve_line_height(line.max_font_size.max(paragraph_font_size), resolved_style.line_spacing.as_ref());
+            if cursor_y + line_height > max_bottom {
                 break 'paragraphs;
             }
 
             let mut cursor_x =
                 resolve_line_x(line_base_x, line_available_width, line.width, &alignment);
 
+            if line_index == 0 {
+                if let Some((bullet_text, bullet_style)) = bullet_style.as_ref() {
+                    let bullet_width = estimate_text_width(bullet_text, bullet_style);
+                    push_text_node(
+                        nodes,
+                        anchors,
+                        text_offset,
+                        bullet_text.clone(),
+                        Rect {
+                            x: bullet_x,
+                            y: cursor_y,
+                            width: bullet_width.max(1.0),
+                            height: line_height,
+                        },
+                        bullet_style.clone(),
+                    );
+                }
+            }
+
             for span in line.spans {
                 let bounds = Rect {
                     x: cursor_x,
                     y: cursor_y,
                     width: span.width.max(1.0),
-                    height: line.height,
+                    height: line_height,
                 };
                 push_text_node(
                     nodes,
@@ -1834,13 +2360,15 @@ fn build_text_nodes(
                 cursor_x += span.width;
             }
 
-            cursor_y += line.height;
+            cursor_y += line_height;
         }
 
-        if cursor_y + paragraph_spacing > max_bottom {
+        let spacing_after =
+            resolve_spacing_points(resolved_style.spacing_after.as_ref(), paragraph_font_size, 6.0);
+        if cursor_y + spacing_after > max_bottom {
             break;
         }
-        cursor_y += paragraph_spacing;
+        cursor_y += spacing_after;
     }
 }
 
@@ -1853,26 +2381,149 @@ fn slide_alignment_to_paragraph_alignment(alignment: &SlideTextAlignment) -> Par
     }
 }
 
-fn slide_run_style_to_text_style(style: &SlideTextRunStyle) -> TextStyle {
+fn slide_run_style_to_text_style(
+    style: &SlideTextRunStyle,
+    theme_context: Option<&ThemeContext>,
+) -> TextStyle {
     let font_family = style
         .east_asia_font_face
-        .clone()
+        .as_deref()
+        .and_then(|font| resolve_theme_font(font, true, theme_context))
+        .or_else(|| {
+            style
+                .font_face
+                .as_deref()
+                .and_then(|font| resolve_theme_font(font, false, theme_context))
+        })
+        .or_else(|| style.east_asia_font_face.clone())
         .or_else(|| style.font_face.clone())
         .unwrap_or_else(|| "Calibri".to_string());
     let font_size = style
         .font_size_centipoints
         .map(|size| size as f32 / 100.0)
         .unwrap_or(18.0);
+    let (color_hex, gradient_end_color_hex, gradient_angle_degrees) =
+        normalize_render_fill(style.fill.as_ref(), theme_context);
 
     TextStyle {
         font_family,
         font_size,
-        bold: style.bold,
-        italic: style.italic,
-        color_hex: style
-            .color
+        bold: style.bold.unwrap_or(false),
+        italic: style.italic.unwrap_or(false),
+        color_hex: color_hex.unwrap_or_else(|| "#000000".to_string()),
+        gradient_end_color_hex,
+        gradient_angle_degrees,
+    }
+}
+
+fn resolve_paragraph_style_for_layout(
+    text_box: &SlideTextBox,
+    paragraph: &SlideTextParagraph,
+) -> SlideParagraphStyle {
+    let mut style = paragraph.style_overrides.clone();
+    style.merge_missing_from(&text_box.style_sheet.resolve(paragraph.level.unwrap_or(0)));
+    style
+}
+
+fn resolve_spacing_points(
+    spacing: Option<&SlideSpacing>,
+    font_size: f32,
+    fallback: f32,
+) -> f32 {
+    match spacing {
+        Some(SlideSpacing::Points(points)) => (*points as f32 / 100.0).max(0.0),
+        Some(SlideSpacing::Percent(percent)) => (font_size * (*percent as f32 / 100_000.0)).max(0.0),
+        None => fallback,
+    }
+}
+
+fn resolve_line_height(font_size: f32, spacing: Option<&SlideSpacing>) -> f32 {
+    match spacing {
+        Some(SlideSpacing::Points(points)) => (*points as f32 / 100.0).max(font_size),
+        Some(SlideSpacing::Percent(percent)) => {
+            (font_size * (*percent as f32 / 100_000.0)).max(font_size * 0.95)
+        }
+        None => (font_size * 1.2).max(18.0),
+    }
+}
+
+fn resolve_bullet_text_style(
+    bullet: Option<&SlideBulletStyle>,
+    fallback_style: &SlideTextRunStyle,
+    theme_context: Option<&ThemeContext>,
+) -> Option<(String, TextStyle)> {
+    let bullet = bullet?;
+    let (character, font_face, fill) = match bullet {
+        SlideBulletStyle::None => return None,
+        SlideBulletStyle::Character {
+            character,
+            font_face,
+            fill,
+        } => (character, font_face, fill),
+    };
+
+    let normalized_character = if font_face.as_deref() == Some("Wingdings") && character == "§" {
+        "▪".to_string()
+    } else {
+        character.clone()
+    };
+
+    let mut style = fallback_style.clone();
+    if let Some(font_face) = font_face {
+        style.font_face = Some(font_face.clone());
+        style.east_asia_font_face = Some(font_face.clone());
+    }
+    if let Some(fill) = fill {
+        style.fill = Some(fill.clone());
+    }
+
+    Some((
+        normalized_character,
+        slide_run_style_to_text_style(&style, theme_context),
+    ))
+}
+
+fn resolve_theme_font(
+    font: &str,
+    east_asia: bool,
+    theme_context: Option<&ThemeContext>,
+) -> Option<String> {
+    if !font.starts_with('+') {
+        return Some(font.to_string());
+    }
+
+    let theme_context = theme_context?;
+    match font {
+        "+mn-ea" => theme_context
+            .font_scheme
+            .minor_hang
             .clone()
-            .unwrap_or_else(|| "#000000".to_string()),
+            .or_else(|| theme_context.font_scheme.minor_east_asia.clone())
+            .or_else(|| theme_context.font_scheme.minor_latin.clone()),
+        "+mn-lt" => theme_context.font_scheme.minor_latin.clone(),
+        "+mn-cs" => theme_context
+            .font_scheme
+            .minor_complex_script
+            .clone()
+            .or_else(|| theme_context.font_scheme.minor_latin.clone()),
+        "+mj-ea" => theme_context
+            .font_scheme
+            .major_hang
+            .clone()
+            .or_else(|| theme_context.font_scheme.major_east_asia.clone())
+            .or_else(|| theme_context.font_scheme.major_latin.clone()),
+        "+mj-lt" => theme_context.font_scheme.major_latin.clone(),
+        "+mj-cs" => theme_context
+            .font_scheme
+            .major_complex_script
+            .clone()
+            .or_else(|| theme_context.font_scheme.major_latin.clone()),
+        _ if east_asia => theme_context
+            .font_scheme
+            .minor_hang
+            .clone()
+            .or_else(|| theme_context.font_scheme.minor_east_asia.clone()),
+        _ => None,
     }
 }
 
@@ -1935,7 +2586,7 @@ struct WrappedTextSpan {
 struct WrappedLine {
     spans: Vec<WrappedTextSpan>,
     width: f32,
-    height: f32,
+    max_font_size: f32,
 }
 
 #[derive(Debug, Clone)]
@@ -1982,28 +2633,43 @@ impl LineBuilder {
     fn finish(self, fallback_font_size: f32) -> WrappedLine {
         WrappedLine {
             width: self.width,
-            height: (self.max_font_size.max(fallback_font_size) * 1.2).max(18.0),
+            max_font_size: self.max_font_size.max(fallback_font_size),
             spans: self.spans,
         }
     }
 }
 
-fn paragraph_default_font_size(paragraph: &SlideTextParagraph) -> f32 {
+fn paragraph_default_font_size(
+    paragraph: &SlideTextParagraph,
+    fallback_style: &SlideTextRunStyle,
+    theme_context: Option<&ThemeContext>,
+) -> f32 {
     paragraph
         .runs
         .iter()
-        .map(|run| slide_run_style_to_text_style(&run.style).font_size)
+        .map(|run| {
+            let mut style = run.style.clone();
+            style.merge_missing_from(fallback_style);
+            slide_run_style_to_text_style(&style, theme_context).font_size
+        })
         .find(|size| *size > 0.0)
-        .unwrap_or(18.0)
+        .unwrap_or_else(|| slide_run_style_to_text_style(fallback_style, theme_context).font_size)
 }
 
-fn wrap_paragraph_lines(paragraph: &SlideTextParagraph, max_width: f32) -> Vec<WrappedLine> {
-    let default_font_size = paragraph_default_font_size(paragraph);
+fn wrap_paragraph_lines(
+    paragraph: &SlideTextParagraph,
+    fallback_style: &SlideTextRunStyle,
+    theme_context: Option<&ThemeContext>,
+    max_width: f32,
+) -> Vec<WrappedLine> {
+    let default_font_size = paragraph_default_font_size(paragraph, fallback_style, theme_context);
     let mut lines = Vec::new();
     let mut current = LineBuilder::new();
 
     for run in &paragraph.runs {
-        let style = slide_run_style_to_text_style(&run.style);
+        let mut merged_style = run.style.clone();
+        merged_style.merge_missing_from(fallback_style);
+        let style = slide_run_style_to_text_style(&merged_style, theme_context);
         let parts: Vec<&str> = run.text.split('\n').collect();
 
         for (index, part) in parts.iter().enumerate() {
@@ -2105,7 +2771,7 @@ fn flush_line(
             lines.push(WrappedLine {
                 spans: Vec::new(),
                 width: 0.0,
-                height: (default_font_size * 1.2).max(18.0),
+                max_font_size: default_font_size,
             });
         }
         return;

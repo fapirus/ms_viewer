@@ -129,8 +129,8 @@ fn parses_slide_text_boxes_with_placeholder_bounds_and_runs() {
     assert_eq!(title.paragraphs[0].alignment, Some(SlideTextAlignment::Center));
     assert_eq!(title.paragraphs[0].runs.len(), 3);
     assert_eq!(title.paragraphs[0].runs[0].text, "Hello");
-    assert!(title.paragraphs[0].runs[0].style.bold);
-    assert!(title.paragraphs[0].runs[0].style.italic);
+    assert_eq!(title.paragraphs[0].runs[0].style.bold, Some(true));
+    assert_eq!(title.paragraphs[0].runs[0].style.italic, Some(true));
     assert_eq!(
         title.paragraphs[0].runs[0].style.font_face.as_deref(),
         Some("Aptos")
@@ -146,7 +146,10 @@ fn parses_slide_text_boxes_with_placeholder_bounds_and_runs() {
         title.paragraphs[0].runs[0].style.font_size_centipoints,
         Some(2400)
     );
-    assert_eq!(title.paragraphs[0].runs[0].style.color.as_deref(), Some("#112233"));
+    match title.paragraphs[0].runs[0].style.fill.as_ref() {
+        Some(format_pptx::ShapeFill::Solid(color)) => assert_eq!(color, "#112233"),
+        other => panic!("expected solid fill, got {other:?}"),
+    }
     assert_eq!(title.paragraphs[0].runs[1].text, "\n");
     assert_eq!(title.paragraphs[0].runs[2].text, "World");
 

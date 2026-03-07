@@ -39,6 +39,8 @@ class TextStyleModel {
     required this.bold,
     required this.italic,
     required this.colorHex,
+    required this.gradientEndColorHex,
+    required this.gradientAngleDegrees,
   });
 
   final String fontFamily;
@@ -46,6 +48,8 @@ class TextStyleModel {
   final bool bold;
   final bool italic;
   final String colorHex;
+  final String? gradientEndColorHex;
+  final double? gradientAngleDegrees;
 
   factory TextStyleModel.fromJson(Map<String, Object?> json) {
     return TextStyleModel(
@@ -54,6 +58,8 @@ class TextStyleModel {
       bold: json['bold'] as bool? ?? false,
       italic: json['italic'] as bool? ?? false,
       colorHex: json['colorHex'] as String,
+      gradientEndColorHex: json['gradientEndColorHex'] as String?,
+      gradientAngleDegrees: (json['gradientAngleDegrees'] as num?)?.toDouble(),
     );
   }
 }
