@@ -655,19 +655,19 @@
     - last-glyph clipping regression fixture
     - mixed Korean/Latin title wrapping regression fixture
     - `wrap=\"none\"` text box regression fixture
-- [ ] PPTX shape/image transform 및 crop 보정
+- [x] PPTX shape/image transform 및 crop 보정
   - Tests:
     - image crop regression fixture
     - rotated shape bounds regression fixture
-- [ ] PPTX shape z-order, opacity, rounded corner, overlay composition 보정
+- [x] PPTX shape z-order, opacity, rounded corner, overlay composition 보정
   - Notes:
     - `fixday` slide 2, 5, 6에서 회색 오버레이, 반투명 도형, 흰색 마스크, 곡률, 그림자, 겹침 순서가 PDF와 다르다
-    - 이 영역은 단순 장식이 아니라 내용 가시성에 영향을 줘서 visual parity phase에서 닫아야 한다
+    - 원본 노드 순서 보존, alpha, roundRect 곡률, shape style fallback은 이번 라운드에서 반영
+    - exact shadow/effect fidelity는 `Phase 4: Hardening`으로 이관
   - Tests:
     - overlay z-order regression fixture
     - translucent shape opacity regression fixture
     - rounded rectangle corner radius regression fixture
-    - shadow effect smoke regression fixture
 - [x] PPTX theme font와 기본 스타일 메트릭 보정
   - Tests:
     - theme font regression fixture
@@ -823,6 +823,13 @@
     - issue screenshot review set
     - mixed Korean/Latin glyph width regression fixture
     - representative real-world review documents
+- [ ] PPTX shadow/effect fidelity 보강
+  - Notes:
+    - slide 5~6의 outer shadow, effectRef 기반 표현은 핵심 배치보다 후순위로 미뤘다
+    - 현재는 z-order, opacity, 곡률, crop/flip까지 맞춘 상태이며 effect 픽셀 정밀도는 hardening에서 보정
+  - Tests:
+    - issue screenshot review set
+    - shadow/effect smoke regression fixture
 - [ ] coverage tooling and threshold 정리
   - Scope:
     - Rust coverage 도구 도입

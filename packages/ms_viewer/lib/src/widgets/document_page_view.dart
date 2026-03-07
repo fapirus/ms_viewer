@@ -73,17 +73,11 @@ class DocumentPageView extends StatelessWidget {
               ),
               child: Stack(
                 children: [
-                  CustomPaint(
-                    size: Size.infinite,
-                    painter: _PageRenderPainter(
-                      page: page,
-                      platform: _viewerPlatformForTargetPlatform(
-                        defaultTargetPlatform,
-                      ),
-                    ),
-                  ),
-                  ..._buildImageLayers(
+                  ..._buildRenderLayers(
                     page: page,
+                    platform: _viewerPlatformForTargetPlatform(
+                      defaultTargetPlatform,
+                    ),
                     scaleX: scaleX,
                     scaleY: scaleY,
                   ),
@@ -102,133 +96,263 @@ class DocumentPageView extends StatelessWidget {
   }
 }
 
-List<Widget> _buildImageLayers({
+List<Widget> _buildRenderLayers({
   required PageRenderModel page,
+  required ViewerPlatform platform,
   required double scaleX,
   required double scaleY,
 }) {
-  final layers = <Widget>[];
-
-  for (final node in page.nodes) {
-    if (node is! ImageRenderNodeModel || node.dataBase64 == null) {
-      continue;
-    }
-
-    layers.add(
-      Positioned(
-        left: node.bounds.x * scaleX,
-        top: node.bounds.y * scaleY,
-        width: node.bounds.width * scaleX,
-        height: node.bounds.height * scaleY,
-        child: Image.memory(
-          base64Decode(node.dataBase64!),
-          fit: BoxFit.contain,
-          filterQuality: FilterQuality.medium,
-          gaplessPlayback: true,
-          errorBuilder: (context, error, stackTrace) => ColoredBox(
-            color: const Color(0xFFE9EEF7),
-            child: Center(
-              child: Text(
-                node.description ?? node.resourceId,
-                textAlign: TextAlign.center,
-                style: const TextStyle(color: Color(0xFF42526B), fontSize: 10),
-              ),
-            ),
-          ),
-        ),
+  return [
+    for (var index = 0; index < page.nodes.length; index++)
+      _buildRenderLayer(
+        key: ValueKey('node-$index'),
+        node: page.nodes[index],
+        platform: platform,
+        scaleX: scaleX,
+        scaleY: scaleY,
       ),
-    );
-  }
-
-  return layers;
+  ];
 }
 
 Offset _toPageOffset(Offset localPosition, double scaleX, double scaleY) {
   return Offset(localPosition.dx / scaleX, localPosition.dy / scaleY);
 }
 
-class _PageRenderPainter extends CustomPainter {
-  _PageRenderPainter({required this.page, required this.platform});
+Widget _buildRenderLayer({
+  required Key key,
+  required RenderNodeModel node,
+  required ViewerPlatform platform,
+  required double scaleX,
+  required double scaleY,
+}) {
+  switch (node) {
+    case TextRenderNodeModel():
+      return Positioned(
+        key: key,
+        left: node.bounds.x * scaleX,
+        top: node.bounds.y * scaleY,
+        width: node.bounds.width * scaleX,
+        height: node.bounds.height * scaleY,
+        child: IgnorePointer(
+          child: CustomPaint(
+            painter: _TextNodePainter(
+              node: node,
+              platform: platform,
+              scaleX: scaleX,
+              scaleY: scaleY,
+            ),
+          ),
+        ),
+      );
+    case BoxRenderNodeModel():
+      return Positioned(
+        key: key,
+        left: node.bounds.x * scaleX,
+        top: node.bounds.y * scaleY,
+        width: node.bounds.width * scaleX,
+        height: node.bounds.height * scaleY,
+        child: IgnorePointer(
+          child: CustomPaint(
+            painter: _BoxNodePainter(
+              node: node,
+              scaleX: scaleX,
+              scaleY: scaleY,
+            ),
+          ),
+        ),
+      );
+    case ImageRenderNodeModel():
+      return Positioned(
+        key: key,
+        left: node.bounds.x * scaleX,
+        top: node.bounds.y * scaleY,
+        width: node.bounds.width * scaleX,
+        height: node.bounds.height * scaleY,
+        child: IgnorePointer(
+          child: _ImageNodeLayer(
+            node: node,
+            width: node.bounds.width * scaleX,
+            height: node.bounds.height * scaleY,
+          ),
+        ),
+      );
+  }
+}
 
-  final PageRenderModel page;
+class _TextNodePainter extends CustomPainter {
+  const _TextNodePainter({
+    required this.node,
+    required this.platform,
+    required this.scaleX,
+    required this.scaleY,
+  });
+
+  final TextRenderNodeModel node;
   final ViewerPlatform platform;
+  final double scaleX;
+  final double scaleY;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final scaleX = size.width / page.width;
-    final scaleY = size.height / page.height;
+    final painter = buildRenderTextPainter(
+      node: node,
+      platform: platform,
+      scaleX: scaleX,
+      scaleY: scaleY,
+    )..layout();
+    painter.paint(canvas, Offset.zero);
+  }
 
-    for (final node in page.nodes) {
-      switch (node) {
-        case TextRenderNodeModel():
-          final painter = buildRenderTextPainter(
-            node: node,
-            platform: platform,
-            scaleX: scaleX,
-            scaleY: scaleY,
-          )..layout();
-          painter.paint(
-            canvas,
-            Offset(node.bounds.x * scaleX, node.bounds.y * scaleY),
-          );
-        case BoxRenderNodeModel():
-          final rect = Rect.fromLTWH(
-            node.bounds.x * scaleX,
-            node.bounds.y * scaleY,
-            node.bounds.width * scaleX,
-            node.bounds.height * scaleY,
-          );
-          final paint = Paint()..style = PaintingStyle.fill;
-          final fillColor = _parseColor(node.fillColorHex);
-          final gradientEndColor = _parseColor(node.gradientEndColorHex);
-          if (fillColor != null && gradientEndColor != null) {
-            paint.shader = _buildLinearGradientShader(
-              rect,
-              fillColor,
-              gradientEndColor,
-              node.gradientAngleDegrees ?? 0,
-            );
-          } else {
-            paint.color = fillColor ?? Colors.transparent;
-          }
-          canvas.drawRect(rect, paint);
-          if (node.strokeWidth > 0) {
-            canvas.drawRect(
-              rect,
-              Paint()
-                ..style = PaintingStyle.stroke
-                ..strokeWidth = node.strokeWidth * scaleX
-                ..color = _parseColor(node.strokeColorHex) ?? Colors.black,
-            );
-          }
-        case ImageRenderNodeModel():
-          if (node.dataBase64 != null) {
-            continue;
-          }
-          final rect = Rect.fromLTWH(
-            node.bounds.x * scaleX,
-            node.bounds.y * scaleY,
-            node.bounds.width * scaleX,
-            node.bounds.height * scaleY,
-          );
-          canvas.drawRect(rect, Paint()..color = const Color(0xFFE9EEF7));
-          final painter = TextPainter(
-            text: TextSpan(
-              text: node.description ?? node.resourceId,
-              style: const TextStyle(color: Color(0xFF42526B), fontSize: 10),
-            ),
-            textDirection: TextDirection.ltr,
-            maxLines: 2,
-            ellipsis: '…',
-          )..layout(maxWidth: rect.width - 8);
-          painter.paint(canvas, Offset(rect.left + 4, rect.top + 4));
+  @override
+  bool shouldRepaint(covariant _TextNodePainter oldDelegate) {
+    return oldDelegate.node != node ||
+        oldDelegate.platform != platform ||
+        oldDelegate.scaleX != scaleX ||
+        oldDelegate.scaleY != scaleY;
+  }
+}
+
+class _BoxNodePainter extends CustomPainter {
+  const _BoxNodePainter({
+    required this.node,
+    required this.scaleX,
+    required this.scaleY,
+  });
+
+  final BoxRenderNodeModel node;
+  final double scaleX;
+  final double scaleY;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final rect = Offset.zero & size;
+    final radius = Radius.circular(
+      (node.cornerRadius ?? 0) * math.min(scaleX, scaleY),
+    );
+    final fillPaint = Paint()..style = PaintingStyle.fill;
+    final fillColor = _parseColor(node.fillColorHex);
+    final gradientEndColor = _parseColor(node.gradientEndColorHex);
+    if (fillColor != null && gradientEndColor != null) {
+      fillPaint.shader = _buildLinearGradientShader(
+        rect,
+        fillColor,
+        gradientEndColor,
+        node.gradientAngleDegrees ?? 0,
+      );
+    } else {
+      fillPaint.color = fillColor ?? Colors.transparent;
+    }
+
+    final rrect = RRect.fromRectAndRadius(rect, radius);
+    if (node.cornerRadius != null && node.cornerRadius! > 0) {
+      canvas.drawRRect(rrect, fillPaint);
+    } else {
+      canvas.drawRect(rect, fillPaint);
+    }
+
+    if (node.strokeWidth > 0) {
+      final strokePaint = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = node.strokeWidth * math.min(scaleX, scaleY)
+        ..color = _parseColor(node.strokeColorHex) ?? Colors.black;
+      if (node.cornerRadius != null && node.cornerRadius! > 0) {
+        canvas.drawRRect(rrect, strokePaint);
+      } else {
+        canvas.drawRect(rect, strokePaint);
       }
     }
   }
 
   @override
-  bool shouldRepaint(covariant _PageRenderPainter oldDelegate) {
-    return oldDelegate.page != page;
+  bool shouldRepaint(covariant _BoxNodePainter oldDelegate) {
+    return oldDelegate.node != node ||
+        oldDelegate.scaleX != scaleX ||
+        oldDelegate.scaleY != scaleY;
+  }
+}
+
+class _ImageNodeLayer extends StatelessWidget {
+  const _ImageNodeLayer({
+    required this.node,
+    required this.width,
+    required this.height,
+  });
+
+  final ImageRenderNodeModel node;
+  final double width;
+  final double height;
+
+  @override
+  Widget build(BuildContext context) {
+    if (node.dataBase64 == null) {
+      return ColoredBox(
+        color: const Color(0xFFE9EEF7),
+        child: Center(
+          child: Text(
+            node.description ?? node.resourceId,
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: Color(0xFF42526B), fontSize: 10),
+          ),
+        ),
+      );
+    }
+
+    final crop = node.crop;
+    final visibleWidthFactor = crop == null
+        ? 1.0
+        : (1.0 - crop.left - crop.right).clamp(0.01, 1.0);
+    final visibleHeightFactor = crop == null
+        ? 1.0
+        : (1.0 - crop.top - crop.bottom).clamp(0.01, 1.0);
+    final childWidth = width / visibleWidthFactor;
+    final childHeight = height / visibleHeightFactor;
+    final offsetX = crop == null ? 0.0 : -(crop.left * childWidth);
+    final offsetY = crop == null ? 0.0 : -(crop.top * childHeight);
+
+    Widget image = Image.memory(
+      base64Decode(node.dataBase64!),
+      width: childWidth,
+      height: childHeight,
+      fit: BoxFit.fill,
+      filterQuality: FilterQuality.high,
+      gaplessPlayback: true,
+      errorBuilder: (context, error, stackTrace) => ColoredBox(
+        color: const Color(0xFFE9EEF7),
+        child: Center(
+          child: Text(
+            node.description ?? node.resourceId,
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: Color(0xFF42526B), fontSize: 10),
+          ),
+        ),
+      ),
+    );
+
+    if (node.flipHorizontal || node.flipVertical) {
+      image = Transform(
+        alignment: Alignment.center,
+        transform: Matrix4.diagonal3Values(
+          node.flipHorizontal ? -1.0 : 1.0,
+          node.flipVertical ? -1.0 : 1.0,
+          1.0,
+        ),
+        child: image,
+      );
+    }
+
+    return ClipRect(
+      child: Stack(
+        children: [
+          Positioned(
+            left: offsetX,
+            top: offsetY,
+            width: childWidth,
+            height: childHeight,
+            child: image,
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -311,10 +435,15 @@ Color? _parseColor(String? hex) {
     return null;
   }
   final normalized = hex.replaceFirst('#', '');
-  if (normalized.length != 6) {
-    return null;
+  if (normalized.length == 6) {
+    return Color(int.parse('FF$normalized', radix: 16));
   }
-  return Color(int.parse('FF$normalized', radix: 16));
+  if (normalized.length == 8) {
+    final rgb = normalized.substring(0, 6);
+    final alpha = normalized.substring(6, 8);
+    return Color(int.parse('$alpha$rgb', radix: 16));
+  }
+  return null;
 }
 
 ViewerPlatform _viewerPlatformForTargetPlatform(TargetPlatform platform) {

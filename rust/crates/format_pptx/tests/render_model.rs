@@ -138,7 +138,10 @@ fn builds_slide_render_model_from_shapes_images_and_text() {
     assert_eq!(page.page_index, 0);
     assert_eq!(page.width, 720.0);
     assert_eq!(page.height, 540.0);
-    assert_eq!(page.selection_anchors.len(), "Title Text".chars().count() + 1);
+    assert_eq!(
+        page.selection_anchors.len(),
+        "Title Text".chars().count() + 1
+    );
 
     let text_nodes: Vec<_> = page
         .nodes
@@ -266,7 +269,10 @@ fn wraps_text_into_multiple_lines_with_level_indent_inside_box() {
     assert!(text_nodes.len() >= 3);
     assert!(!page.selection_anchors.is_empty());
     assert_eq!(
-        page.selection_anchors.last().expect("last anchor").char_index,
+        page.selection_anchors
+            .last()
+            .expect("last anchor")
+            .char_index,
         text_nodes
             .last()
             .expect("last text node")
@@ -525,7 +531,10 @@ fn applies_layout_text_defaults_theme_fonts_and_bullets() {
     assert_eq!(title.style.font_family, "맑은 고딕");
     assert_eq!(title.style.font_size, 48.0);
     assert_eq!(title.style.color_hex, "#003EA7");
-    assert_eq!(title.style.gradient_end_color_hex.as_deref(), Some("#70AD47"));
+    assert_eq!(
+        title.style.gradient_end_color_hex.as_deref(),
+        Some("#70AD47")
+    );
 
     let bullet = text_nodes
         .iter()
@@ -878,7 +887,9 @@ fn render_model_inherits_layout_bounds_recurses_groups_and_renders_tables_and_ba
         })
         .collect();
 
-    assert!(text_nodes.iter().any(|node| node.text.contains("Inherited placeholder")));
+    assert!(text_nodes
+        .iter()
+        .any(|node| node.text.contains("Inherited placeholder")));
     assert!(text_nodes.iter().any(|node| node.text.contains("Cell A")));
     assert!(text_nodes.iter().any(|node| node.text.contains("Cell B")));
     assert_eq!(image_nodes.len(), 1);
@@ -887,8 +898,12 @@ fn render_model_inherits_layout_bounds_recurses_groups_and_renders_tables_and_ba
         node.bounds.width >= 719.0
             && (node.fill_color_hex.is_some() || node.gradient_end_color_hex.is_some())
     }));
-    assert!(box_nodes.iter().any(|node| node.fill_color_hex.as_deref() == Some("#2F45A5")));
-    assert!(box_nodes.iter().any(|node| node.stroke_color_hex.as_deref() == Some("#4BB0D8")));
+    assert!(box_nodes
+        .iter()
+        .any(|node| node.fill_color_hex.as_deref() == Some("#2F45A5")));
+    assert!(box_nodes
+        .iter()
+        .any(|node| node.stroke_color_hex.as_deref() == Some("#4BB0D8")));
 }
 
 #[test]
@@ -1113,7 +1128,9 @@ fn render_model_applies_default_table_styles_to_fill_and_text() {
         })
         .collect();
 
-    assert!(box_nodes.iter().any(|node| node.fill_color_hex.as_deref() == Some("#2F45A5")));
+    assert!(box_nodes
+        .iter()
+        .any(|node| node.fill_color_hex.as_deref() == Some("#2F45A5")));
     assert!(text_nodes
         .iter()
         .find(|node| node.text == "Header")
@@ -1206,4 +1223,158 @@ fn render_model_preserves_no_wrap_text_and_underline_runs() {
     assert!(text_nodes[0].style.underline);
     assert!(text_nodes[0].style.bold);
     assert_eq!(text_nodes[0].style.color_hex, "#428097");
+}
+
+#[test]
+fn render_model_preserves_shape_image_order_and_visual_attributes() {
+    let dir = tempdir().expect("tempdir should exist");
+    let path = dir.path().join("render-model-ordering.pptx");
+    create_zip(
+        &path,
+        &[
+            (
+                "ppt/slides/slide1.xml",
+                br#"
+<p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+       xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"
+       xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <p:cSld>
+    <p:spTree>
+      <p:sp>
+        <p:nvSpPr>
+          <p:cNvPr id="2" name="Styled shape" />
+          <p:cNvSpPr />
+          <p:nvPr />
+        </p:nvSpPr>
+        <p:spPr>
+          <a:xfrm>
+            <a:off x="127000" y="127000" />
+            <a:ext cx="1270000" cy="635000" />
+          </a:xfrm>
+          <a:prstGeom prst="rect"><a:avLst /></a:prstGeom>
+        </p:spPr>
+        <p:style>
+          <a:lnRef idx="2"><a:srgbClr val="445566" /></a:lnRef>
+          <a:fillRef idx="1"><a:srgbClr val="112233" /></a:fillRef>
+        </p:style>
+      </p:sp>
+      <p:pic>
+        <p:nvPicPr>
+          <p:cNvPr id="3" name="Picture 1" descr="Cropped image" />
+          <p:cNvPicPr />
+          <p:nvPr />
+        </p:nvPicPr>
+        <p:blipFill>
+          <a:blip r:embed="rIdImage1" />
+          <a:srcRect l="10000" r="20000" t="5000" b="15000" />
+        </p:blipFill>
+        <p:spPr>
+          <a:xfrm flipH="1">
+            <a:off x="1524000" y="127000" />
+            <a:ext cx="1270000" cy="952500" />
+          </a:xfrm>
+        </p:spPr>
+      </p:pic>
+      <p:sp>
+        <p:nvSpPr>
+          <p:cNvPr id="4" name="Overlay" />
+          <p:cNvSpPr />
+          <p:nvPr />
+        </p:nvSpPr>
+        <p:spPr>
+          <a:xfrm>
+            <a:off x="3175000" y="127000" />
+            <a:ext cx="1905000" cy="762000" />
+          </a:xfrm>
+          <a:prstGeom prst="roundRect"><a:avLst /></a:prstGeom>
+          <a:solidFill><a:srgbClr val="FFFFFF"><a:alpha val="50000" /></a:srgbClr></a:solidFill>
+          <a:ln><a:noFill /></a:ln>
+        </p:spPr>
+      </p:sp>
+      <p:sp>
+        <p:nvSpPr>
+          <p:cNvPr id="5" name="Title 1" />
+          <p:cNvSpPr />
+          <p:nvPr />
+        </p:nvSpPr>
+        <p:spPr>
+          <a:xfrm>
+            <a:off x="381000" y="1397000" />
+            <a:ext cx="3810000" cy="635000" />
+          </a:xfrm>
+        </p:spPr>
+        <p:txBody>
+          <a:bodyPr />
+          <a:lstStyle />
+          <a:p>
+            <a:r>
+              <a:rPr sz="2400"><a:latin typeface="Aptos" /></a:rPr>
+              <a:t>Ordered title</a:t>
+            </a:r>
+          </a:p>
+        </p:txBody>
+      </p:sp>
+    </p:spTree>
+  </p:cSld>
+</p:sld>
+"#,
+            ),
+            (
+                "ppt/slides/_rels/slide1.xml.rels",
+                br#"
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdImage1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image1.png" />
+</Relationships>
+"#,
+            ),
+            ("ppt/media/image1.png", b"fake-png"),
+        ],
+    );
+
+    let archive = OoxmlArchive::open_path(&path).expect("archive should open");
+    let slide_tree = PptxSlideTree {
+        presentation_part: "ppt/presentation.xml".to_string(),
+        presentation_size: None,
+        slides: vec![SlideReference {
+            slide_id: 256,
+            relationship_id: "rIdSlide1".to_string(),
+            part_name: "ppt/slides/slide1.xml".to_string(),
+            layout_part_name: None,
+            notes_part_name: None,
+            has_transition: false,
+            ignored_animation_nodes: 0,
+        }],
+        slide_masters: Vec::new(),
+    };
+
+    let page = build_slide_render_model(&archive, &slide_tree, 0).expect("render model");
+
+    assert!(matches!(page.nodes[0], RenderNode::Box(_)));
+    assert!(matches!(page.nodes[1], RenderNode::Image(_)));
+    assert!(matches!(page.nodes[2], RenderNode::Box(_)));
+    assert!(matches!(page.nodes[3], RenderNode::Text(_)));
+
+    let styled_shape = match &page.nodes[0] {
+        RenderNode::Box(node) => node,
+        _ => unreachable!(),
+    };
+    assert_eq!(styled_shape.fill_color_hex.as_deref(), Some("#112233"));
+    assert_eq!(styled_shape.stroke_color_hex.as_deref(), Some("#445566"));
+
+    let image = match &page.nodes[1] {
+        RenderNode::Image(node) => node,
+        _ => unreachable!(),
+    };
+    let crop = image.crop.as_ref().expect("crop");
+    assert!((crop.left - 0.10).abs() < 0.001);
+    assert!((crop.right - 0.20).abs() < 0.001);
+    assert!(image.flip_horizontal);
+    assert!(!image.flip_vertical);
+
+    let overlay = match &page.nodes[2] {
+        RenderNode::Box(node) => node,
+        _ => unreachable!(),
+    };
+    assert_eq!(overlay.fill_color_hex.as_deref(), Some("#FFFFFF80"));
+    assert!(overlay.corner_radius.unwrap_or_default() > 0.0);
 }

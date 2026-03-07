@@ -20,8 +20,8 @@
 | `fixday` slide 1 | 같은 자료 | bullet, 문단 들여쓰기, 줄 간격이 달라 정보 블록이 헐거워 보임 | `buChar`, `buClr`, `marL`, `indent`, `lnSpc`, `spcBef/Aft`를 레이아웃에 반영하지 않음 | P1 | 높음 | `PPTX 텍스트 박스 정렬과 줄바꿈 보정` | 이번 라운드 반영 |
 | `fixday` slide 1 | 같은 자료 | 우하단 표의 셀 배경색, 테두리, 일부 텍스트 스타일이 PDF와 다름 | `a:tbl` cell fill/border와 cell 내부 rich text style 상속이 불완전함 | P1 | 높음 | `PPTX 표 셀 배경색과 표 내부 텍스트 스타일 보정` | 이번 라운드 반영 |
 | `fixday` slide 2~5 | 같은 자료 | 제목/본문 일부에 underline이 빠지고 `Client -> Clien`처럼 마지막 글자가 잘림 | underline decoration과 `bodyPr wrap=\"none\"` 텍스트 박스 처리, last-glyph width/box clipping 처리가 부족함 | P1 | 높음 | `PPTX 밑줄, 텍스트 clipping, 제목/본문 개행 보정` | 이번 라운드 반영 |
-| `fixday` slide 2, 5, 6 | 같은 자료 | 회색/흰색 오버레이, 반투명 마스크, 겹침 순서가 달라 내용이 어색하게 가려짐 | shape z-order, opacity, rounded corner, shadow/effect 일부가 미지원이거나 순서 계산이 다름 | P1 | 높음 | `PPTX shape z-order, opacity, rounded corner, overlay composition 보정` | 후속 |
-| `fixday` slide 3, 5 | 같은 자료 | 이미지 방향, crop, fit, 위치가 PDF와 다름 | image transform/flip/crop/anchor 계산이 불완전함 | P1 | 중상 | `PPTX shape/image transform 및 crop 보정` | 후속 |
+| `fixday` slide 2, 5, 6 | 같은 자료 | 회색/흰색 오버레이, 반투명 마스크, 겹침 순서가 달라 내용이 어색하게 가려짐 | shape z-order, opacity, rounded corner, shadow/effect 일부가 미지원이거나 순서 계산이 다름 | P1 | 높음 | `PPTX shape z-order, opacity, rounded corner, overlay composition 보정` | 이번 라운드 반영 |
+| `fixday` slide 3, 5 | 같은 자료 | 이미지 방향, crop, fit, 위치가 PDF와 다름 | image transform/flip/crop/anchor 계산이 불완전함 | P1 | 중상 | `PPTX shape/image transform 및 crop 보정` | 이번 라운드 반영 |
 | `fixday` 공통 | viewer 수동 점검 | 페이지 클릭 시 일부 이미지가 반짝거림 | selection/highlight로 인한 rebuild 시 `Image.memory` 재구성 영향 가능성 | P2 | 중간 | `PPTX repaint flicker 완화` | `gaplessPlayback` 1차 반영, 후속 관찰 |
 | `fixday` PDF 대비 잔차 | PDF/Viewer 비교 | 폰트, 줄 간격, 세부 배치가 PowerPoint/PDF와 완전히 같지 않음 | OS에 없는 원본 서체, exact glyph metrics, effect/shadow 미지원 때문에 최종 오차가 남음 | P2 | 매우 높음 | `PPTX visual parity acceptance pass` 이후 hardening backlog | 후속 |
 
@@ -37,16 +37,19 @@
   - theme font 해석(`+mn-*`, `+mj-*`)
   - gradient title text, bullet, paragraph spacing 반영
   - image `gaplessPlayback` 적용
+  - render item 순서 보존
+  - shape style fallback(`p:style fillRef/lnRef`)
+  - alpha color, roundRect corner radius, image crop/flip 반영
 - 아직 남은 것은 visual parity 품질 조정이다.
-  - shape/image crop, rotation, z-order, opacity, rounded corner, effect/shadow
   - repaint flicker 최종 확인
   - exact glyph metrics
+  - shadow/effect의 픽셀 정밀도
 
 ## 현재 결론
 - 이번 라운드의 1차 목표는 `빈 화면/대량 누락`을 없애는 것이고, 그 범위는 구현했다.
 - 현재 `acceptance`를 막는 항목은 아래 네 가지다.
-  - shape z-order/opacity/rounded corner/overlay composition
-  - image transform/flip/crop/placement
+  - repaint flicker 최종 확인
+  - 수동 비교 기준 slide 1~6의 남은 세부 오차 재평가
 - 아래 항목은 `Hardening`으로 넘겨도 된다.
   - exact glyph metrics
   - 서체 availability 차이에 따른 미세 spacing 오차

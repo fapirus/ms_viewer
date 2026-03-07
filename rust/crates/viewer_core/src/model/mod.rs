@@ -215,6 +215,21 @@ pub struct ImageNode {
     pub content_type: Option<String>,
     pub data_base64: Option<String>,
     pub bounds: Rect,
+    #[serde(default)]
+    pub crop: Option<ImageCropInsets>,
+    #[serde(default)]
+    pub flip_horizontal: bool,
+    #[serde(default)]
+    pub flip_vertical: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ImageCropInsets {
+    pub left: f32,
+    pub top: f32,
+    pub right: f32,
+    pub bottom: f32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -226,6 +241,8 @@ pub struct BoxNode {
     pub gradient_angle_degrees: Option<f32>,
     pub stroke_color_hex: Option<String>,
     pub stroke_width: f32,
+    #[serde(default)]
+    pub corner_radius: Option<f32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

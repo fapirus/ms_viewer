@@ -911,6 +911,7 @@ pub fn build_selection_page_models(
                         gradient_angle_degrees: None,
                         stroke_color_hex: Some("#CBD5E1".to_string()),
                         stroke_width: 1.0,
+                        corner_radius: None,
                     }));
 
                     for row in rows {
@@ -927,6 +928,7 @@ pub fn build_selection_page_models(
                                 gradient_angle_degrees: None,
                                 stroke_color_hex: Some("#CBD5E1".to_string()),
                                 stroke_width: 1.0,
+                                corner_radius: None,
                             }));
 
                             for line in cell.lines {
@@ -965,6 +967,9 @@ pub fn build_selection_page_models(
                                         width: image.width,
                                         height: image.height,
                                     },
+                                    crop: None,
+                                    flip_horizontal: false,
+                                    flip_vertical: false,
                                 }));
                             }
                         }
@@ -993,6 +998,9 @@ pub fn build_selection_page_models(
                             width,
                             height,
                         },
+                        crop: None,
+                        flip_horizontal: false,
+                        flip_vertical: false,
                     }));
                 }
             }

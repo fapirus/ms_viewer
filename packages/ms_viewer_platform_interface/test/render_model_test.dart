@@ -90,6 +90,9 @@ void main() {
           'contentType': 'image/png',
           'dataBase64': 'aGVsbG8=',
           'bounds': {'x': 10.0, 'y': 20.0, 'width': 100.0, 'height': 80.0},
+          'crop': {'left': 0.1, 'top': 0.05, 'right': 0.2, 'bottom': 0.15},
+          'flipHorizontal': true,
+          'flipVertical': false,
         },
       ],
       'selectionAnchors': [],
@@ -99,6 +102,32 @@ void main() {
     expect(node.resourceId, 'word/media/image1.png');
     expect(node.contentType, 'image/png');
     expect(node.dataBase64, 'aGVsbG8=');
+    expect(node.crop!.left, 0.1);
+    expect(node.flipHorizontal, isTrue);
+    expect(node.flipVertical, isFalse);
+  });
+
+  test('page render model decodes box corner radius field', () {
+    final page = PageRenderModel.fromJson({
+      'pageIndex': 1,
+      'width': 1024.0,
+      'height': 768.0,
+      'nodes': [
+        {
+          'type': 'box',
+          'bounds': {'x': 0.0, 'y': 0.0, 'width': 300.0, 'height': 120.0},
+          'fillColorHex': '#FFFFFF80',
+          'strokeColorHex': null,
+          'strokeWidth': 0.0,
+          'cornerRadius': 18.0,
+        },
+      ],
+      'selectionAnchors': [],
+    });
+
+    final node = page.nodes.single as BoxRenderNodeModel;
+    expect(node.fillColorHex, '#FFFFFF80');
+    expect(node.cornerRadius, 18.0);
   });
 
   test('page render model decodes gradient text style fields', () {

@@ -126,7 +126,10 @@ fn parses_slide_text_boxes_with_placeholder_bounds_and_runs() {
     assert_eq!(title.bounds.as_ref().expect("bounds").x, 457_200);
     assert_eq!(title.bounds.as_ref().expect("bounds").width, 8_229_600);
     assert_eq!(title.paragraphs.len(), 1);
-    assert_eq!(title.paragraphs[0].alignment, Some(SlideTextAlignment::Center));
+    assert_eq!(
+        title.paragraphs[0].alignment,
+        Some(SlideTextAlignment::Center)
+    );
     assert_eq!(title.paragraphs[0].runs.len(), 3);
     assert_eq!(title.paragraphs[0].runs[0].text, "Hello");
     assert_eq!(title.paragraphs[0].runs[0].style.bold, Some(true));

@@ -3,8 +3,8 @@ use format_shared::{parse_shared_package, resolve_relationship_target};
 use std::collections::HashMap;
 use viewer_core::archive::OoxmlArchive;
 use viewer_core::model::{
-    BoxNode, ImageNode, ImageReference, PageRenderModel, ParagraphAlignment, Rect, RenderNode,
-    SelectionAnchor, TextNode, TextRange, TextStyle,
+    BoxNode, ImageCropInsets, ImageNode, ImageReference, PageRenderModel, ParagraphAlignment, Rect,
+    RenderNode, SelectionAnchor, TextNode, TextRange, TextStyle,
 };
 use viewer_core::search::{search_pages, SearchMatch, SearchPage};
 use viewer_core::xml::{parse_document, XmlElement};
@@ -112,6 +112,8 @@ pub struct BasicShape {
     pub transform: Option<ShapeTransform>,
     pub fill: Option<ShapeFill>,
     pub stroke: Option<ShapeStroke>,
+    pub style_fill: Option<ShapeFill>,
+    pub style_stroke: Option<ShapeStroke>,
     pub has_text_body: bool,
 }
 
@@ -360,6 +362,15 @@ struct PartContent {
     shapes: Vec<BasicShape>,
     images: Vec<SlideImage>,
     tables: Vec<SlideTable>,
+    render_items: Vec<PartContentItem>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+enum PartContentItem {
+    Shape(BasicShape),
+    TextBox(SlideTextBox),
+    Image(SlideImage),
+    Table(SlideTable),
 }
 
 impl SlideTextStyleSheet {
@@ -596,69 +607,77 @@ pub fn build_slide_render_model(
     let mut anchors = Vec::new();
     let mut text_offset = 0u32;
 
-    for shape in render_content.shapes.iter().cloned() {
-        let Some(transform) = shape.transform else {
-            continue;
-        };
-        let (fill_color_hex, gradient_end_color_hex, gradient_angle_degrees) =
-            normalize_render_fill(shape.fill.as_ref(), theme.as_ref());
-        nodes.push(RenderNode::Box(BoxNode {
-            bounds: rect_from_emu_bounds(&transform.bounds),
-            fill_color_hex,
-            gradient_end_color_hex,
-            gradient_angle_degrees,
-            stroke_color_hex: normalize_render_stroke_color(shape.stroke.as_ref(), theme.as_ref()),
-            stroke_width: shape
-                .stroke
-                .as_ref()
-                .and_then(|stroke| stroke.width_emu)
-                .map(emu_to_points)
-                .unwrap_or(0.0),
-        }));
-    }
+    for item in render_content.render_items {
+        match item {
+            PartContentItem::Shape(shape) => {
+                let Some(transform) = shape.transform.as_ref() else {
+                    continue;
+                };
+                let effective_fill = resolve_shape_render_fill(&shape);
+                let effective_stroke = resolve_shape_render_stroke(&shape);
+                let (fill_color_hex, gradient_end_color_hex, gradient_angle_degrees) =
+                    normalize_render_fill(effective_fill, theme.as_ref());
+                nodes.push(RenderNode::Box(BoxNode {
+                    bounds: rect_from_emu_bounds(&transform.bounds),
+                    fill_color_hex,
+                    gradient_end_color_hex,
+                    gradient_angle_degrees,
+                    stroke_color_hex: normalize_render_stroke_color(
+                        effective_stroke,
+                        theme.as_ref(),
+                    ),
+                    stroke_width: effective_stroke
+                        .and_then(|stroke| stroke.width_emu)
+                        .map(emu_to_points)
+                        .unwrap_or(0.0),
+                    corner_radius: shape_corner_radius_points(&shape.geometry, &transform.bounds),
+                }));
+            }
+            PartContentItem::Image(image) => {
+                let Some(transform) = image.transform.as_ref() else {
+                    continue;
+                };
 
-    for image in render_content.images.iter().cloned() {
-        let Some(transform) = image.transform else {
-            continue;
-        };
+                let data_base64 = if image.is_external {
+                    None
+                } else {
+                    Some(
+                        base64::engine::general_purpose::STANDARD
+                            .encode(archive.read_part(&image.image.resource_id)?),
+                    )
+                };
 
-        let data_base64 = if image.is_external {
-            None
-        } else {
-            Some(
-                base64::engine::general_purpose::STANDARD
-                    .encode(archive.read_part(&image.image.resource_id)?),
-            )
-        };
-
-        nodes.push(RenderNode::Image(ImageNode {
-            resource_id: image.image.resource_id,
-            description: image.description,
-            content_type: image.image.content_type,
-            data_base64,
-            bounds: rect_from_emu_bounds(&transform.bounds),
-        }));
-    }
-
-    for table in &render_content.tables {
-        build_table_nodes(
-            table,
-            theme.as_ref(),
-            table_styles.as_ref(),
-            &mut nodes,
-            &mut anchors,
-            &mut text_offset,
-        );
-    }
-
-    for text_box in render_content.text_boxes.iter().cloned() {
-        build_text_nodes(
-            &text_box,
-            theme.as_ref(),
-            &mut nodes,
-            &mut anchors,
-            &mut text_offset,
-        );
+                nodes.push(RenderNode::Image(ImageNode {
+                    resource_id: image.image.resource_id,
+                    description: image.description,
+                    content_type: image.image.content_type,
+                    data_base64,
+                    bounds: rect_from_emu_bounds(&transform.bounds),
+                    crop: image.crop.as_ref().map(image_crop_to_insets),
+                    flip_horizontal: transform.flip_horizontal,
+                    flip_vertical: transform.flip_vertical,
+                }));
+            }
+            PartContentItem::Table(table) => {
+                build_table_nodes(
+                    &table,
+                    theme.as_ref(),
+                    table_styles.as_ref(),
+                    &mut nodes,
+                    &mut anchors,
+                    &mut text_offset,
+                );
+            }
+            PartContentItem::TextBox(text_box) => {
+                build_text_nodes(
+                    &text_box,
+                    theme.as_ref(),
+                    &mut nodes,
+                    &mut anchors,
+                    &mut text_offset,
+                );
+            }
+        }
     }
 
     Ok(PageRenderModel {
@@ -711,7 +730,12 @@ pub fn parse_slide_tree(archive: &OoxmlArchive) -> Result<PptxSlideTree, ViewerE
         .relationships
         .iter()
         .find(|relationship| relationship.relationship_type == OFFICE_DOCUMENT_RELATIONSHIP)
-        .map(|relationship| relationship.resolved_target.trim_start_matches('/').to_string())
+        .map(|relationship| {
+            relationship
+                .resolved_target
+                .trim_start_matches('/')
+                .to_string()
+        })
         .ok_or(ViewerError::InvalidDocument)?;
 
     let presentation_xml = archive.read_part(&presentation_part)?;
@@ -745,7 +769,8 @@ fn collect_part_content(
     let relationships = parse_part_relationships(archive, part_name)?;
     let Some(shape_tree) = root
         .child("cSld")
-        .and_then(|common_slide| common_slide.child("spTree")) else {
+        .and_then(|common_slide| common_slide.child("spTree"))
+    else {
         return if root.local_name() == "sld" {
             Err(ViewerError::InvalidDocument)
         } else {
@@ -789,11 +814,13 @@ fn collect_render_content(
     };
 
     let mut slide_content = collect_part_content(archive, &slide.part_name, true)?;
-    let placeholder_catalog = build_placeholder_catalog(layout_content.as_ref(), master_content.as_ref());
+    let placeholder_catalog =
+        build_placeholder_catalog(layout_content.as_ref(), master_content.as_ref());
     apply_placeholder_templates(&mut slide_content.text_boxes, &placeholder_catalog);
     if let Some(theme_context) = theme_context {
         apply_master_text_styles(&mut slide_content.text_boxes, &theme_context.text_styles);
     }
+    sync_render_items_with_text_boxes(&mut slide_content);
     append_all_part_content(&mut content, slide_content);
 
     Ok(content)
@@ -810,6 +837,12 @@ fn append_non_placeholder_part_content(target: &mut PartContent, source: &PartCo
             .filter(|text_box| text_box.placeholder.is_none())
             .cloned(),
     );
+    target
+        .render_items
+        .extend(source.render_items.iter().filter_map(|item| match item {
+            PartContentItem::TextBox(text_box) if text_box.placeholder.is_some() => None,
+            _ => Some(item.clone()),
+        }));
 }
 
 fn append_all_part_content(target: &mut PartContent, source: PartContent) {
@@ -817,6 +850,7 @@ fn append_all_part_content(target: &mut PartContent, source: PartContent) {
     target.images.extend(source.images);
     target.tables.extend(source.tables);
     target.text_boxes.extend(source.text_boxes);
+    target.render_items.extend(source.render_items);
 }
 
 fn build_placeholder_catalog(
@@ -892,7 +926,9 @@ fn apply_placeholder_templates(
             text_box.wrap_none = template.wrap_none;
         }
 
-        text_box.style_sheet.merge_missing_from(&template.style_sheet);
+        text_box
+            .style_sheet
+            .merge_missing_from(&template.style_sheet);
     }
 }
 
@@ -908,7 +944,11 @@ fn find_placeholder_by_kind<'a>(
 
 fn apply_master_text_styles(text_boxes: &mut [SlideTextBox], text_styles: &MasterTextStyles) {
     for text_box in text_boxes {
-        let fallback_style = match text_box.placeholder.as_ref().map(|placeholder| &placeholder.kind) {
+        let fallback_style = match text_box
+            .placeholder
+            .as_ref()
+            .map(|placeholder| &placeholder.kind)
+        {
             Some(SlidePlaceholderKind::Title | SlidePlaceholderKind::CenteredTitle) => {
                 &text_styles.title
             }
@@ -924,6 +964,23 @@ fn apply_master_text_styles(text_boxes: &mut [SlideTextBox], text_styles: &Maste
     }
 }
 
+fn sync_render_items_with_text_boxes(content: &mut PartContent) {
+    let text_boxes_by_id = content
+        .text_boxes
+        .iter()
+        .cloned()
+        .map(|text_box| (text_box.shape_id, text_box))
+        .collect::<HashMap<_, _>>();
+
+    for item in &mut content.render_items {
+        if let PartContentItem::TextBox(text_box) = item {
+            if let Some(updated) = text_boxes_by_id.get(&text_box.shape_id) {
+                *text_box = updated.clone();
+            }
+        }
+    }
+}
+
 fn collect_shape_tree_content(
     parent: &XmlElement,
     relationships: &[SlideRelationship],
@@ -936,23 +993,37 @@ fn collect_shape_tree_content(
             "sp" => {
                 if allow_invalid_children {
                     match parse_basic_shape_with_context(child, coordinate_transform) {
-                        Ok(Some(shape)) => content.shapes.push(shape),
+                        Ok(Some(shape)) => {
+                            content.shapes.push(shape.clone());
+                            content.render_items.push(PartContentItem::Shape(shape));
+                        }
                         Ok(None) | Err(ViewerError::InvalidDocument) => {}
                         Err(error) => return Err(error),
                     }
                     match parse_text_box_shape_with_context(child, coordinate_transform) {
-                        Ok(Some(text_box)) => content.text_boxes.push(text_box),
+                        Ok(Some(text_box)) => {
+                            content.text_boxes.push(text_box.clone());
+                            content
+                                .render_items
+                                .push(PartContentItem::TextBox(text_box));
+                        }
                         Ok(None) | Err(ViewerError::InvalidDocument) => {}
                         Err(error) => return Err(error),
                     }
                 } else {
-                    if let Some(shape) = parse_basic_shape_with_context(child, coordinate_transform)? {
-                        content.shapes.push(shape);
+                    if let Some(shape) =
+                        parse_basic_shape_with_context(child, coordinate_transform)?
+                    {
+                        content.shapes.push(shape.clone());
+                        content.render_items.push(PartContentItem::Shape(shape));
                     }
                     if let Some(text_box) =
                         parse_text_box_shape_with_context(child, coordinate_transform)?
                     {
-                        content.text_boxes.push(text_box);
+                        content.text_boxes.push(text_box.clone());
+                        content
+                            .render_items
+                            .push(PartContentItem::TextBox(text_box));
                     }
                 }
             }
@@ -960,27 +1031,34 @@ fn collect_shape_tree_content(
                 if allow_invalid_children {
                     match parse_slide_image_with_context(child, relationships, coordinate_transform)
                     {
-                        Ok(image) => content.images.push(image),
+                        Ok(image) => {
+                            content.images.push(image.clone());
+                            content.render_items.push(PartContentItem::Image(image));
+                        }
                         Err(ViewerError::InvalidDocument) => {}
                         Err(error) => return Err(error),
                     }
                 } else {
-                    content.images.push(parse_slide_image_with_context(
-                        child,
-                        relationships,
-                        coordinate_transform,
-                    )?);
+                    let image =
+                        parse_slide_image_with_context(child, relationships, coordinate_transform)?;
+                    content.images.push(image.clone());
+                    content.render_items.push(PartContentItem::Image(image));
                 }
             }
             "graphicFrame" => {
                 if allow_invalid_children {
                     match parse_graphic_frame_table(child, coordinate_transform) {
-                        Ok(Some(table)) => content.tables.push(table),
+                        Ok(Some(table)) => {
+                            content.tables.push(table.clone());
+                            content.render_items.push(PartContentItem::Table(table));
+                        }
                         Ok(None) | Err(ViewerError::InvalidDocument) => {}
                         Err(error) => return Err(error),
                     }
-                } else if let Some(table) = parse_graphic_frame_table(child, coordinate_transform)? {
-                    content.tables.push(table);
+                } else if let Some(table) = parse_graphic_frame_table(child, coordinate_transform)?
+                {
+                    content.tables.push(table.clone());
+                    content.render_items.push(PartContentItem::Table(table));
                 }
             }
             "grpSp" => {
@@ -1387,7 +1465,10 @@ fn parse_slide_references(
             })
             .ok_or(ViewerError::InvalidDocument)?;
 
-        let slide_part_name = relationship.resolved_target.trim_start_matches('/').to_string();
+        let slide_part_name = relationship
+            .resolved_target
+            .trim_start_matches('/')
+            .to_string();
         let slide_relationships = parse_part_relationships(archive, &slide_part_name)?;
         let slide_xml = archive.read_part(&slide_part_name)?;
         let slide_text = String::from_utf8(slide_xml).map_err(|_| ViewerError::InvalidDocument)?;
@@ -1404,11 +1485,21 @@ fn parse_slide_references(
             layout_part_name: slide_relationships
                 .iter()
                 .find(|relationship| relationship.relationship_type == SLIDE_LAYOUT_RELATIONSHIP)
-                .map(|relationship| relationship.resolved_target.trim_start_matches('/').to_string()),
+                .map(|relationship| {
+                    relationship
+                        .resolved_target
+                        .trim_start_matches('/')
+                        .to_string()
+                }),
             notes_part_name: slide_relationships
                 .iter()
                 .find(|relationship| relationship.relationship_type == NOTES_SLIDE_RELATIONSHIP)
-                .map(|relationship| relationship.resolved_target.trim_start_matches('/').to_string()),
+                .map(|relationship| {
+                    relationship
+                        .resolved_target
+                        .trim_start_matches('/')
+                        .to_string()
+                }),
             has_transition: slide_root.child("transition").is_some(),
             ignored_animation_nodes: slide_root
                 .child("timing")
@@ -1444,7 +1535,10 @@ fn parse_slide_master_references(
                     && relationship.relationship_type == SLIDE_MASTER_RELATIONSHIP
             })
             .ok_or(ViewerError::InvalidDocument)?;
-        let master_part = relationship.resolved_target.trim_start_matches('/').to_string();
+        let master_part = relationship
+            .resolved_target
+            .trim_start_matches('/')
+            .to_string();
         let master_relationships = parse_part_relationships(archive, &master_part)?;
 
         let mut layouts = Vec::new();
@@ -1462,7 +1556,12 @@ fn parse_slide_master_references(
         let theme_part_name = master_relationships
             .iter()
             .find(|relationship| relationship.relationship_type == THEME_RELATIONSHIP)
-            .map(|relationship| relationship.resolved_target.trim_start_matches('/').to_string());
+            .map(|relationship| {
+                relationship
+                    .resolved_target
+                    .trim_start_matches('/')
+                    .to_string()
+            });
 
         masters.push(SlideMasterReference {
             master_id,
@@ -1496,10 +1595,7 @@ fn relationship_part_name(part_name: &str) -> Result<String, ViewerError> {
     Ok(format!("{directory}/_rels/{file_name}.rels"))
 }
 
-fn parse_u32_attribute(
-    element: &XmlElement,
-    name: &str,
-) -> Result<u32, ViewerError> {
+fn parse_u32_attribute(element: &XmlElement, name: &str) -> Result<u32, ViewerError> {
     element
         .required_attribute(name)?
         .parse::<u32>()
@@ -1540,8 +1636,7 @@ fn parse_text_box_shape_with_context(
         .map(parse_text_insets)
         .transpose()?
         .unwrap_or_default();
-    let wrap_none = body_properties
-        .and_then(|body_properties| body_properties.attribute("wrap"))
+    let wrap_none = body_properties.and_then(|body_properties| body_properties.attribute("wrap"))
         == Some("none");
     let placeholder = parse_placeholder_reference(non_visual)?;
     let style_sheet = text_body
@@ -1588,6 +1683,7 @@ fn parse_basic_shape_with_context(
         .transpose()?;
     let fill = parse_shape_fill(shape_properties)?;
     let stroke = parse_shape_stroke(shape_properties)?;
+    let (style_fill, style_stroke) = parse_shape_style_references(shape)?;
 
     Ok(Some(BasicShape {
         shape_id,
@@ -1596,6 +1692,8 @@ fn parse_basic_shape_with_context(
         transform,
         fill,
         stroke,
+        style_fill,
+        style_stroke,
         has_text_body: shape.child("txBody").is_some(),
     }))
 }
@@ -1605,10 +1703,18 @@ fn parse_slide_image_with_context(
     relationships: &[SlideRelationship],
     coordinate_transform: &CoordinateTransform,
 ) -> Result<SlideImage, ViewerError> {
-    let non_visual = picture.child("nvPicPr").ok_or(ViewerError::InvalidDocument)?;
-    let properties = non_visual.child("cNvPr").ok_or(ViewerError::InvalidDocument)?;
-    let blip_fill = picture.child("blipFill").ok_or(ViewerError::InvalidDocument)?;
-    let blip = blip_fill.child("blip").ok_or(ViewerError::InvalidDocument)?;
+    let non_visual = picture
+        .child("nvPicPr")
+        .ok_or(ViewerError::InvalidDocument)?;
+    let properties = non_visual
+        .child("cNvPr")
+        .ok_or(ViewerError::InvalidDocument)?;
+    let blip_fill = picture
+        .child("blipFill")
+        .ok_or(ViewerError::InvalidDocument)?;
+    let blip = blip_fill
+        .child("blip")
+        .ok_or(ViewerError::InvalidDocument)?;
     let reference_id = blip
         .attribute("r:embed")
         .or_else(|| blip.attribute("r:link"))
@@ -1624,7 +1730,10 @@ fn parse_slide_image_with_context(
         || relationship.target.starts_with("https://")
         || relationship.resolved_target.starts_with("http://")
         || relationship.resolved_target.starts_with("https://");
-    let resource_id = relationship.resolved_target.trim_start_matches('/').to_string();
+    let resource_id = relationship
+        .resolved_target
+        .trim_start_matches('/')
+        .to_string();
     let name = properties.required_attribute("name")?.to_string();
     let description = properties
         .attribute("descr")
@@ -1635,7 +1744,10 @@ fn parse_slide_image_with_context(
         .and_then(|shape_properties| shape_properties.child("xfrm"))
         .map(|transform| parse_shape_transform_with_context(transform, coordinate_transform))
         .transpose()?;
-    let crop = blip_fill.child("srcRect").map(parse_image_crop).transpose()?;
+    let crop = blip_fill
+        .child("srcRect")
+        .map(parse_image_crop)
+        .transpose()?;
 
     Ok(SlideImage {
         shape_id: parse_u32_attribute(properties, "id")?,
@@ -1645,8 +1757,12 @@ fn parse_slide_image_with_context(
             resource_id: resource_id.clone(),
             description,
             content_type: infer_image_content_type(&resource_id),
-            display_width: transform.as_ref().map(|transform| transform.bounds.width as f32),
-            display_height: transform.as_ref().map(|transform| transform.bounds.height as f32),
+            display_width: transform
+                .as_ref()
+                .map(|transform| transform.bounds.width as f32),
+            display_height: transform
+                .as_ref()
+                .map(|transform| transform.bounds.height as f32),
         },
         transform,
         crop,
@@ -1671,7 +1787,11 @@ fn parse_shape_transform_with_context(
         bounds: coordinate_transform.apply_rect(&raw_bounds),
         rotation_units: transform
             .attribute("rot")
-            .map(|rotation| rotation.parse::<i32>().map_err(|_| ViewerError::InvalidDocument))
+            .map(|rotation| {
+                rotation
+                    .parse::<i32>()
+                    .map_err(|_| ViewerError::InvalidDocument)
+            })
             .transpose()?,
         flip_horizontal: transform.attribute("flipH") == Some("1"),
         flip_vertical: transform.attribute("flipV") == Some("1"),
@@ -1693,7 +1813,10 @@ fn parse_basic_shape_geometry(
 fn parse_placeholder_reference(
     non_visual: &XmlElement,
 ) -> Result<Option<SlidePlaceholderReference>, ViewerError> {
-    let Some(placeholder) = non_visual.child("nvPr").and_then(|properties| properties.child("ph")) else {
+    let Some(placeholder) = non_visual
+        .child("nvPr")
+        .and_then(|properties| properties.child("ph"))
+    else {
         return Ok(None);
     };
 
@@ -1712,7 +1835,11 @@ fn parse_placeholder_reference(
     };
     let index = placeholder
         .attribute("idx")
-        .map(|index| index.parse::<u32>().map_err(|_| ViewerError::InvalidDocument))
+        .map(|index| {
+            index
+                .parse::<u32>()
+                .map_err(|_| ViewerError::InvalidDocument)
+        })
         .transpose()?;
 
     Ok(Some(SlidePlaceholderReference { kind, index }))
@@ -1745,7 +1872,11 @@ fn parse_shape_stroke(shape_properties: &XmlElement) -> Result<Option<ShapeStrok
 fn parse_line_stroke(line: &XmlElement) -> Result<Option<ShapeStroke>, ViewerError> {
     let width_emu = line
         .attribute("w")
-        .map(|width| width.parse::<i64>().map_err(|_| ViewerError::InvalidDocument))
+        .map(|width| {
+            width
+                .parse::<i64>()
+                .map_err(|_| ViewerError::InvalidDocument)
+        })
         .transpose()?;
 
     if line.child("noFill").is_some() {
@@ -1756,16 +1887,38 @@ fn parse_line_stroke(line: &XmlElement) -> Result<Option<ShapeStroke>, ViewerErr
         }));
     }
 
-    let color = line
-        .child("solidFill")
-        .map(parse_color_value)
-        .transpose()?;
+    let color = line.child("solidFill").map(parse_color_value).transpose()?;
 
     Ok(Some(ShapeStroke {
         width_emu,
         color,
         is_none: false,
     }))
+}
+
+fn parse_shape_style_references(
+    shape: &XmlElement,
+) -> Result<(Option<ShapeFill>, Option<ShapeStroke>), ViewerError> {
+    let Some(style) = shape.child("style") else {
+        return Ok((None, None));
+    };
+
+    let style_fill = style
+        .child("fillRef")
+        .map(|fill_ref| parse_color_value(fill_ref).map(ShapeFill::Solid))
+        .transpose()?;
+    let style_stroke = style
+        .child("lnRef")
+        .map(|line_ref| {
+            Ok(ShapeStroke {
+                width_emu: None,
+                color: Some(parse_color_value(line_ref)?),
+                is_none: false,
+            })
+        })
+        .transpose()?;
+
+    Ok((style_fill, style_stroke))
 }
 
 fn parse_gradient_fill(gradient_fill: &XmlElement) -> Result<ShapeFill, ViewerError> {
@@ -1782,7 +1935,12 @@ fn parse_gradient_fill(gradient_fill: &XmlElement) -> Result<ShapeFill, ViewerEr
     let angle_degrees = gradient_fill
         .child("lin")
         .and_then(|line| line.attribute("ang"))
-        .map(|angle| angle.parse::<i32>().map(|value| value / 60_000).map_err(|_| ViewerError::InvalidDocument))
+        .map(|angle| {
+            angle
+                .parse::<i32>()
+                .map(|value| value / 60_000)
+                .map_err(|_| ViewerError::InvalidDocument)
+        })
         .transpose()?;
 
     Ok(ShapeFill::Gradient {
@@ -1815,7 +1973,9 @@ fn parse_text_style_sheet(style_root: &XmlElement) -> Result<SlideTextStyleSheet
     Ok(sheet)
 }
 
-fn parse_paragraph_style(paragraph_properties: &XmlElement) -> Result<SlideParagraphStyle, ViewerError> {
+fn parse_paragraph_style(
+    paragraph_properties: &XmlElement,
+) -> Result<SlideParagraphStyle, ViewerError> {
     let alignment = paragraph_properties
         .attribute("algn")
         .and_then(parse_alignment);
@@ -1930,7 +2090,11 @@ fn parse_text_paragraph(paragraph: &XmlElement) -> Result<SlideTextParagraph, Vi
     let level = paragraph
         .child("pPr")
         .and_then(|properties| properties.attribute("lvl"))
-        .map(|level| level.parse::<u32>().map_err(|_| ViewerError::InvalidDocument))
+        .map(|level| {
+            level
+                .parse::<u32>()
+                .map_err(|_| ViewerError::InvalidDocument)
+        })
         .transpose()?;
 
     let mut runs = Vec::new();
@@ -1982,7 +2146,10 @@ fn parse_text_run(run: &XmlElement) -> Result<SlideTextRun, ViewerError> {
 fn parse_text_run_style(run_properties: &XmlElement) -> Result<SlideTextRunStyle, ViewerError> {
     let font_size_centipoints = run_properties
         .attribute("sz")
-        .map(|size| size.parse::<u32>().map_err(|_| ViewerError::InvalidDocument))
+        .map(|size| {
+            size.parse::<u32>()
+                .map_err(|_| ViewerError::InvalidDocument)
+        })
         .transpose()?;
     let bold = run_properties.attribute("b").map(|value| value == "1");
     let italic = run_properties.attribute("i").map(|value| value == "1");
@@ -2144,7 +2311,10 @@ fn parse_graphic_frame_table(
             let properties = cell.child("tcPr");
             let column_span = properties
                 .and_then(|properties| properties.attribute("gridSpan"))
-                .map(|span| span.parse::<u32>().map_err(|_| ViewerError::InvalidDocument))
+                .map(|span| {
+                    span.parse::<u32>()
+                        .map_err(|_| ViewerError::InvalidDocument)
+                })
                 .transpose()?
                 .unwrap_or(1);
             let fill = properties
@@ -2235,7 +2405,11 @@ fn parse_u32_optional_attribute(
 ) -> Result<Option<u32>, ViewerError> {
     element
         .attribute(name)
-        .map(|value| value.parse::<u32>().map_err(|_| ViewerError::InvalidDocument))
+        .map(|value| {
+            value
+                .parse::<u32>()
+                .map_err(|_| ViewerError::InvalidDocument)
+        })
         .transpose()
 }
 
@@ -2245,7 +2419,11 @@ fn parse_i64_optional_attribute(
 ) -> Result<Option<i64>, ViewerError> {
     element
         .attribute(name)
-        .map(|value| value.parse::<i64>().map_err(|_| ViewerError::InvalidDocument))
+        .map(|value| {
+            value
+                .parse::<i64>()
+                .map_err(|_| ViewerError::InvalidDocument)
+        })
         .transpose()
 }
 
@@ -2268,7 +2446,9 @@ fn parse_on_off_attribute_value(value: &str) -> bool {
 }
 
 fn infer_image_content_type(path: &str) -> Option<String> {
-    let normalized = path.rsplit_once('.').map(|(_, ext)| ext.to_ascii_lowercase())?;
+    let normalized = path
+        .rsplit_once('.')
+        .map(|(_, ext)| ext.to_ascii_lowercase())?;
     let content_type = match normalized.as_str() {
         "png" => "image/png",
         "jpg" | "jpeg" => "image/jpeg",
@@ -2334,11 +2514,7 @@ fn normalize_render_fill(
     theme_context: Option<&ThemeContext>,
 ) -> (Option<String>, Option<String>, Option<f32>) {
     match fill {
-        Some(ShapeFill::Solid(color)) => (
-            resolve_render_color(color, theme_context),
-            None,
-            None,
-        ),
+        Some(ShapeFill::Solid(color)) => (resolve_render_color(color, theme_context), None, None),
         Some(ShapeFill::Gradient {
             start_color,
             end_color,
@@ -2362,15 +2538,13 @@ fn normalize_render_stroke_color(
     if stroke.is_none {
         return None;
     }
-    stroke.color
+    stroke
+        .color
         .as_ref()
         .and_then(|color| resolve_render_color(color, theme_context))
 }
 
-fn resolve_render_color(
-    color: &str,
-    theme_context: Option<&ThemeContext>,
-) -> Option<String> {
+fn resolve_render_color(color: &str, theme_context: Option<&ThemeContext>) -> Option<String> {
     let mut parts = color.split(';');
     let base = parts.next()?;
     let mut resolved = if base.starts_with('#') {
@@ -2413,7 +2587,13 @@ fn resolve_theme_color_reference(base: &str, theme_context: &ThemeContext) -> Op
 }
 
 fn apply_color_modifier(color_hex: &str, name: &str, value: &str) -> Option<String> {
+    let normalized = color_hex.strip_prefix('#')?;
     let (mut red, mut green, mut blue) = parse_rgb_hex(color_hex)?;
+    let mut alpha = if normalized.len() == 8 {
+        u8::from_str_radix(&normalized[6..8], 16).ok()?
+    } else {
+        255
+    };
     let amount = value.parse::<f32>().ok()? / 100_000.0;
 
     match name {
@@ -2424,7 +2604,9 @@ fn apply_color_modifier(color_hex: &str, name: &str, value: &str) -> Option<Stri
         }
         "lumOff" => {
             red = ((red as f32) + (255.0 * amount)).round().clamp(0.0, 255.0) as u8;
-            green = ((green as f32) + (255.0 * amount)).round().clamp(0.0, 255.0) as u8;
+            green = ((green as f32) + (255.0 * amount))
+                .round()
+                .clamp(0.0, 255.0) as u8;
             blue = ((blue as f32) + (255.0 * amount)).round().clamp(0.0, 255.0) as u8;
         }
         "tint" => {
@@ -2438,16 +2620,22 @@ fn apply_color_modifier(color_hex: &str, name: &str, value: &str) -> Option<Stri
                 .round()
                 .clamp(0.0, 255.0) as u8;
         }
-        "alpha" => {}
+        "alpha" => {
+            alpha = ((alpha as f32) * amount).round().clamp(0.0, 255.0) as u8;
+        }
         _ => return Some(color_hex.to_string()),
     }
 
-    Some(format!("#{red:02X}{green:02X}{blue:02X}"))
+    if alpha == 255 && normalized.len() == 6 && name != "alpha" {
+        Some(format!("#{red:02X}{green:02X}{blue:02X}"))
+    } else {
+        Some(format!("#{red:02X}{green:02X}{blue:02X}{alpha:02X}"))
+    }
 }
 
 fn parse_rgb_hex(color_hex: &str) -> Option<(u8, u8, u8)> {
     let normalized = color_hex.strip_prefix('#')?;
-    if normalized.len() != 6 {
+    if normalized.len() != 6 && normalized.len() != 8 {
         return None;
     }
 
@@ -2455,6 +2643,40 @@ fn parse_rgb_hex(color_hex: &str) -> Option<(u8, u8, u8)> {
     let green = u8::from_str_radix(&normalized[2..4], 16).ok()?;
     let blue = u8::from_str_radix(&normalized[4..6], 16).ok()?;
     Some((red, green, blue))
+}
+
+fn resolve_shape_render_fill(shape: &BasicShape) -> Option<&ShapeFill> {
+    match shape.fill.as_ref() {
+        Some(ShapeFill::None) => None,
+        Some(fill) => Some(fill),
+        None => shape.style_fill.as_ref(),
+    }
+}
+
+fn resolve_shape_render_stroke(shape: &BasicShape) -> Option<&ShapeStroke> {
+    match shape.stroke.as_ref() {
+        Some(stroke) if stroke.is_none => Some(stroke),
+        Some(stroke) => Some(stroke),
+        None => shape.style_stroke.as_ref(),
+    }
+}
+
+fn image_crop_to_insets(crop: &ImageCrop) -> ImageCropInsets {
+    ImageCropInsets {
+        left: crop.left as f32 / 100_000.0,
+        top: crop.top as f32 / 100_000.0,
+        right: crop.right as f32 / 100_000.0,
+        bottom: crop.bottom as f32 / 100_000.0,
+    }
+}
+
+fn shape_corner_radius_points(geometry: &BasicShapeGeometry, bounds: &EmuRectangle) -> Option<f32> {
+    match geometry {
+        BasicShapeGeometry::Preset(name) if name == "roundRect" => {
+            Some(emu_to_points(bounds.width.min(bounds.height)) * 0.16667)
+        }
+        _ => None,
+    }
 }
 
 fn build_table_nodes(
@@ -2465,13 +2687,13 @@ fn build_table_nodes(
     anchors: &mut Vec<SelectionAnchor>,
     text_offset: &mut u32,
 ) {
-    let total_width = table
-        .column_widths_emu
+    let total_width = table.column_widths_emu.iter().copied().sum::<i64>().max(1);
+    let total_height = table
+        .rows
         .iter()
-        .copied()
+        .map(|row| row.height_emu)
         .sum::<i64>()
         .max(1);
-    let total_height = table.rows.iter().map(|row| row.height_emu).sum::<i64>().max(1);
     let mut cursor_y = table.bounds.y;
     let total_columns = table.column_widths_emu.len();
 
@@ -2534,6 +2756,7 @@ fn build_table_nodes(
                 gradient_angle_degrees: None,
                 stroke_color_hex: stroke_color,
                 stroke_width,
+                corner_radius: None,
             }));
 
             let mut style_sheet = cell.style_sheet.clone();
@@ -2655,10 +2878,16 @@ fn build_text_nodes(
             .as_ref()
             .map(slide_alignment_to_paragraph_alignment)
             .unwrap_or(ParagraphAlignment::Left);
-        let paragraph_font_size =
-            paragraph_default_font_size(paragraph, &resolved_style.default_run_style, theme_context);
-        let spacing_before =
-            resolve_spacing_points(resolved_style.spacing_before.as_ref(), paragraph_font_size, 0.0);
+        let paragraph_font_size = paragraph_default_font_size(
+            paragraph,
+            &resolved_style.default_run_style,
+            theme_context,
+        );
+        let spacing_before = resolve_spacing_points(
+            resolved_style.spacing_before.as_ref(),
+            paragraph_font_size,
+            0.0,
+        );
         if cursor_y + spacing_before > max_bottom {
             break;
         }
@@ -2677,8 +2906,11 @@ fn build_text_nodes(
         };
         let line_available_width = (content_width - (line_base_x - base_x)).max(1.0);
         let bullet_x = (base_x + margin_left + indent).max(base_x);
-        let bullet_style =
-            resolve_bullet_text_style(resolved_style.bullet.as_ref(), &resolved_style.default_run_style, theme_context);
+        let bullet_style = resolve_bullet_text_style(
+            resolved_style.bullet.as_ref(),
+            &resolved_style.default_run_style,
+            theme_context,
+        );
         let wrap_width = if text_box.wrap_none {
             f32::MAX
         } else {
@@ -2692,8 +2924,10 @@ fn build_text_nodes(
         );
 
         for (line_index, line) in lines.into_iter().enumerate() {
-            let line_height =
-                resolve_line_height(line.max_font_size.max(paragraph_font_size), resolved_style.line_spacing.as_ref());
+            let line_height = resolve_line_height(
+                line.max_font_size.max(paragraph_font_size),
+                resolved_style.line_spacing.as_ref(),
+            );
             if cursor_y + line_height > max_bottom {
                 break 'paragraphs;
             }
@@ -2727,22 +2961,18 @@ fn build_text_nodes(
                     width: span.width.max(1.0),
                     height: line_height,
                 };
-                push_text_node(
-                    nodes,
-                    anchors,
-                    text_offset,
-                    span.text,
-                    bounds,
-                    span.style,
-                );
+                push_text_node(nodes, anchors, text_offset, span.text, bounds, span.style);
                 cursor_x += span.width;
             }
 
             cursor_y += line_height;
         }
 
-        let spacing_after =
-            resolve_spacing_points(resolved_style.spacing_after.as_ref(), paragraph_font_size, 6.0);
+        let spacing_after = resolve_spacing_points(
+            resolved_style.spacing_after.as_ref(),
+            paragraph_font_size,
+            6.0,
+        );
         if cursor_y + spacing_after > max_bottom {
             break;
         }
@@ -2804,14 +3034,12 @@ fn resolve_paragraph_style_for_layout(
     style
 }
 
-fn resolve_spacing_points(
-    spacing: Option<&SlideSpacing>,
-    font_size: f32,
-    fallback: f32,
-) -> f32 {
+fn resolve_spacing_points(spacing: Option<&SlideSpacing>, font_size: f32, fallback: f32) -> f32 {
     match spacing {
         Some(SlideSpacing::Points(points)) => (*points as f32 / 100.0).max(0.0),
-        Some(SlideSpacing::Percent(percent)) => (font_size * (*percent as f32 / 100_000.0)).max(0.0),
+        Some(SlideSpacing::Percent(percent)) => {
+            (font_size * (*percent as f32 / 100_000.0)).max(0.0)
+        }
         None => fallback,
     }
 }
@@ -3052,7 +3280,14 @@ fn wrap_paragraph_lines(
         let parts: Vec<&str> = run.text.split('\n').collect();
 
         for (index, part) in parts.iter().enumerate() {
-            push_wrapped_text_part(part, &style, max_width, &mut current, &mut lines, default_font_size);
+            push_wrapped_text_part(
+                part,
+                &style,
+                max_width,
+                &mut current,
+                &mut lines,
+                default_font_size,
+            );
 
             if index + 1 < parts.len() {
                 flush_line(&mut current, &mut lines, default_font_size, true);
