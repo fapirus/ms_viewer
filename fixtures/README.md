@@ -30,3 +30,6 @@
   - `docx/docx_multi_section.docx`
   - `encrypted/docx_password_stub.docx`
   - `regression/docx_acceptance_plain_text.docx`
+- PPTX Phase 2 review set:
+  - `pptx/pptx_text_shapes.pptx`
+  - `pptx/pptx_theme_layout_images.pptx`

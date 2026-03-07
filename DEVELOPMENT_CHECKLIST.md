@@ -522,7 +522,15 @@
     - wrapped body text range continuity fixture
 
 ### PPTX tests and acceptance
-- [ ] Rust fixture tests for slides, themes, shapes, images
+- [x] Rust fixture tests for slides, themes, shapes, images
+  - Done:
+    - `fixtures/pptx/` review fixture set 추가
+    - 실제 `.pptx` 파일을 여는 acceptance test 추가
+    - slides/shapes/search-selection fixture와 theme/layout/image fixture를 분리
+  - Tests:
+    - fixture presence smoke test
+    - review fixture open/render/search/selection test
+    - review fixture theme/layout/image link test
 - [ ] Flutter slide rendering widget tests
 - [ ] PPTX MVP acceptance pass
   - Acceptance checks:
