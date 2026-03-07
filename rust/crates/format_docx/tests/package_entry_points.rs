@@ -822,6 +822,96 @@ fn missing_media_relationship_for_drawing_fails() {
 }
 
 #[test]
+fn table_cell_inline_image_is_rendered_as_image_node() {
+    let file = create_docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+              <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+            </Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+              <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+            </Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <w:document
+              xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+              xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"
+              xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"
+              xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+              xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing">
+              <w:body>
+                <w:tbl>
+                  <w:tblGrid>
+                    <w:gridCol w:w="4000"/>
+                  </w:tblGrid>
+                  <w:tr>
+                    <w:tc>
+                      <w:p>
+                        <w:r>
+                          <w:drawing>
+                            <wp:inline>
+                              <wp:extent cx="1905000" cy="952500"/>
+                              <wp:docPr id="1" name="Cell Image" descr="Cell image"/>
+                              <a:graphic>
+                                <a:graphicData>
+                                  <pic:pic>
+                                    <pic:blipFill>
+                                      <a:blip r:embed="rImage1"/>
+                                    </pic:blipFill>
+                                  </pic:pic>
+                                </a:graphicData>
+                              </a:graphic>
+                            </wp:inline>
+                          </w:drawing>
+                        </w:r>
+                      </w:p>
+                    </w:tc>
+                  </w:tr>
+                </w:tbl>
+                <w:sectPr>
+                  <w:pgSz w:w="12240" w:h="15840"/>
+                  <w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"/>
+                </w:sectPr>
+              </w:body>
+            </w:document>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+              <Relationship Id="rImage1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image1.png"/>
+            </Relationships>"#,
+        ),
+        ("word/media/image1.png", "fakepng"),
+    ]);
+    let archive = OoxmlArchive::open_path(file.path()).expect("docx archive should open");
+    let package = parse_docx(&archive).expect("docx package should parse");
+
+    let models = build_selection_page_models(&archive, &package).expect("selection models");
+    let image_nodes = models[0]
+        .nodes
+        .iter()
+        .filter_map(|node| match node {
+            viewer_core::model::RenderNode::Image(image) => Some(image),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(image_nodes.len(), 1);
+    assert_eq!(image_nodes[0].description.as_deref(), Some("Cell image"));
+    assert!(image_nodes[0].bounds.width > 100.0);
+    assert!(image_nodes[0].bounds.height > 50.0);
+}
+
+#[test]
 fn parses_different_first_page_header_footer_references() {
     let file = create_docx_fixture(&[
         (

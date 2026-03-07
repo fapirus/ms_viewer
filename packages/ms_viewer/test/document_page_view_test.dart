@@ -99,5 +99,6 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(Image), findsOneWidget);
+    expect(tester.getSize(find.byType(Image)), const Size(40, 40));
   });
 }

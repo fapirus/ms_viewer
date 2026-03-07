@@ -328,7 +328,7 @@
     - 셀 텍스트에 실제 run style/font size를 반영
     - `fixtures/regression/docx_table_cell_layout.docx` 추가
     - synthetic table wrap test와 path-based regression test 추가
-- [ ] DOCX 표 내부 이미지 및 inline image 렌더 보정
+- [x] DOCX 표 내부 이미지 및 inline image 렌더 보정
   - Rust scope:
     - drawing extent, anchor/inline 차이, cell clipping, image fit 정책 보정
   - Flutter scope:
@@ -336,6 +336,11 @@
   - Tests:
     - image-in-table regression fixture
     - inline image sizing widget test
+  - Done:
+    - 표 셀 내부 `w:drawing`을 media-aware path로 파싱
+    - table cell image node를 page render model에 포함
+    - `fixtures/regression/docx_table_inline_image.docx` 추가
+    - synthetic image-in-table test, path-based regression test, Flutter image sizing widget test 추가
 
 ### Typography and spacing
 - [ ] DOCX 문단 간격과 기본 스타일 메트릭 보정

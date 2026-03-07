@@ -161,6 +161,36 @@ fn table_cell_layout_regression_fixture_preserves_cell_text_style() {
 }
 
 #[test]
+fn table_inline_image_regression_fixture_emits_image_node() {
+    let path = regression_fixture_path("docx_table_inline_image.docx");
+    let response = get_page_render_model(GetPageRenderModelRequest {
+        source: DocumentSource::Path(path.display().to_string()),
+        document_id: format!("path:{}", path.display()),
+        page_index: 0,
+        options: OpenOptions::default(),
+    });
+
+    match response {
+        GetPageRenderModelResponse::Success(page) => {
+            let images = page
+                .nodes
+                .iter()
+                .filter_map(|node| match node {
+                    viewer_core::model::RenderNode::Image(image) => Some(image),
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+
+            assert_eq!(images.len(), 1);
+            assert_eq!(images[0].description.as_deref(), Some("Cell image"));
+            assert!(images[0].bounds.width > 100.0);
+            assert!(images[0].bounds.height > 50.0);
+        }
+        other => panic!("expected page render model, got {other:?}"),
+    }
+}
+
+#[test]
 fn opens_xlsx_bytes_request_from_json() {
     let file = create_package(&[
         (

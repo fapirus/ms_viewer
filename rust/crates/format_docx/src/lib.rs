@@ -138,6 +138,18 @@ pub struct LaidOutTableCell {
     pub height: f32,
     pub column_span: u16,
     pub lines: Vec<LaidOutLine>,
+    pub images: Vec<LaidOutTableCellImage>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct LaidOutTableCellImage {
+    pub resource_id: String,
+    pub description: Option<String>,
+    pub content_type: Option<String>,
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -240,7 +252,7 @@ pub fn parse_paragraph_blocks(
             "p" => blocks.extend(parse_paragraph_blocks_from_element(
                 child, &styles, &numbering, package,
             )?),
-            "tbl" => blocks.push(parse_table_block(child, &styles, &numbering)),
+            "tbl" => blocks.push(parse_table_block(child, &styles, &numbering, package)?),
             _ => {}
         }
     }
@@ -850,6 +862,25 @@ pub fn build_selection_page_models(
                                     line.style,
                                 );
                             }
+
+                            for image in cell.images {
+                                let image_bytes = archive.read_part(&image.resource_id)?;
+                                nodes.push(RenderNode::Image(ImageNode {
+                                    resource_id: image.resource_id,
+                                    description: image.description,
+                                    content_type: image.content_type,
+                                    data_base64: Some(
+                                        base64::engine::general_purpose::STANDARD
+                                            .encode(image_bytes),
+                                    ),
+                                    bounds: Rect {
+                                        x: image.x,
+                                        y: image.y,
+                                        width: image.width,
+                                        height: image.height,
+                                    },
+                                }));
+                            }
                         }
                     }
                 }
@@ -1137,7 +1168,7 @@ fn layout_table_row(
             span as usize,
             fallback_width * span as f32,
         );
-        let lines = layout_table_cell_lines(cell, cell_x, y, cell_width);
+        let (lines, images, _) = layout_table_cell_content(cell, cell_x, y, cell_width);
         cells.push(LaidOutTableCell {
             x: cell_x,
             y,
@@ -1145,6 +1176,7 @@ fn layout_table_row(
             height: row_height,
             column_span: cell.column_span,
             lines,
+            images,
         });
         cell_x += cell_width;
         column_index += span as usize;
@@ -1171,7 +1203,8 @@ fn estimate_table_row_height(row: &TableRow, width: f32, column_widths: &[f32]) 
             span as usize,
             fallback_width * span as f32,
         );
-        max_height = max_height.max(measure_table_cell_content_height(cell, cell_width));
+        let (_, _, content_height) = layout_table_cell_content(cell, 0.0, 0.0, cell_width);
+        max_height = max_height.max(content_height);
         column_index += span as usize;
     }
 
@@ -1212,89 +1245,86 @@ fn resolve_spanned_width(
     }
 }
 
-fn layout_table_cell_lines(cell: &TableCell, x: f32, y: f32, width: f32) -> Vec<LaidOutLine> {
+fn layout_table_cell_content(
+    cell: &TableCell,
+    x: f32,
+    y: f32,
+    width: f32,
+) -> (Vec<LaidOutLine>, Vec<LaidOutTableCellImage>, f32) {
     const CELL_PADDING_X: f32 = 6.0;
     const CELL_PADDING_Y: f32 = 6.0;
     const PARAGRAPH_GAP: f32 = 2.0;
+    const IMAGE_GAP: f32 = 4.0;
 
     let mut lines = Vec::new();
+    let mut images = Vec::new();
     let available_width = (width - CELL_PADDING_X * 2.0).max(24.0);
     let mut cursor_y = y + CELL_PADDING_Y;
-    let mut paragraph_seen = false;
+    let mut has_content = false;
 
     for block in &cell.blocks {
-        let Block::Paragraph { runs, .. } = block else {
-            continue;
-        };
+        match block {
+            Block::Paragraph { runs, .. } => {
+                let font_size = runs.first().map(|run| run.style.font_size).unwrap_or(12.0);
+                let line_height = (font_size * 1.2).max(14.0);
+                let style = runs
+                    .first()
+                    .map(|run| run.style.clone())
+                    .unwrap_or_else(default_text_style);
+                let text = runs
+                    .iter()
+                    .map(|run| run.text.as_str())
+                    .collect::<Vec<_>>()
+                    .join("");
+                let paragraph_lines = break_text_lines(&text, available_width, font_size);
 
-        let font_size = runs.first().map(|run| run.style.font_size).unwrap_or(12.0);
-        let line_height = (font_size * 1.2).max(14.0);
-        let style = runs
-            .first()
-            .map(|run| run.style.clone())
-            .unwrap_or_else(default_text_style);
-        let text = runs
-            .iter()
-            .map(|run| run.text.as_str())
-            .collect::<Vec<_>>()
-            .join("");
-        let paragraph_lines = break_text_lines(&text, available_width, font_size);
+                if has_content {
+                    cursor_y += PARAGRAPH_GAP;
+                }
+                has_content = true;
 
-        if paragraph_seen {
-            cursor_y += PARAGRAPH_GAP;
-        }
-        paragraph_seen = true;
-
-        for line in paragraph_lines {
-            if !line.is_empty() {
-                lines.push(LaidOutLine {
-                    text: line.clone(),
+                for line in paragraph_lines {
+                    if !line.is_empty() {
+                        lines.push(LaidOutLine {
+                            text: line.clone(),
+                            x: x + CELL_PADDING_X,
+                            y: cursor_y,
+                            width: estimate_text_width(&line, font_size).min(available_width),
+                            height: line_height,
+                            style: style.clone(),
+                        });
+                    }
+                    cursor_y += line_height;
+                }
+            }
+            Block::Image { image } => {
+                let (image_width, image_height) = image_display_size(image, available_width);
+                if has_content {
+                    cursor_y += IMAGE_GAP;
+                }
+                has_content = true;
+                images.push(LaidOutTableCellImage {
+                    resource_id: image.resource_id.clone(),
+                    description: image.description.clone(),
+                    content_type: image.content_type.clone(),
                     x: x + CELL_PADDING_X,
                     y: cursor_y,
-                    width: estimate_text_width(&line, font_size).min(available_width),
-                    height: line_height,
-                    style: style.clone(),
+                    width: image_width,
+                    height: image_height,
                 });
+                cursor_y += image_height;
             }
-            cursor_y += line_height;
+            Block::Table { .. } => {}
         }
     }
 
-    lines
-}
+    let content_height = if has_content {
+        (cursor_y - y) + CELL_PADDING_Y
+    } else {
+        24.0
+    };
 
-fn measure_table_cell_content_height(cell: &TableCell, width: f32) -> f32 {
-    const CELL_PADDING_Y: f32 = 6.0;
-    const PARAGRAPH_GAP: f32 = 2.0;
-
-    let available_width = (width - 12.0).max(24.0);
-    let mut content_height = CELL_PADDING_Y * 2.0;
-    let mut paragraph_seen = false;
-
-    for block in &cell.blocks {
-        let Block::Paragraph { runs, .. } = block else {
-            continue;
-        };
-
-        let font_size = runs.first().map(|run| run.style.font_size).unwrap_or(12.0);
-        let line_height = (font_size * 1.2).max(14.0);
-        let text = runs
-            .iter()
-            .map(|run| run.text.as_str())
-            .collect::<Vec<_>>()
-            .join("");
-        let line_count = break_text_lines(&text, available_width, font_size)
-            .len()
-            .max(1);
-
-        if paragraph_seen {
-            content_height += PARAGRAPH_GAP;
-        }
-        paragraph_seen = true;
-        content_height += line_count as f32 * line_height;
-    }
-
-    content_height.max(24.0)
+    (lines, images, content_height.max(24.0))
 }
 
 fn break_text_lines(text: &str, max_width: f32, font_size: f32) -> Vec<String> {
@@ -1408,22 +1438,12 @@ fn parse_paragraph_blocks_with_media(
     Ok(blocks)
 }
 
-fn parse_paragraph_block(
-    paragraph: &viewer_core::xml::XmlElement,
-    styles: &StyleCatalog,
-    numbering: &NumberingCatalog,
-) -> Block {
-    Block::Paragraph {
-        runs: parse_paragraph_runs(paragraph, styles),
-        list: parse_paragraph_list(paragraph, numbering),
-    }
-}
-
 fn parse_table_block(
     table: &viewer_core::xml::XmlElement,
     styles: &StyleCatalog,
     numbering: &NumberingCatalog,
-) -> Block {
+    package: &DocxPackage,
+) -> Result<Block, ViewerError> {
     let column_widths = table
         .child("tblGrid")
         .map(|grid| {
@@ -1447,23 +1467,24 @@ fn parse_table_block(
                 continue;
             }
 
-            cells.push(parse_table_cell(cell, styles, numbering));
+            cells.push(parse_table_cell(cell, styles, numbering, package)?);
         }
 
         rows.push(TableRow { cells });
     }
 
-    Block::Table {
+    Ok(Block::Table {
         rows,
         column_widths,
-    }
+    })
 }
 
 fn parse_table_cell(
     cell: &viewer_core::xml::XmlElement,
     styles: &StyleCatalog,
     numbering: &NumberingCatalog,
-) -> TableCell {
+    package: &DocxPackage,
+) -> Result<TableCell, ViewerError> {
     let properties = cell.child("tcPr");
     let column_span = properties
         .and_then(|node| node.child("gridSpan"))
@@ -1478,13 +1499,13 @@ fn parse_table_cell(
         });
 
     let mut blocks = Vec::new();
-    collect_table_cell_blocks(cell, styles, numbering, &mut blocks);
+    collect_table_cell_blocks(cell, styles, numbering, package, &mut blocks)?;
 
-    TableCell {
+    Ok(TableCell {
         blocks,
         column_span,
         row_merge,
-    }
+    })
 }
 
 fn parse_paragraph_list(
@@ -1738,16 +1759,24 @@ fn collect_table_cell_blocks(
     element: &viewer_core::xml::XmlElement,
     styles: &StyleCatalog,
     numbering: &NumberingCatalog,
+    package: &DocxPackage,
     blocks: &mut Vec<Block>,
-) {
+) -> Result<(), ViewerError> {
     for child in &element.children {
         if child.local_name() == "p" {
-            blocks.push(parse_paragraph_block(child, styles, numbering));
+            blocks.extend(parse_paragraph_blocks_with_media(
+                child,
+                styles,
+                numbering,
+                Some(package),
+            )?);
             continue;
         }
 
-        collect_table_cell_blocks(child, styles, numbering, blocks);
+        collect_table_cell_blocks(child, styles, numbering, package, blocks)?;
     }
+
+    Ok(())
 }
 
 fn push_text_node(
