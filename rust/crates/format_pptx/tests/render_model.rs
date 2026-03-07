@@ -136,7 +136,7 @@ fn builds_slide_render_model_from_shapes_images_and_text() {
     assert_eq!(page.page_index, 0);
     assert_eq!(page.width, 720.0);
     assert_eq!(page.height, 540.0);
-    assert!(page.selection_anchors.is_empty());
+    assert_eq!(page.selection_anchors.len(), "Title Text".chars().count() + 1);
 
     let text_nodes: Vec<_> = page
         .nodes
@@ -152,6 +152,8 @@ fn builds_slide_render_model_from_shapes_images_and_text() {
     assert_eq!(text_nodes[0].style.font_size, 24.0);
     assert!(text_nodes[0].bounds.x > 60.0);
     assert!(text_nodes[0].bounds.x < 70.0);
+    assert_eq!(text_nodes[0].range.start, 0);
+    assert_eq!(text_nodes[0].range.end, 10);
 
     let box_nodes: Vec<_> = page
         .nodes
@@ -260,6 +262,16 @@ fn wraps_text_into_multiple_lines_with_level_indent_inside_box() {
         .collect();
 
     assert!(text_nodes.len() >= 3);
+    assert!(!page.selection_anchors.is_empty());
+    assert_eq!(
+        page.selection_anchors.last().expect("last anchor").char_index,
+        text_nodes
+            .last()
+            .expect("last text node")
+            .text
+            .chars()
+            .count() as u32
+    );
     let mut line_ys: Vec<i32> = text_nodes
         .iter()
         .map(|node| node.bounds.y.round() as i32)
@@ -271,6 +283,10 @@ fn wraps_text_into_multiple_lines_with_level_indent_inside_box() {
     assert!(text_nodes
         .iter()
         .all(|node| node.bounds.x + node.bounds.width <= 114.6));
+    assert_eq!(text_nodes.first().expect("first").range.start, 0);
+    assert!(text_nodes
+        .windows(2)
+        .all(|pair| pair[0].range.end == pair[1].range.start));
 }
 
 #[test]

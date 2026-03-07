@@ -3,7 +3,7 @@ use format_shared::{parse_shared_package, resolve_relationship_target};
 use viewer_core::archive::OoxmlArchive;
 use viewer_core::model::{
     BoxNode, ImageNode, ImageReference, PageRenderModel, ParagraphAlignment, Rect, RenderNode,
-    TextNode, TextRange, TextStyle,
+    SelectionAnchor, TextNode, TextRange, TextStyle,
 };
 use viewer_core::search::{search_pages, SearchMatch, SearchPage};
 use viewer_core::xml::{parse_document, XmlElement};
@@ -318,6 +318,8 @@ pub fn build_slide_render_model(
         .unwrap_or(540.0);
 
     let mut nodes = Vec::new();
+    let mut anchors = Vec::new();
+    let mut text_offset = 0u32;
 
     for shape in parse_slide_basic_shapes(archive, &slide.part_name)? {
         let Some(transform) = shape.transform else {
@@ -361,7 +363,7 @@ pub fn build_slide_render_model(
     }
 
     for text_box in parse_slide_text_boxes(archive, &slide.part_name)? {
-        nodes.extend(build_text_nodes(&text_box));
+        build_text_nodes(&text_box, &mut nodes, &mut anchors, &mut text_offset);
     }
 
     Ok(PageRenderModel {
@@ -369,7 +371,7 @@ pub fn build_slide_render_model(
         width: slide_width,
         height: slide_height,
         nodes,
-        selection_anchors: Vec::new(),
+        selection_anchors: anchors,
     })
 }
 
@@ -1098,9 +1100,14 @@ fn normalize_render_stroke_color(stroke: Option<&ShapeStroke>) -> Option<String>
         .cloned()
 }
 
-fn build_text_nodes(text_box: &SlideTextBox) -> Vec<RenderNode> {
+fn build_text_nodes(
+    text_box: &SlideTextBox,
+    nodes: &mut Vec<RenderNode>,
+    anchors: &mut Vec<SelectionAnchor>,
+    text_offset: &mut u32,
+) {
     let Some(bounds) = &text_box.bounds else {
-        return Vec::new();
+        return;
     };
 
     let left_inset = emu_to_points(text_box.insets.left);
@@ -1111,8 +1118,6 @@ fn build_text_nodes(text_box: &SlideTextBox) -> Vec<RenderNode> {
     let base_x = emu_to_points(bounds.x) + left_inset;
     let mut cursor_y = emu_to_points(bounds.y) + top_inset;
     let max_bottom = emu_to_points(bounds.y + bounds.height) - bottom_inset;
-    let mut nodes = Vec::new();
-    let mut text_offset = 0u32;
 
     'paragraphs: for paragraph in &text_box.paragraphs {
         let alignment = paragraph
@@ -1136,22 +1141,20 @@ fn build_text_nodes(text_box: &SlideTextBox) -> Vec<RenderNode> {
                 resolve_line_x(line_base_x, line_available_width, line.width, &alignment);
 
             for span in line.spans {
-                let char_count = span.text.chars().count() as u32;
-                nodes.push(RenderNode::Text(TextNode {
-                    text: span.text,
-                    bounds: Rect {
-                        x: cursor_x,
-                        y: cursor_y,
-                        width: span.width.max(1.0),
-                        height: line.height,
-                    },
-                    style: span.style,
-                    range: TextRange {
-                        start: text_offset,
-                        end: text_offset + char_count,
-                    },
-                }));
-                text_offset += char_count;
+                let bounds = Rect {
+                    x: cursor_x,
+                    y: cursor_y,
+                    width: span.width.max(1.0),
+                    height: line.height,
+                };
+                push_text_node(
+                    nodes,
+                    anchors,
+                    text_offset,
+                    span.text,
+                    bounds,
+                    span.style,
+                );
                 cursor_x += span.width;
             }
 
@@ -1163,8 +1166,6 @@ fn build_text_nodes(text_box: &SlideTextBox) -> Vec<RenderNode> {
         }
         cursor_y += paragraph_spacing;
     }
-
-    nodes
 }
 
 fn slide_alignment_to_paragraph_alignment(alignment: &SlideTextAlignment) -> ParagraphAlignment {
@@ -1502,4 +1503,46 @@ fn break_text_to_width(text: &str, max_width: f32, style: &TextStyle) -> Vec<Str
     }
 
     segments
+}
+
+fn push_text_node(
+    nodes: &mut Vec<RenderNode>,
+    anchors: &mut Vec<SelectionAnchor>,
+    text_offset: &mut u32,
+    text: String,
+    bounds: Rect,
+    style: TextStyle,
+) {
+    if text.is_empty() {
+        return;
+    }
+
+    let node_index = nodes.len() as u32;
+    let start = *text_offset;
+    let end = start + text.chars().count() as u32;
+    let char_width = bounds.width / text.chars().count().max(1) as f32;
+
+    nodes.push(RenderNode::Text(TextNode {
+        text: text.clone(),
+        bounds: bounds.clone(),
+        style,
+        range: TextRange { start, end },
+    }));
+
+    for (char_index, _) in text.chars().enumerate() {
+        anchors.push(SelectionAnchor {
+            node_index,
+            char_index: char_index as u32,
+            x: bounds.x + (char_width * char_index as f32),
+            y: bounds.y,
+        });
+    }
+    anchors.push(SelectionAnchor {
+        node_index,
+        char_index: text.chars().count() as u32,
+        x: bounds.x + bounds.width,
+        y: bounds.y,
+    });
+
+    *text_offset = end;
 }

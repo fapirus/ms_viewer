@@ -512,7 +512,14 @@
   - Tests:
     - multi-slide search page fixture
     - case-insensitive slide search fixture
-- [ ] slide text selection metadata 구현
+- [x] slide text selection metadata 구현
+  - Done:
+    - `PageRenderModel.selectionAnchors` 생성
+    - slide text span별 `TextRange` 연속 offset 보장
+    - 줄바꿈된 multi-line text node에 대해 char-level anchor 생성
+  - Tests:
+    - single-line title anchor fixture
+    - wrapped body text range continuity fixture
 
 ### PPTX tests and acceptance
 - [ ] Rust fixture tests for slides, themes, shapes, images
