@@ -149,9 +149,7 @@ pub fn search_document_pages_json(request_json: &str) -> SearchDocumentResponse 
     let request: SearchDocumentRequest = match serde_json::from_str(request_json) {
         Ok(request) => request,
         Err(_) => {
-            return SearchDocumentResponse::Error(
-                ViewerError::InvalidDocument.to_error_response(),
-            )
+            return SearchDocumentResponse::Error(ViewerError::InvalidDocument.to_error_response())
         }
     };
 
@@ -183,14 +181,12 @@ fn open_document_impl(request: OpenDocumentRequest) -> Result<OpenDocumentSucces
     let title = source_title(&source);
 
     match source {
-        DocumentSource::Path(path) => {
-            open_document_from_path(
-                &path,
-                &DocumentSource::Path(path.clone()),
-                title,
-                &request.options,
-            )
-        }
+        DocumentSource::Path(path) => open_document_from_path(
+            &path,
+            &DocumentSource::Path(path.clone()),
+            title,
+            &request.options,
+        ),
         DocumentSource::BytesBase64(value) => {
             open_document_from_bytes(value, &request.source, title, &request.options)
         }

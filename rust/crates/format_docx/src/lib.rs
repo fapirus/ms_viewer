@@ -1,8 +1,9 @@
 use format_shared::{parse_package_relationships, resolve_relationship_target};
 use viewer_core::archive::OoxmlArchive;
 use viewer_core::model::{
-    Block, ImageReference, ListKind, ListMarker, PageRenderModel, Rect, RenderNode,
-    SelectionAnchor, TableCell, TableCellMerge, TableRow, TextNode, TextRange, TextRun, TextStyle,
+    Block, BoxNode, ImageNode, ImageReference, ListKind, ListMarker, PageRenderModel, Rect,
+    RenderNode, SelectionAnchor, TableCell, TableCellMerge, TableRow, TextNode, TextRange, TextRun,
+    TextStyle,
 };
 use viewer_core::search::{search_pages, SearchMatch, SearchPage};
 use viewer_core::xml::parse_document;
@@ -12,11 +13,14 @@ use std::collections::HashMap;
 
 const OFFICE_DOCUMENT_REL: &str =
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument";
-const STYLES_REL: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles";
+const STYLES_REL: &str =
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles";
 const NUMBERING_REL: &str =
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering";
-const HEADER_REL: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/header";
-const FOOTER_REL: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer";
+const HEADER_REL: &str =
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/header";
+const FOOTER_REL: &str =
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer";
 const IMAGE_REL: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -185,7 +189,12 @@ pub fn parse_docx(archive: &OoxmlArchive) -> Result<DocxPackage, ViewerError> {
     let main_document = relationships
         .iter()
         .find(|relationship| relationship.relationship_type == OFFICE_DOCUMENT_REL)
-        .map(|relationship| relationship.resolved_target.trim_start_matches('/').to_string())
+        .map(|relationship| {
+            relationship
+                .resolved_target
+                .trim_start_matches('/')
+                .to_string()
+        })
         .ok_or(ViewerError::InvalidDocument)?;
 
     let document_relationships = parse_document_relationships(archive, &main_document)?;
@@ -218,10 +227,7 @@ pub fn parse_paragraph_blocks(
     for child in &body.children {
         match child.local_name() {
             "p" => blocks.extend(parse_paragraph_blocks_from_element(
-                child,
-                &styles,
-                &numbering,
-                package,
+                child, &styles, &numbering, package,
             )?),
             "tbl" => blocks.push(parse_table_block(child, &styles, &numbering)),
             _ => {}
@@ -270,9 +276,8 @@ pub fn parse_numbering_catalog(
                     else {
                         continue;
                     };
-                    let Some(num_fmt) = level
-                        .child("numFmt")
-                        .and_then(|node| node.attribute("val"))
+                    let Some(num_fmt) =
+                        level.child("numFmt").and_then(|node| node.attribute("val"))
                     else {
                         continue;
                     };
@@ -285,7 +290,10 @@ pub fn parse_numbering_catalog(
                 abstract_numbering.insert(abstract_num_id, levels);
             }
             "num" => {
-                let Some(num_id) = child.attribute("numId").and_then(|value| value.parse::<u32>().ok()) else {
+                let Some(num_id) = child
+                    .attribute("numId")
+                    .and_then(|value| value.parse::<u32>().ok())
+                else {
                     continue;
                 };
                 let Some(abstract_num_id) = child
@@ -328,9 +336,8 @@ pub fn parse_style_catalog(
     for child in &root.children {
         match child.local_name() {
             "docDefaults" => {
-                if let Some(rpr_default) = child
-                    .child("rPrDefault")
-                    .and_then(|node| node.child("rPr"))
+                if let Some(rpr_default) =
+                    child.child("rPrDefault").and_then(|node| node.child("rPr"))
                 {
                     default_run_style = parse_resolved_style(Some(rpr_default));
                 }
@@ -344,10 +351,7 @@ pub fn parse_style_catalog(
                     .and_then(|node| node.attribute("val"))
                     .map(ToString::to_string);
                 let style = parse_resolved_style(child.child("rPr"));
-                run_styles.insert(
-                    style_id.to_string(),
-                    RunStyleDefinition { based_on, style },
-                );
+                run_styles.insert(style_id.to_string(), RunStyleDefinition { based_on, style });
             }
             _ => {}
         }
@@ -377,7 +381,10 @@ pub fn parse_section_layouts(
     }
 
     if let Some(section_properties) = body.child("sectPr") {
-        sections.push(parse_section_properties(section_properties, &relationships)?);
+        sections.push(parse_section_properties(
+            section_properties,
+            &relationships,
+        )?);
     }
 
     Ok(sections)
@@ -457,7 +464,8 @@ pub fn layout_document(
                         start_new_page(&mut pages, &mut cursor_y, &default_page_box);
                     }
 
-                    let lines = break_text_lines(segment, default_page_box.content.width, font_size);
+                    let lines =
+                        break_text_lines(segment, default_page_box.content.width, font_size);
                     if lines.is_empty() {
                         continue;
                     }
@@ -499,14 +507,12 @@ pub fn layout_document(
                     }
 
                     if !current_lines.is_empty() {
-                        pages
-                            .last_mut()
-                            .expect("page exists")
-                            .blocks
-                            .push(LaidOutBlock::Paragraph {
+                        pages.last_mut().expect("page exists").blocks.push(
+                            LaidOutBlock::Paragraph {
                                 list: list.clone(),
                                 lines: current_lines,
-                            });
+                            },
+                        );
                     }
 
                     cursor_y += font_size * 0.5;
@@ -517,16 +523,21 @@ pub fn layout_document(
                 let mut laid_out_rows = Vec::new();
 
                 for row in rows {
-                    let row_height = estimate_table_row_height(&row, default_page_box.content.width);
+                    let row_height =
+                        estimate_table_row_height(&row, default_page_box.content.width);
                     if cursor_y + row_height > content_bottom && !laid_out_rows.is_empty() {
                         let table_height = cursor_y - table_start_y;
-                        pages.last_mut().expect("page exists").blocks.push(LaidOutBlock::Table {
-                            x: default_page_box.content.x,
-                            y: table_start_y,
-                            width: default_page_box.content.width,
-                            height: table_height,
-                            rows: laid_out_rows,
-                        });
+                        pages
+                            .last_mut()
+                            .expect("page exists")
+                            .blocks
+                            .push(LaidOutBlock::Table {
+                                x: default_page_box.content.x,
+                                y: table_start_y,
+                                width: default_page_box.content.width,
+                                height: table_height,
+                                rows: laid_out_rows,
+                            });
                         start_new_page(&mut pages, &mut cursor_y, &default_page_box);
                         table_start_y = cursor_y;
                         laid_out_rows = Vec::new();
@@ -547,13 +558,17 @@ pub fn layout_document(
 
                 if !laid_out_rows.is_empty() {
                     let table_height = cursor_y - table_start_y;
-                    pages.last_mut().expect("page exists").blocks.push(LaidOutBlock::Table {
-                        x: default_page_box.content.x,
-                        y: table_start_y,
-                        width: default_page_box.content.width,
-                        height: table_height,
-                        rows: laid_out_rows,
-                    });
+                    pages
+                        .last_mut()
+                        .expect("page exists")
+                        .blocks
+                        .push(LaidOutBlock::Table {
+                            x: default_page_box.content.x,
+                            y: table_start_y,
+                            width: default_page_box.content.width,
+                            height: table_height,
+                            rows: laid_out_rows,
+                        });
                 }
 
                 cursor_y += 12.0;
@@ -564,13 +579,17 @@ pub fn layout_document(
                 if cursor_y + image_height > content_bottom {
                     start_new_page(&mut pages, &mut cursor_y, &default_page_box);
                 }
-                pages.last_mut().expect("page exists").blocks.push(LaidOutBlock::Image {
-                    resource_id: image.resource_id,
-                    x: default_page_box.content.x,
-                    y: cursor_y,
-                    width: image_width,
-                    height: image_height,
-                });
+                pages
+                    .last_mut()
+                    .expect("page exists")
+                    .blocks
+                    .push(LaidOutBlock::Image {
+                        resource_id: image.resource_id,
+                        x: default_page_box.content.x,
+                        y: cursor_y,
+                        width: image_width,
+                        height: image_height,
+                    });
                 cursor_y += image_height + 12.0;
             }
         }
@@ -711,44 +730,95 @@ pub fn build_selection_page_models(
         let mut text_offset = 0u32;
 
         for block in page.blocks {
-            if let LaidOutBlock::Paragraph { lines, .. } = block {
-                for line in lines {
-                    let node_index = nodes.len() as u32;
-                    let start = text_offset;
-                    let end = start + line.text.chars().count() as u32;
-                    let char_width = if line.text.is_empty() {
-                        0.0
-                    } else {
-                        line.width / line.text.chars().count() as f32
-                    };
-
-                    nodes.push(RenderNode::Text(TextNode {
-                        text: line.text.clone(),
+            match block {
+                LaidOutBlock::Paragraph { lines, .. } => {
+                    for line in lines {
+                        push_text_node(
+                            &mut nodes,
+                            &mut anchors,
+                            &mut text_offset,
+                            line.text,
+                            Rect {
+                                x: line.x,
+                                y: line.y,
+                                width: line.width,
+                                height: line.height,
+                            },
+                            line.style,
+                        );
+                    }
+                }
+                LaidOutBlock::Table {
+                    x,
+                    y,
+                    width,
+                    height,
+                    rows,
+                } => {
+                    nodes.push(RenderNode::Box(BoxNode {
                         bounds: Rect {
-                            x: line.x,
-                            y: line.y,
-                            width: line.width,
-                            height: line.height,
+                            x,
+                            y,
+                            width,
+                            height,
                         },
-                        style: line.style.clone(),
-                        range: TextRange { start, end },
+                        fill_color_hex: None,
+                        stroke_color_hex: Some("#CBD5E1".to_string()),
+                        stroke_width: 1.0,
                     }));
 
-                    for (char_index, _) in line.text.chars().enumerate() {
-                        anchors.push(SelectionAnchor {
-                            node_index,
-                            char_index: char_index as u32,
-                            x: line.x + (char_width * char_index as f32),
-                            y: line.y,
-                        });
+                    for row in rows {
+                        for cell in row.cells {
+                            nodes.push(RenderNode::Box(BoxNode {
+                                bounds: Rect {
+                                    x: cell.x,
+                                    y: cell.y,
+                                    width: cell.width,
+                                    height: cell.height,
+                                },
+                                fill_color_hex: Some("#FFFFFF".to_string()),
+                                stroke_color_hex: Some("#CBD5E1".to_string()),
+                                stroke_width: 1.0,
+                            }));
+
+                            let cell_text = cell.text.trim();
+                            if cell_text.is_empty() {
+                                continue;
+                            }
+
+                            push_text_node(
+                                &mut nodes,
+                                &mut anchors,
+                                &mut text_offset,
+                                cell_text.to_string(),
+                                Rect {
+                                    x: cell.x + 6.0,
+                                    y: cell.y + 6.0,
+                                    width: (cell.width - 12.0).max(0.0),
+                                    height: (cell.height - 12.0).max(0.0),
+                                },
+                                default_text_style(),
+                            );
+                        }
                     }
-                    anchors.push(SelectionAnchor {
-                        node_index,
-                        char_index: line.text.chars().count() as u32,
-                        x: line.x + line.width,
-                        y: line.y,
-                    });
-                    text_offset = end;
+                }
+                LaidOutBlock::Image {
+                    resource_id,
+                    x,
+                    y,
+                    width,
+                    height,
+                } => {
+                    nodes.push(RenderNode::Image(ImageNode {
+                        resource_id,
+                        description: Some("Embedded image".to_string()),
+                        bounds: Rect {
+                            x,
+                            y,
+                            width,
+                            height,
+                        },
+                    }));
                 }
             }
         }
@@ -786,10 +856,16 @@ fn parse_document_relationships(
         }
 
         let target = child.required_attribute("Target")?.to_string();
-        let resolved_target = resolve_relationship_target(&base, &target);
-        let normalized_target = resolved_target.trim_start_matches('/').to_string();
+        let is_external = child.attribute("TargetMode") == Some("External");
+        let resolved_target = if is_external {
+            target.clone()
+        } else {
+            resolve_relationship_target(&base, &target)
+                .trim_start_matches('/')
+                .to_string()
+        };
 
-        if !archive.contains_part(&normalized_target) {
+        if !is_external && !archive.contains_part(&resolved_target) {
             return Err(ViewerError::InvalidDocument);
         }
 
@@ -797,7 +873,7 @@ fn parse_document_relationships(
             id: child.required_attribute("Id")?.to_string(),
             relationship_type: child.required_attribute("Type")?.to_string(),
             target,
-            resolved_target: normalized_target,
+            resolved_target,
         });
     }
 
@@ -852,7 +928,9 @@ fn section_properties_from_element(
     element: &viewer_core::xml::XmlElement,
 ) -> Option<&viewer_core::xml::XmlElement> {
     if element.local_name() == "p" {
-        element.child("pPr").and_then(|properties| properties.child("sectPr"))
+        element
+            .child("pPr")
+            .and_then(|properties| properties.child("sectPr"))
     } else {
         None
     }
@@ -889,7 +967,9 @@ fn resolve_header_footer_reference(
     relationships: &[DocxRelationship],
     expected_type: &str,
 ) -> Result<HeaderFooterRef, ViewerError> {
-    let relationship_id = reference.attribute("id").ok_or(ViewerError::InvalidDocument)?;
+    let relationship_id = reference
+        .attribute("id")
+        .ok_or(ViewerError::InvalidDocument)?;
     let relationship = relationships
         .iter()
         .find(|relationship| {
@@ -926,13 +1006,22 @@ fn parse_page_box(section_properties: &viewer_core::xml::XmlElement) -> PageBox 
     let margins = section_properties
         .child("pgMar")
         .map(|node| PageMargins {
-            top: node.attribute("top").and_then(parse_twips_value).unwrap_or(72.0),
-            right: node.attribute("right").and_then(parse_twips_value).unwrap_or(72.0),
+            top: node
+                .attribute("top")
+                .and_then(parse_twips_value)
+                .unwrap_or(72.0),
+            right: node
+                .attribute("right")
+                .and_then(parse_twips_value)
+                .unwrap_or(72.0),
             bottom: node
                 .attribute("bottom")
                 .and_then(parse_twips_value)
                 .unwrap_or(72.0),
-            left: node.attribute("left").and_then(parse_twips_value).unwrap_or(72.0),
+            left: node
+                .attribute("left")
+                .and_then(parse_twips_value)
+                .unwrap_or(72.0),
         })
         .unwrap_or(PageMargins {
             top: 72.0,
@@ -1091,17 +1180,7 @@ fn parse_paragraph_runs(
     styles: &StyleCatalog,
 ) -> Vec<TextRun> {
     let mut runs = Vec::new();
-
-    for child in &paragraph.children {
-        if child.local_name() != "r" {
-            continue;
-        }
-
-        let run = parse_run(child, styles);
-        if !run.text.is_empty() {
-            runs.push(run);
-        }
-    }
+    collect_paragraph_runs(paragraph, styles, &mut runs);
 
     runs
 }
@@ -1132,6 +1211,14 @@ fn parse_paragraph_blocks_with_media(
     let mut blocks = Vec::new();
     if !runs.is_empty() {
         blocks.push(Block::Paragraph { runs, list });
+    } else if images.is_empty() {
+        blocks.push(Block::Paragraph {
+            runs: vec![TextRun {
+                text: String::new(),
+                style: materialize_text_style(&styles.default_run_style),
+            }],
+            list,
+        });
     }
     blocks.extend(images.into_iter().map(|image| Block::Image { image }));
 
@@ -1195,13 +1282,7 @@ fn parse_table_cell(
         });
 
     let mut blocks = Vec::new();
-    for child in &cell.children {
-        if child.local_name() != "p" {
-            continue;
-        }
-
-        blocks.push(parse_paragraph_block(child, styles, numbering));
-    }
+    collect_table_cell_blocks(cell, styles, numbering, &mut blocks);
 
     TableCell {
         blocks,
@@ -1341,6 +1422,82 @@ fn infer_content_type(path: &str) -> Option<String> {
     Some(content_type.to_string())
 }
 
+fn collect_paragraph_runs(
+    element: &viewer_core::xml::XmlElement,
+    styles: &StyleCatalog,
+    runs: &mut Vec<TextRun>,
+) {
+    for child in &element.children {
+        if child.local_name() == "r" {
+            let run = parse_run(child, styles);
+            if !run.text.is_empty() {
+                runs.push(run);
+            }
+            continue;
+        }
+
+        collect_paragraph_runs(child, styles, runs);
+    }
+}
+
+fn collect_table_cell_blocks(
+    element: &viewer_core::xml::XmlElement,
+    styles: &StyleCatalog,
+    numbering: &NumberingCatalog,
+    blocks: &mut Vec<Block>,
+) {
+    for child in &element.children {
+        if child.local_name() == "p" {
+            blocks.push(parse_paragraph_block(child, styles, numbering));
+            continue;
+        }
+
+        collect_table_cell_blocks(child, styles, numbering, blocks);
+    }
+}
+
+fn push_text_node(
+    nodes: &mut Vec<RenderNode>,
+    anchors: &mut Vec<SelectionAnchor>,
+    text_offset: &mut u32,
+    text: String,
+    bounds: Rect,
+    style: TextStyle,
+) {
+    if text.is_empty() {
+        return;
+    }
+
+    let node_index = nodes.len() as u32;
+    let start = *text_offset;
+    let end = start + text.chars().count() as u32;
+    let char_width = bounds.width / text.chars().count().max(1) as f32;
+
+    nodes.push(RenderNode::Text(TextNode {
+        text: text.clone(),
+        bounds: bounds.clone(),
+        style,
+        range: TextRange { start, end },
+    }));
+
+    for (char_index, _) in text.chars().enumerate() {
+        anchors.push(SelectionAnchor {
+            node_index,
+            char_index: char_index as u32,
+            x: bounds.x + (char_width * char_index as f32),
+            y: bounds.y,
+        });
+    }
+    anchors.push(SelectionAnchor {
+        node_index,
+        char_index: text.chars().count() as u32,
+        x: bounds.x + bounds.width,
+        y: bounds.y,
+    });
+
+    *text_offset = end;
+}
+
 fn resolve_run_style(run: &viewer_core::xml::XmlElement, styles: &StyleCatalog) -> TextStyle {
     let mut resolved = styles.default_run_style.clone();
     let run_properties = run.child("rPr");
@@ -1379,14 +1536,20 @@ fn resolve_named_style(styles: &StyleCatalog, style_id: &str) -> ResolvedTextSty
     resolved
 }
 
-fn parse_resolved_style(run_properties: Option<&viewer_core::xml::XmlElement>) -> ResolvedTextStyle {
+fn parse_resolved_style(
+    run_properties: Option<&viewer_core::xml::XmlElement>,
+) -> ResolvedTextStyle {
     let Some(run_properties) = run_properties else {
         return ResolvedTextStyle::default();
     };
 
     let font_family = run_properties
         .child("rFonts")
-        .and_then(|fonts| fonts.attribute("ascii").or_else(|| fonts.attribute("hAnsi")))
+        .and_then(|fonts| {
+            fonts
+                .attribute("ascii")
+                .or_else(|| fonts.attribute("hAnsi"))
+        })
         .map(ToString::to_string);
     let font_size = run_properties
         .child("sz")
@@ -1429,10 +1592,7 @@ fn merge_resolved_style(target: &mut ResolvedTextStyle, source: &ResolvedTextSty
 fn materialize_text_style(style: &ResolvedTextStyle) -> TextStyle {
     let fallback = default_text_style();
     TextStyle {
-        font_family: style
-            .font_family
-            .clone()
-            .unwrap_or(fallback.font_family),
+        font_family: style.font_family.clone().unwrap_or(fallback.font_family),
         font_size: style.font_size.unwrap_or(fallback.font_size),
         bold: style.bold.unwrap_or(fallback.bold),
         italic: style.italic.unwrap_or(fallback.italic),

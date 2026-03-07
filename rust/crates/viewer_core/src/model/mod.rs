@@ -113,7 +113,9 @@ pub enum Block {
     Table {
         rows: Vec<TableRow>,
     },
-    Image { image: ImageReference },
+    Image {
+        image: ImageReference,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

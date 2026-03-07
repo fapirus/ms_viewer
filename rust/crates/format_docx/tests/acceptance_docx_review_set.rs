@@ -1,10 +1,8 @@
-use format_docx::{
-    build_selection_page_models, layout_document, parse_docx, search_document,
-};
+use format_docx::{build_selection_page_models, layout_document, parse_docx, search_document};
 use std::path::PathBuf;
 use viewer_core::archive::OoxmlArchive;
-use viewer_ffi::{open_document, DocumentSource, OpenDocumentRequest, OpenDocumentResponse};
 use viewer_core::OpenOptions;
+use viewer_ffi::{open_document, DocumentSource, OpenDocumentRequest, OpenDocumentResponse};
 
 fn fixture_path(relative: &str) -> String {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -66,7 +64,10 @@ fn acceptance_encrypted_document_asks_for_password() {
 
     match response {
         OpenDocumentResponse::Error(error) => {
-            assert_eq!(error.code, viewer_core::wire::ViewerErrorCode::PasswordRequired);
+            assert_eq!(
+                error.code,
+                viewer_core::wire::ViewerErrorCode::PasswordRequired
+            );
         }
         other => panic!("expected password required error, got {other:?}"),
     }

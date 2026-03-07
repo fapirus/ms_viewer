@@ -84,12 +84,35 @@ class _MsDocumentViewState extends State<MsDocumentView> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(
-            title,
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
+          Text(title, style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 8),
           Text('$pageCount pages'),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              OutlinedButton.icon(
+                onPressed: widget.controller.canGoToPreviousPage
+                    ? () => unawaited(widget.controller.goToPreviousPage())
+                    : null,
+                icon: const Icon(Icons.chevron_left),
+                label: const Text('Previous'),
+              ),
+              const SizedBox(width: 8),
+              OutlinedButton.icon(
+                onPressed: widget.controller.canGoToNextPage
+                    ? () => unawaited(widget.controller.goToNextPage())
+                    : null,
+                icon: const Icon(Icons.chevron_right),
+                label: const Text('Next'),
+              ),
+              const SizedBox(width: 12),
+              Text(
+                pageCount == 0
+                    ? 'Page 0 / 0'
+                    : 'Page ${(widget.controller.currentPageIndex ?? 0) + 1} / $pageCount',
+              ),
+            ],
+          ),
           const SizedBox(height: 16),
           Row(
             children: [
@@ -129,43 +152,43 @@ class _MsDocumentViewState extends State<MsDocumentView> {
           Expanded(
             child: switch (widget.controller.pageStatus) {
               ViewerPageStatus.loading => const Center(
-                  child: CircularProgressIndicator(),
-                ),
+                child: CircularProgressIndicator(),
+              ),
               ViewerPageStatus.error => Center(
-                  child: Text(
-                    widget.controller.pageError?.message ??
-                        'Failed to load page preview.',
-                    textAlign: TextAlign.center,
-                  ),
+                child: Text(
+                  widget.controller.pageError?.message ??
+                      'Failed to load page preview.',
+                  textAlign: TextAlign.center,
                 ),
+              ),
               ViewerPageStatus.ready when page != null => Center(
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 640),
-                    child: DocumentPageView(
-                      page: page,
-                      highlights: widget.controller.pageHighlights,
-                      onSelectionStart: widget.controller.startSelectionAt,
-                      onSelectionUpdate: widget.controller.updateSelectionAt,
-                    ),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 640),
+                  child: DocumentPageView(
+                    page: page,
+                    highlights: widget.controller.pageHighlights,
+                    onSelectionStart: widget.controller.startSelectionAt,
+                    onSelectionUpdate: widget.controller.updateSelectionAt,
                   ),
                 ),
+              ),
               _ when page != null => Center(
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 640),
-                    child: DocumentPageView(
-                      page: page,
-                      highlights: widget.controller.pageHighlights,
-                      onSelectionStart: widget.controller.startSelectionAt,
-                      onSelectionUpdate: widget.controller.updateSelectionAt,
-                    ),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 640),
+                  child: DocumentPageView(
+                    page: page,
+                    highlights: widget.controller.pageHighlights,
+                    onSelectionStart: widget.controller.startSelectionAt,
+                    onSelectionUpdate: widget.controller.updateSelectionAt,
                   ),
                 ),
+              ),
               _ => const Center(
-                  child: Text(
-                    'Viewer placeholder: render model not loaded',
-                    textAlign: TextAlign.center,
-                  ),
+                child: Text(
+                  'Viewer placeholder: render model not loaded',
+                  textAlign: TextAlign.center,
                 ),
+              ),
             },
           ),
         ],
@@ -186,7 +209,8 @@ class _MsDocumentViewState extends State<MsDocumentView> {
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
-            passwordState.message ?? 'Password is required to open this document.',
+            passwordState.message ??
+                'Password is required to open this document.',
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 12),

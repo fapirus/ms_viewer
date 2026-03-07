@@ -11,20 +11,9 @@ import '../password/password_prompt_state.dart';
 import '../search/document_search_controller.dart';
 import '../selection/selection_drag_controller.dart';
 
-enum ViewerShellStatus {
-  idle,
-  loading,
-  ready,
-  passwordPrompt,
-  error,
-}
+enum ViewerShellStatus { idle, loading, ready, passwordPrompt, error }
 
-enum ViewerPageStatus {
-  idle,
-  loading,
-  ready,
-  error,
-}
+enum ViewerPageStatus { idle, loading, ready, error }
 
 class MsViewerController extends ChangeNotifier {
   MsViewerController({
@@ -48,6 +37,18 @@ class MsViewerController extends ChangeNotifier {
   ViewerShellStatus status = ViewerShellStatus.idle;
   ViewerPageStatus pageStatus = ViewerPageStatus.idle;
   viewer_platform.OpenDocumentRequest? _lastRequest;
+
+  int get pageCount => document?.pageCount ?? 0;
+
+  bool get canGoToPreviousPage =>
+      pageCount > 0 &&
+      (currentPageIndex ?? 0) > 0 &&
+      pageStatus != ViewerPageStatus.loading;
+
+  bool get canGoToNextPage =>
+      pageCount > 0 &&
+      (currentPageIndex ?? 0) < pageCount - 1 &&
+      pageStatus != ViewerPageStatus.loading;
 
   void attachDocument(DocumentDescriptor next) {
     document = next;
@@ -127,6 +128,9 @@ class MsViewerController extends ChangeNotifier {
     if (lastRequest == null || descriptor == null) {
       return;
     }
+    if (pageIndex < 0 || pageIndex >= descriptor.pageCount) {
+      return;
+    }
 
     pageStatus = ViewerPageStatus.loading;
     currentPage = null;
@@ -160,6 +164,23 @@ class MsViewerController extends ChangeNotifier {
     }
 
     notifyListeners();
+  }
+
+  Future<void> goToPreviousPage() async {
+    final index = currentPageIndex ?? 0;
+    if (index <= 0) {
+      return;
+    }
+    await loadPage(index - 1);
+  }
+
+  Future<void> goToNextPage() async {
+    final descriptor = document;
+    final index = currentPageIndex ?? 0;
+    if (descriptor == null || index >= descriptor.pageCount - 1) {
+      return;
+    }
+    await loadPage(index + 1);
   }
 
   Future<void> search(String query) async {
@@ -281,7 +302,9 @@ class MsViewerController extends ChangeNotifier {
   void _applySearchHighlightOnly() {
     final page = currentPage;
     final result = searchController.currentResult;
-    if (page == null || result == null || currentPageIndex != result.pageIndex) {
+    if (page == null ||
+        result == null ||
+        currentPageIndex != result.pageIndex) {
       pageHighlights = const [];
       return;
     }

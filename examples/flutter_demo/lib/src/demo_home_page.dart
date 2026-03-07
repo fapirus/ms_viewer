@@ -110,7 +110,7 @@ class _DemoHomePageState extends State<DemoHomePage> {
     };
     final note = switch (extension) {
       'docx' =>
-        'External DOCX file. Real engine open is wired in the next demo phases.',
+        'External DOCX file. Real engine open is wired in the desktop demo.',
       'pptx' => 'PPTX parser and renderer are not implemented yet.',
       'xlsx' => 'XLSX parser and renderer are not implemented yet.',
       _ => 'Unknown document type.',

@@ -3,13 +3,13 @@ use std::io::Write;
 
 use base64::Engine;
 use tempfile::NamedTempFile;
+use viewer_core::OpenOptions;
 use viewer_ffi::{
     get_page_render_model, get_selection_page, open_document, open_document_json,
-    search_document_pages, DocumentSource, GetPageRenderModelRequest,
-    GetPageRenderModelResponse, GetSelectionPageRequest, GetSelectionPageResponse,
-    OpenDocumentRequest, OpenDocumentResponse, SearchDocumentRequest, SearchDocumentResponse,
+    search_document_pages, DocumentSource, GetPageRenderModelRequest, GetPageRenderModelResponse,
+    GetSelectionPageRequest, GetSelectionPageResponse, OpenDocumentRequest, OpenDocumentResponse,
+    SearchDocumentRequest, SearchDocumentResponse,
 };
-use viewer_core::OpenOptions;
 use zip::write::SimpleFileOptions;
 use zip::ZipWriter;
 
@@ -46,7 +46,10 @@ fn opens_docx_path_request_and_returns_basic_metadata() {
     match response {
         OpenDocumentResponse::Success(success) => {
             assert_eq!(success.kind, viewer_core::DocumentKind::Docx);
-            assert_eq!(success.title, file.path().file_name().unwrap().to_string_lossy());
+            assert_eq!(
+                success.title,
+                file.path().file_name().unwrap().to_string_lossy()
+            );
             assert_eq!(success.page_count, 1);
             assert!(success.capabilities.search);
             assert!(success.capabilities.text_selection);
@@ -120,7 +123,10 @@ fn encrypted_document_requires_password_first() {
 
     match response {
         OpenDocumentResponse::Error(error) => {
-            assert_eq!(error.code, viewer_core::wire::ViewerErrorCode::PasswordRequired);
+            assert_eq!(
+                error.code,
+                viewer_core::wire::ViewerErrorCode::PasswordRequired
+            );
         }
         other => panic!("expected error, got {other:?}"),
     }
@@ -237,7 +243,10 @@ fn invalid_page_index_maps_to_invalid_document_error() {
 
     match response {
         GetPageRenderModelResponse::Error(error) => {
-            assert_eq!(error.code, viewer_core::wire::ViewerErrorCode::InvalidDocument);
+            assert_eq!(
+                error.code,
+                viewer_core::wire::ViewerErrorCode::InvalidDocument
+            );
         }
         other => panic!("expected error, got {other:?}"),
     }

@@ -8,19 +8,17 @@ import 'package:ms_viewer_platform_interface/ms_viewer_platform_interface.dart'
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 
 void main() {
-  testWidgets('view shows loading state while open is in flight', (tester) async {
+  testWidgets('view shows loading state while open is in flight', (
+    tester,
+  ) async {
     final completer = Completer<platform.OpenDocumentResult>();
     final controller = MsViewerController(
-      platform: _FakeMsViewerPlatform(
-        onOpen: (_) => completer.future,
-      ),
+      platform: _FakeMsViewerPlatform(onOpen: (_) => completer.future),
     );
 
     await tester.pumpWidget(
       MaterialApp(
-        home: Scaffold(
-          body: MsDocumentView(controller: controller),
-        ),
+        home: Scaffold(body: MsDocumentView(controller: controller)),
       ),
     );
 
@@ -69,9 +67,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
-        home: Scaffold(
-          body: MsDocumentView(controller: controller),
-        ),
+        home: Scaffold(body: MsDocumentView(controller: controller)),
       ),
     );
 
@@ -154,7 +150,12 @@ void main() {
                   {
                     'type': 'text',
                     'text': 'Rendered DOCX page',
-                    'bounds': {'x': 24.0, 'y': 32.0, 'width': 120.0, 'height': 18.0},
+                    'bounds': {
+                      'x': 24.0,
+                      'y': 32.0,
+                      'width': 120.0,
+                      'height': 18.0,
+                    },
                     'style': {
                       'fontFamily': 'Calibri',
                       'fontSize': 12.0,
@@ -184,6 +185,58 @@ void main() {
       ),
       findsWidgets,
     );
+  });
+
+  testWidgets('view exposes page navigation controls', (tester) async {
+    final pageRequests = <platform.GetPageRenderModelRequest>[];
+    final controller = MsViewerController(
+      platform: _FakeMsViewerPlatform(
+        onOpen: (_) async => platform.OpenDocumentOpened(
+          const platform.OpenDocumentSuccess(
+            documentId: 'doc_001',
+            kind: platform.DocumentKind.docx,
+            title: 'sample.docx',
+            pageCount: 2,
+            capabilities: platform.DocumentCapabilities(
+              search: true,
+              textSelection: true,
+              passwordProtected: false,
+            ),
+          ),
+        ),
+        onGetPage: (request) async {
+          pageRequests.add(request);
+          return _pageModel(
+            _pageJson(
+              pageIndex: request.pageIndex,
+              text: request.pageIndex == 0 ? 'First page' : 'Second page',
+            ),
+          );
+        },
+      ),
+    );
+
+    await controller.openDocument(
+      const platform.OpenDocumentRequest(
+        source: platform.OpenDocumentSource.path('/tmp/sample.docx'),
+      ),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: MsDocumentView(controller: controller)),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Page 1 / 2'), findsOneWidget);
+    expect(find.widgetWithText(OutlinedButton, 'Next'), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(OutlinedButton, 'Next'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Page 2 / 2'), findsOneWidget);
+    expect(pageRequests.map((request) => request.pageIndex), [0, 1]);
   });
 
   testWidgets('view shows page fetch error state', (tester) async {
@@ -219,9 +272,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
-        home: Scaffold(
-          body: MsDocumentView(controller: controller),
-        ),
+        home: Scaffold(body: MsDocumentView(controller: controller)),
       ),
     );
     await tester.pump();
@@ -248,12 +299,8 @@ void main() {
             ),
           ),
         ),
-        onGetPage: (_) async => _pageModel(
-          _pageJson(
-            pageIndex: 0,
-            text: 'Page zero preview',
-          ),
-        ),
+        onGetPage: (_) async =>
+            _pageModel(_pageJson(pageIndex: 0, text: 'Page zero preview')),
         onSearch: (_) async => const platform.SearchDocumentSuccess([
           platform.SearchMatchModel(
             query: 'needle',
@@ -267,10 +314,7 @@ void main() {
           selectionRequest = request;
           return platform.GetSelectionPageSuccess(
             platform.PageRenderModel.fromJson(
-              _pageJson(
-                pageIndex: 2,
-                text: 'needle on third page',
-              ),
+              _pageJson(pageIndex: 2, text: 'needle on third page'),
             ),
           );
         },
@@ -285,9 +329,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
-        home: Scaffold(
-          body: MsDocumentView(controller: controller),
-        ),
+        home: Scaffold(body: MsDocumentView(controller: controller)),
       ),
     );
     await tester.pump();
@@ -323,12 +365,8 @@ void main() {
             ),
           ),
         ),
-        onGetPage: (_) async => _pageModel(
-          _pageJson(
-            pageIndex: 0,
-            text: 'Selectable text',
-          ),
-        ),
+        onGetPage: (_) async =>
+            _pageModel(_pageJson(pageIndex: 0, text: 'Selectable text')),
       ),
     );
 
@@ -340,9 +378,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
-        home: Scaffold(
-          body: MsDocumentView(controller: controller),
-        ),
+        home: Scaffold(body: MsDocumentView(controller: controller)),
       ),
     );
     await tester.pumpAndSettle();
@@ -357,9 +393,7 @@ void main() {
         pageRect.top + pageRect.height * 0.12,
       ),
     );
-    await gesture.moveBy(
-      Offset(pageRect.width * 0.4, pageRect.height * 0.05),
-    );
+    await gesture.moveBy(Offset(pageRect.width * 0.4, pageRect.height * 0.05));
     await tester.pump();
 
     expect(controller.pageHighlights, isNotEmpty);
@@ -378,16 +412,20 @@ class _FakeMsViewerPlatform extends platform.MsViewerPlatform
 
   final Future<platform.OpenDocumentResult> Function(
     platform.OpenDocumentRequest request,
-  ) onOpen;
+  )
+  onOpen;
   final Future<platform.GetPageRenderModelResult> Function(
     platform.GetPageRenderModelRequest request,
-  )? onGetPage;
+  )?
+  onGetPage;
   final Future<platform.SearchDocumentResult> Function(
     platform.SearchDocumentRequest request,
-  )? onSearch;
+  )?
+  onSearch;
   final Future<platform.GetSelectionPageResult> Function(
     platform.GetSelectionPageRequest request,
-  )? onGetSelectionPage;
+  )?
+  onGetSelectionPage;
 
   @override
   Future<platform.OpenDocumentResult> openDocument(
@@ -457,10 +495,7 @@ platform.GetPageRenderModelSuccess _pageModel(Map<String, Object?> json) {
   );
 }
 
-Map<String, Object?> _pageJson({
-  required int pageIndex,
-  required String text,
-}) {
+Map<String, Object?> _pageJson({required int pageIndex, required String text}) {
   return {
     'pageIndex': pageIndex,
     'width': 200.0,

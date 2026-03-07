@@ -9,14 +9,19 @@ fn namespace_handling_uses_local_name() {
     .expect("xml should parse");
 
     assert_eq!(root.local_name(), "document");
-    assert_eq!(root.child("body").expect("body should exist").local_name(), "body");
+    assert_eq!(
+        root.child("body").expect("body should exist").local_name(),
+        "body"
+    );
 }
 
 #[test]
 fn missing_attribute_returns_invalid_document() {
     let root = parse_document(r#"<w:p xmlns:w="urn:test" />"#).expect("xml should parse");
 
-    let error = root.required_attribute("id").expect_err("missing id should fail");
+    let error = root
+        .required_attribute("id")
+        .expect_err("missing id should fail");
     assert!(matches!(error, ViewerError::InvalidDocument));
 }
 

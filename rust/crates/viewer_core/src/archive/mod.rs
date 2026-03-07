@@ -49,7 +49,9 @@ impl OoxmlArchive {
         let mut entries = Vec::with_capacity(zip.len());
 
         for index in 0..zip.len() {
-            let entry = zip.by_index(index).map_err(|_| ViewerError::InvalidDocument)?;
+            let entry = zip
+                .by_index(index)
+                .map_err(|_| ViewerError::InvalidDocument)?;
             entries.push(ArchiveEntry {
                 name: entry.name().to_string(),
                 compressed_size: entry.compressed_size(),
@@ -74,7 +76,9 @@ impl OoxmlArchive {
 
     pub fn read_part(&self, name: &str) -> Result<Vec<u8>, ViewerError> {
         let mut zip = zip_from_source(&self.source)?;
-        let mut part = zip.by_name(name).map_err(|_| ViewerError::InvalidDocument)?;
+        let mut part = zip
+            .by_name(name)
+            .map_err(|_| ViewerError::InvalidDocument)?;
         let mut bytes = Vec::with_capacity(part.size() as usize);
         part.read_to_end(&mut bytes)
             .map_err(|error| ViewerError::Io(error.to_string()))?;

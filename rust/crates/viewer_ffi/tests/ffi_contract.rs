@@ -1,9 +1,9 @@
+use viewer_core::{DocumentKind, OpenOptions};
 use viewer_ffi::{
     DocumentCapabilities, DocumentSource, ErrorResponse, GetPageRenderModelRequest,
     GetSelectionPageRequest, OpenDocumentRequest, OpenDocumentSuccess, SearchDocumentRequest,
     ViewerErrorCode,
 };
-use viewer_core::{DocumentKind, OpenOptions};
 
 #[test]
 fn open_document_request_serializes_to_expected_shape() {

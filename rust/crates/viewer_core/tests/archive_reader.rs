@@ -57,7 +57,9 @@ fn same_document_opens_from_path_and_bytes() {
 
     assert_eq!(from_path.entries().len(), from_bytes.entries().len());
     assert_eq!(
-        from_path.read_part("word/document.xml").expect("path part should read"),
+        from_path
+            .read_part("word/document.xml")
+            .expect("path part should read"),
         from_bytes
             .read_part("word/document.xml")
             .expect("byte part should read"),
@@ -73,13 +75,16 @@ fn missing_part_lookup_returns_none_and_read_fails() {
     let archive = OoxmlArchive::open_path(&path).expect("archive should open");
 
     assert!(archive.entry("missing.xml").is_none());
-    let error = archive.read_part("missing.xml").expect_err("missing part should fail");
+    let error = archive
+        .read_part("missing.xml")
+        .expect_err("missing part should fail");
     assert!(matches!(error, ViewerError::InvalidDocument));
 }
 
 #[test]
 fn invalid_source_returns_invalid_source_error_mapping() {
-    let error = OoxmlArchive::open_bytes(b"not a zip".to_vec()).expect_err("invalid bytes should fail");
+    let error =
+        OoxmlArchive::open_bytes(b"not a zip".to_vec()).expect_err("invalid bytes should fail");
 
     assert!(matches!(error, ViewerError::InvalidDocument));
 }

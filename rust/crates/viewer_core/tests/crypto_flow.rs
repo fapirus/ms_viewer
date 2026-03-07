@@ -1,5 +1,5 @@
-use viewer_core::ViewerError;
 use viewer_core::wire::ViewerErrorCode;
+use viewer_core::ViewerError;
 
 #[test]
 fn invalid_password_maps_to_expected_error_code() {
