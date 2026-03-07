@@ -9,6 +9,7 @@
 - 각 단계는 fixture 또는 자동 테스트가 있어야 완료로 본다.
 - 체크는 코드와 테스트가 모두 들어간 뒤에만 한다.
 - 새 범위가 생기면 이 문서에 먼저 체크박스로 추가한 뒤 작업한다.
+- 로컬 `issue/` 폴더는 실제 문서와 시각 비교 스크린샷 분석용으로 사용하고, 원인 고정 후에는 최소 재현 fixture를 `fixtures/regression/`에 추가한다.
 
 ## Definition of done
 하나의 체크박스를 완료로 표시하려면 아래 조건을 만족해야 한다.
@@ -289,6 +290,65 @@
     - dropped docx opens through real engine path
     - first page render matches real model
     - encrypted docx asks for password in demo flow
+
+## Phase 1.6: DOCX visual parity pass
+### Visual regression triage
+- [ ] issue 기반 DOCX 시각 회귀 분류 규칙 정리
+  - Scope:
+    - `issue/word/*` 기준으로 페이지 분할, 표, 이미지, 간격, 폰트 차이를 분류
+    - 각 이슈는 원인 가설과 재현 조건을 남기고 최소 재현 fixture 후보를 뽑는다
+  - Done:
+    - 우선순위 테이블 작성
+    - 회귀 방지용 최소 fixture 후보 확정
+
+### Pagination correctness
+- [ ] DOCX 페이지 단위 계산 보정
+  - Rust scope:
+    - paragraph spacing, explicit break, section transition, carry-over height 계산 보정
+    - 페이지 끝 줄/블록 누락 방지
+  - Tests:
+    - multi-page real-world regression fixture
+    - page boundary carry-over regression test
+
+### Table layout and media
+- [ ] DOCX 표 크기와 셀 내부 줄바꿈 보정
+  - Rust scope:
+    - tblGrid, preferred width, cell padding, row height, nested paragraph spacing 반영
+    - 셀 내부 이미지/텍스트의 폭 기준 줄바꿈과 높이 계산 보정
+  - Tests:
+    - real-world table regression fixture
+    - table cell wrap regression test
+- [ ] DOCX 표 내부 이미지 및 inline image 렌더 보정
+  - Rust scope:
+    - drawing extent, anchor/inline 차이, cell clipping, image fit 정책 보정
+  - Flutter scope:
+    - embedded image decode/render regression 방지
+  - Tests:
+    - image-in-table regression fixture
+    - inline image sizing widget test
+
+### Typography and spacing
+- [ ] DOCX 문단 간격과 기본 스타일 메트릭 보정
+  - Rust scope:
+    - `before/after`, line spacing, default paragraph style, section defaults 반영
+  - Tests:
+    - paragraph spacing regression fixture
+- [ ] DOCX 폰트 메트릭과 fallback 정밀도 보정
+  - Rust scope:
+    - 문자폭 추정 개선 또는 실제 폰트 메트릭 연동 검토
+    - CJK/Latin 혼합 문단 폭 계산 보정
+  - Tests:
+    - mixed script width regression fixture
+    - CJK line break regression fixture
+
+### Acceptance
+- [ ] DOCX visual parity acceptance pass
+  - Acceptance checks:
+    - 주요 issue 문서가 빈 페이지 없이 렌더된다
+    - 실제 Word 대비 페이지 분할이 허용 범위 내에 있다
+    - 표 크기와 셀 내부 줄바꿈이 허용 범위 내에 있다
+    - 표 내부 이미지와 inline 이미지가 placeholder 없이 렌더된다
+    - 최소 재현 fixture 회귀 테스트가 추가되었다
 
 ## Phase 2: PPTX MVP
 ### PPTX parse layer
