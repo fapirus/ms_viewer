@@ -3,9 +3,9 @@ use format_shared::{parse_package_relationships, resolve_relationship_target};
 use viewer_core::archive::OoxmlArchive;
 use viewer_core::model::{
     Block, BoxNode, FloatingTablePosition, ImageNode, ImageReference, ListKind, ListMarker,
-    PageRenderModel, ParagraphMetrics, Rect, RenderNode, SelectionAnchor, TableAlignment,
-    TableAnchor, TableCell, TableCellMerge, TableHorizontalPosition, TableLayout, TableRow,
-    TableVerticalPosition, TextNode, TextRange, TextRun, TextStyle,
+    PageRenderModel, ParagraphAlignment, ParagraphMetrics, Rect, RenderNode, SelectionAnchor,
+    TableAlignment, TableAnchor, TableCell, TableCellMerge, TableHorizontalPosition, TableLayout,
+    TableRow, TableVerticalPosition, TextNode, TextRange, TextRun, TextStyle,
 };
 use viewer_core::search::{search_pages, SearchMatch, SearchPage};
 use viewer_core::text::Script;
@@ -54,6 +54,7 @@ pub struct StyleCatalog {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ParagraphMetricsSpec {
+    pub alignment: Option<ParagraphAlignment>,
     pub line_value: Option<f32>,
     pub line_rule: Option<ParagraphLineRule>,
     pub spacing_before: Option<f32>,
@@ -374,6 +375,7 @@ pub fn parse_style_catalog(
         return Ok(StyleCatalog {
             default_run_style: ResolvedTextStyle::default(),
             default_paragraph_metrics: ParagraphMetricsSpec {
+                alignment: Some(ParagraphAlignment::Left),
                 line_value: None,
                 line_rule: None,
                 spacing_before: Some(0.0),
@@ -390,6 +392,7 @@ pub fn parse_style_catalog(
 
     let mut default_run_style = ResolvedTextStyle::default();
     let mut default_paragraph_metrics = ParagraphMetricsSpec {
+        alignment: Some(ParagraphAlignment::Left),
         line_value: None,
         line_rule: None,
         spacing_before: Some(0.0),
@@ -552,6 +555,7 @@ pub fn layout_document(
                     .line_height
                     .unwrap_or_else(|| (font_size * 1.2).max(14.0))
                     .max(font_size);
+                let alignment = metrics.alignment.clone();
                 let paragraph_spacing_before = metrics.spacing_before;
                 let paragraph_spacing_after = metrics.spacing_after;
                 let full_text = runs
@@ -574,6 +578,8 @@ pub fn layout_document(
 
                     let mut current_lines = Vec::new();
                     for text in lines {
+                        let line_width =
+                            estimate_text_width(&text, &style).min(default_page_box.content.width);
                         if cursor_y + line_height > content_bottom && !current_lines.is_empty() {
                             pages.last_mut().expect("page exists").blocks.push(
                                 LaidOutBlock::Paragraph {
@@ -589,10 +595,14 @@ pub fn layout_document(
 
                         current_lines.push(LaidOutLine {
                             text: text.clone(),
-                            x: default_page_box.content.x,
+                            x: resolve_line_x(
+                                default_page_box.content.x,
+                                default_page_box.content.width,
+                                line_width,
+                                &alignment,
+                            ),
                             y: cursor_y,
-                            width: estimate_text_width(&text, &style)
-                                .min(default_page_box.content.width),
+                            width: line_width,
                             height: line_height,
                             style: style.clone(),
                         });
@@ -1453,17 +1463,24 @@ fn layout_table_cell_content(
                     .collect::<Vec<_>>()
                     .join("");
                 let paragraph_lines = break_text_lines(&text, available_width, &style);
+                let alignment = metrics.alignment.clone();
 
                 cursor_y += metrics.spacing_before;
                 has_content = true;
 
                 for line in paragraph_lines {
                     if !line.is_empty() {
+                        let line_width = estimate_text_width(&line, &style).min(available_width);
                         lines.push(LaidOutLine {
                             text: line.clone(),
-                            x: x + CELL_PADDING_X,
+                            x: resolve_line_x(
+                                x + CELL_PADDING_X,
+                                available_width,
+                                line_width,
+                                &alignment,
+                            ),
                             y: cursor_y,
-                            width: estimate_text_width(&line, &style).min(available_width),
+                            width: line_width,
                             height: line_height,
                             style: style.clone(),
                         });
@@ -1981,6 +1998,19 @@ fn is_wide_character(character: char) -> bool {
     )
 }
 
+fn resolve_line_x(
+    base_x: f32,
+    available_width: f32,
+    line_width: f32,
+    alignment: &ParagraphAlignment,
+) -> f32 {
+    match alignment {
+        ParagraphAlignment::Center => base_x + ((available_width - line_width).max(0.0) / 2.0),
+        ParagraphAlignment::Right => base_x + (available_width - line_width).max(0.0),
+        ParagraphAlignment::Left | ParagraphAlignment::Justified => base_x,
+    }
+}
+
 fn collect_paragraph_runs(
     element: &viewer_core::xml::XmlElement,
     styles: &StyleCatalog,
@@ -2119,6 +2149,10 @@ fn parse_paragraph_metrics_spec(
     let spacing = paragraph_properties.and_then(|node| node.child("spacing"));
 
     ParagraphMetricsSpec {
+        alignment: paragraph_properties
+            .and_then(|node| node.child("jc"))
+            .and_then(|node| node.attribute("val"))
+            .map(parse_paragraph_alignment),
         line_value: spacing
             .and_then(|node| node.attribute("line"))
             .and_then(|value| value.parse::<f32>().ok()),
@@ -2179,6 +2213,10 @@ fn resolve_paragraph_metrics(
     merge_paragraph_metrics_spec(&mut resolved_spec, &direct_metrics);
 
     ParagraphMetrics {
+        alignment: resolved_spec
+            .alignment
+            .clone()
+            .unwrap_or(ParagraphAlignment::Left),
         line_height: resolve_line_height(&resolved_spec, font_size)
             .or(Some((font_size * 1.2).max(14.0).max(font_size))),
         spacing_before: resolved_spec.spacing_before.unwrap_or(0.0),
@@ -2203,6 +2241,7 @@ fn resolve_named_paragraph_metrics(styles: &StyleCatalog, style_id: &str) -> Par
     }
 
     let mut resolved = ParagraphMetricsSpec {
+        alignment: None,
         line_value: None,
         line_rule: None,
         spacing_before: None,
@@ -2240,6 +2279,9 @@ fn resolve_named_paragraph_run_style(styles: &StyleCatalog, style_id: &str) -> R
 }
 
 fn merge_paragraph_metrics_spec(target: &mut ParagraphMetricsSpec, source: &ParagraphMetricsSpec) {
+    if let Some(alignment) = &source.alignment {
+        target.alignment = Some(alignment.clone());
+    }
     if let Some(line_value) = source.line_value {
         target.line_value = Some(line_value);
     }
@@ -2251,6 +2293,15 @@ fn merge_paragraph_metrics_spec(target: &mut ParagraphMetricsSpec, source: &Para
     }
     if let Some(spacing_after) = source.spacing_after {
         target.spacing_after = Some(spacing_after);
+    }
+}
+
+fn parse_paragraph_alignment(value: &str) -> ParagraphAlignment {
+    match value {
+        "center" => ParagraphAlignment::Center,
+        "right" | "end" => ParagraphAlignment::Right,
+        "both" | "distribute" | "thaiDistribute" => ParagraphAlignment::Justified,
+        _ => ParagraphAlignment::Left,
     }
 }
 

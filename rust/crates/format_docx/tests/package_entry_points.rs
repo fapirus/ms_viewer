@@ -10,7 +10,7 @@ use format_docx::{
     parse_page_boxes, parse_paragraph_blocks, parse_section_layouts, parse_style_catalog,
     search_document,
 };
-use viewer_core::model::{Block, TableCellMerge};
+use viewer_core::model::{Block, ParagraphAlignment, RenderNode, TableCellMerge};
 
 #[test]
 fn parses_main_optional_and_media_entry_points() {
@@ -571,6 +571,82 @@ fn prefers_east_asia_font_for_hangul_runs() {
         }
         other => panic!("expected paragraph block, got {other:?}"),
     }
+}
+
+#[test]
+fn parses_and_lays_out_centered_paragraphs_without_rebreaking_lines() {
+    let file = create_docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+              <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+            </Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+              <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+            </Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+              <w:body>
+                <w:p>
+                  <w:pPr><w:jc w:val="center"/></w:pPr>
+                  <w:r>
+                    <w:rPr>
+                      <w:rFonts w:ascii="Times New Roman"/>
+                      <w:sz w:val="72"/>
+                      <w:b/>
+                    </w:rPr>
+                    <w:t>INFINITY TALK</w:t>
+                  </w:r>
+                </w:p>
+                <w:sectPr>
+                  <w:pgSz w:w="12240" w:h="15840"/>
+                  <w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"/>
+                </w:sectPr>
+              </w:body>
+            </w:document>"#,
+        ),
+    ]);
+    let archive = OoxmlArchive::open_path(file.path()).expect("docx archive should open");
+    let package = parse_docx(&archive).expect("docx package should parse");
+
+    let blocks = parse_paragraph_blocks(&archive, &package).expect("paragraphs should parse");
+    match &blocks[0] {
+        Block::Paragraph { runs, metrics, .. } => {
+            assert_eq!(metrics.alignment, ParagraphAlignment::Center);
+            assert_eq!(runs[0].text, "INFINITY TALK");
+        }
+        other => panic!("expected paragraph block, got {other:?}"),
+    }
+
+    let pages = layout_document(&archive, &package).expect("layout should succeed");
+    match &pages[0].blocks[0] {
+        format_docx::LaidOutBlock::Paragraph { lines, .. } => {
+            assert_eq!(lines.len(), 1);
+            assert_eq!(lines[0].text, "INFINITY TALK");
+            assert!(lines[0].x > pages[0].page_box.content.x + 40.0);
+        }
+        other => panic!("expected paragraph layout, got {other:?}"),
+    }
+
+    let models = build_selection_page_models(&archive, &package).expect("selection models");
+    let text_nodes = models[0]
+        .nodes
+        .iter()
+        .filter_map(|node| match node {
+            RenderNode::Text(text) => Some(text),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(text_nodes.len(), 1);
+    assert_eq!(text_nodes[0].text, "INFINITY TALK");
 }
 
 #[test]

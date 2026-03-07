@@ -1,6 +1,7 @@
 import 'dart:convert';
 
-import 'package:flutter/foundation.dart' show TargetPlatform, defaultTargetPlatform;
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform, visibleForTesting;
 import 'package:flutter/material.dart';
 import 'package:ms_viewer_platform_interface/ms_viewer_platform_interface.dart';
 
@@ -144,10 +145,7 @@ Offset _toPageOffset(Offset localPosition, double scaleX, double scaleY) {
 }
 
 class _PageRenderPainter extends CustomPainter {
-  _PageRenderPainter({
-    required this.page,
-    required this.platform,
-  });
+  _PageRenderPainter({required this.page, required this.platform});
 
   final PageRenderModel page;
   final ViewerPlatform platform;
@@ -160,33 +158,11 @@ class _PageRenderPainter extends CustomPainter {
     for (final node in page.nodes) {
       switch (node) {
         case TextRenderNodeModel():
-          final script = scriptKindForText(node.text);
-          final fontFamily = resolveRenderableFontFamily(
+          final painter = buildRenderTextPainter(
+            node: node,
             platform: platform,
-            requested: node.style.fontFamily,
-            script: script,
-          );
-          final painter = TextPainter(
-            text: TextSpan(
-              text: node.text,
-              style: TextStyle(
-                fontFamily: fontFamily,
-                fontFamilyFallback: resolveFontFamilyFallbacks(
-                  platform: platform,
-                  requested: node.style.fontFamily,
-                  script: script,
-                ),
-                fontSize: node.style.fontSize * scaleY,
-                fontWeight: node.style.bold ? FontWeight.w700 : FontWeight.w400,
-                fontStyle: node.style.italic
-                    ? FontStyle.italic
-                    : FontStyle.normal,
-                color: _parseColor(node.style.colorHex),
-              ),
-            ),
-            textDirection: TextDirection.ltr,
-            maxLines: null,
-          )..layout(maxWidth: node.bounds.width * scaleX);
+            scaleY: scaleY,
+          )..layout();
           painter.paint(
             canvas,
             Offset(node.bounds.x * scaleX, node.bounds.y * scaleY),
@@ -240,6 +216,40 @@ class _PageRenderPainter extends CustomPainter {
   bool shouldRepaint(covariant _PageRenderPainter oldDelegate) {
     return oldDelegate.page != page;
   }
+}
+
+@visibleForTesting
+TextPainter buildRenderTextPainter({
+  required TextRenderNodeModel node,
+  required ViewerPlatform platform,
+  required double scaleY,
+}) {
+  final script = scriptKindForText(node.text);
+  final fontFamily = resolveRenderableFontFamily(
+    platform: platform,
+    requested: node.style.fontFamily,
+    script: script,
+  );
+
+  return TextPainter(
+    text: TextSpan(
+      text: node.text,
+      style: TextStyle(
+        fontFamily: fontFamily,
+        fontFamilyFallback: resolveFontFamilyFallbacks(
+          platform: platform,
+          requested: node.style.fontFamily,
+          script: script,
+        ),
+        fontSize: node.style.fontSize * scaleY,
+        fontWeight: node.style.bold ? FontWeight.w700 : FontWeight.w400,
+        fontStyle: node.style.italic ? FontStyle.italic : FontStyle.normal,
+        color: _parseColor(node.style.colorHex),
+      ),
+    ),
+    textDirection: TextDirection.ltr,
+    maxLines: 1,
+  );
 }
 
 Color? _parseColor(String? hex) {

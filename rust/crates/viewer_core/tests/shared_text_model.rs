@@ -1,7 +1,7 @@
 use viewer_core::model::{
-    Block, FloatingTablePosition, ImageReference, ListKind, ListMarker, ParagraphMetrics,
-    TableAlignment, TableAnchor, TableCell, TableCellMerge, TableHorizontalPosition, TableLayout,
-    TableRow, TableVerticalPosition, TextRun, TextStyle,
+    Block, FloatingTablePosition, ImageReference, ListKind, ListMarker, ParagraphAlignment,
+    ParagraphMetrics, TableAlignment, TableAnchor, TableCell, TableCellMerge,
+    TableHorizontalPosition, TableLayout, TableRow, TableVerticalPosition, TextRun, TextStyle,
 };
 
 #[test]
@@ -25,6 +25,7 @@ fn shared_text_model_can_be_constructed() {
             num_id: 1,
         }),
         metrics: ParagraphMetrics {
+            alignment: ParagraphAlignment::Left,
             line_height: Some(14.0),
             spacing_before: 6.0,
             spacing_after: 8.0,
@@ -50,6 +51,7 @@ fn shared_text_model_can_be_constructed() {
                     }],
                     list: None,
                     metrics: ParagraphMetrics {
+                        alignment: ParagraphAlignment::Left,
                         line_height: Some(14.0),
                         spacing_before: 0.0,
                         spacing_after: 0.0,
@@ -132,6 +134,7 @@ fn shared_text_model_round_trips_via_serde() {
             num_id: 9,
         }),
         metrics: ParagraphMetrics {
+            alignment: ParagraphAlignment::Center,
             line_height: Some(16.0),
             spacing_before: 4.0,
             spacing_after: 10.0,

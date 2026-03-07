@@ -62,9 +62,19 @@ pub struct TextRun {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ParagraphMetrics {
+    pub alignment: ParagraphAlignment,
     pub line_height: Option<f32>,
     pub spacing_before: f32,
     pub spacing_after: f32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum ParagraphAlignment {
+    Left,
+    Center,
+    Right,
+    Justified,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

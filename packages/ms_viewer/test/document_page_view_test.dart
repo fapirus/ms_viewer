@@ -4,6 +4,31 @@ import 'package:ms_viewer/ms_viewer.dart';
 import 'package:ms_viewer_platform_interface/ms_viewer_platform_interface.dart';
 
 void main() {
+  test('render text painter keeps engine lines on a single line', () {
+    final node = TextRenderNodeModel.fromJson({
+      'type': 'text',
+      'text': 'INFINITY TALK',
+      'bounds': {'x': 72.0, 'y': 132.0, 'width': 180.0, 'height': 38.0},
+      'style': {
+        'fontFamily': 'Times New Roman',
+        'fontSize': 36.0,
+        'bold': true,
+        'italic': false,
+        'colorHex': '#000000',
+      },
+      'range': {'start': 0, 'end': 13},
+    });
+
+    final painter = buildRenderTextPainter(
+      node: node,
+      platform: ViewerPlatform.macOs,
+      scaleY: 1.0,
+    )..layout();
+
+    expect(painter.maxLines, 1);
+    expect(painter.didExceedMaxLines, isFalse);
+  });
+
   testWidgets('placeholder paint test from mock render model', (tester) async {
     final page = PageRenderModel.fromJson({
       'pageIndex': 0,

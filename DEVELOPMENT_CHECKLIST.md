@@ -359,6 +359,16 @@
     - `before/after`, line spacing, default paragraph style, section defaults 반영
   - Tests:
     - paragraph spacing regression fixture
+- [x] DOCX 문단 정렬과 화면 재개행 보정
+  - Rust scope:
+    - `w:jc` 문단 정렬을 style/default/direct formatting 경로에서 해석
+    - centered/right aligned paragraph의 실제 line x 좌표 보정
+    - table cell 내부 문단 정렬도 동일 규칙 적용
+  - Flutter scope:
+    - engine이 이미 나눈 `TextNode`를 화면에서 다시 줄바꿈하지 않도록 painter 보정
+  - Tests:
+    - centered paragraph layout regression test
+    - single-line render painter regression test
 - [x] DOCX 폰트 메트릭과 fallback 정밀도 보정
   - Rust scope:
     - 문자폭 추정 개선 또는 실제 폰트 메트릭 연동 검토
