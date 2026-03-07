@@ -198,7 +198,8 @@
     - drag selection state test
 
 ### DOCX integration
-- [ ] DOCX render model to Flutter painting 연결
+- [x] DOCX render model to Flutter painting 연결
+  - Done: page render widget, custom painter, MsDocumentView preview page consumption
   - Flutter tests:
     - page widget smoke test
     - placeholder paint test from mock render model
