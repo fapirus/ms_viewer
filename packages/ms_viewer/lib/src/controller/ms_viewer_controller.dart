@@ -90,8 +90,7 @@ class MsViewerController extends ChangeNotifier {
           status: PasswordPromptStatus.success,
         );
         status = ViewerShellStatus.ready;
-        if (opened.kind == viewer_platform.DocumentKind.docx &&
-            opened.pageCount > 0) {
+        if (_supportsImmediatePageFetch(opened.kind) && opened.pageCount > 0) {
           await loadPage(0);
         }
       case viewer_platform.OpenDocumentFailure(error: final openError):
@@ -181,6 +180,11 @@ class MsViewerController extends ChangeNotifier {
       return;
     }
     await loadPage(index + 1);
+  }
+
+  bool _supportsImmediatePageFetch(viewer_platform.DocumentKind kind) {
+    return kind == viewer_platform.DocumentKind.docx ||
+        kind == viewer_platform.DocumentKind.pptx;
   }
 
   Future<void> search(String query) async {

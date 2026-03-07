@@ -571,7 +571,11 @@
     - slide selection metadata fetch smoke test
 
 ### Flutter bridge
-- [ ] Flutter platform bridge에서 PPTX slide fetch 연결
+- [x] Flutter platform bridge에서 PPTX slide fetch 연결
+  - Done:
+    - `MsViewerController.openDocument(...)`가 PPTX open 성공 시 첫 slide를 자동 fetch하도록 확장
+    - PPTX preview/navigation widget test를 자동 first-slide fetch 흐름에 맞춰 정리
+    - PPTX slide fetch error state widget test 추가
   - Tests:
     - slide fetch controller test
     - slide fetch error state widget test

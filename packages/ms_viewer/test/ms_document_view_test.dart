@@ -488,7 +488,6 @@ void main() {
         source: platform.OpenDocumentSource.path('/tmp/deck.pptx'),
       ),
     );
-    await controller.loadPage(0);
 
     await tester.pumpWidget(
       MaterialApp(
@@ -507,6 +506,49 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Page 2 / 2'), findsOneWidget);
+  });
+
+  testWidgets('view shows pptx slide fetch error state', (tester) async {
+    final controller = MsViewerController(
+      platform: _FakeMsViewerPlatform(
+        onOpen: (_) async => platform.OpenDocumentOpened(
+          const platform.OpenDocumentSuccess(
+            documentId: 'ppt_001',
+            kind: platform.DocumentKind.pptx,
+            title: 'deck.pptx',
+            pageCount: 1,
+            capabilities: platform.DocumentCapabilities(
+              search: true,
+              textSelection: true,
+              passwordProtected: false,
+            ),
+          ),
+        ),
+        onGetPage: (_) async => const platform.GetPageRenderModelFailure(
+          platform.OpenDocumentError(
+            code: platform.ViewerErrorCode.invalidDocument,
+            message: 'Failed to load slide preview.',
+          ),
+        ),
+      ),
+    );
+
+    await controller.openDocument(
+      const platform.OpenDocumentRequest(
+        source: platform.OpenDocumentSource.path('/tmp/deck.pptx'),
+      ),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: MsDocumentView(controller: controller)),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('deck.pptx'), findsOneWidget);
+    expect(find.text('Failed to load slide preview.'), findsOneWidget);
+    expect(find.byType(DocumentPageView), findsNothing);
   });
 }
 
