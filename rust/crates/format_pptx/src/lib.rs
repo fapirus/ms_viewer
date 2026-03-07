@@ -5,6 +5,7 @@ use viewer_core::model::{
     BoxNode, ImageNode, ImageReference, PageRenderModel, ParagraphAlignment, Rect, RenderNode,
     TextNode, TextRange, TextStyle,
 };
+use viewer_core::search::{search_pages, SearchMatch, SearchPage};
 use viewer_core::xml::{parse_document, XmlElement};
 use viewer_core::ViewerError;
 
@@ -370,6 +371,41 @@ pub fn build_slide_render_model(
         nodes,
         selection_anchors: Vec::new(),
     })
+}
+
+pub fn build_search_pages(
+    archive: &OoxmlArchive,
+    slide_tree: &PptxSlideTree,
+) -> Result<Vec<SearchPage>, ViewerError> {
+    let mut pages = Vec::new();
+
+    for (slide_index, slide) in slide_tree.slides.iter().enumerate() {
+        let text_boxes = parse_slide_text_boxes(archive, &slide.part_name)?;
+        let mut chunks = Vec::new();
+
+        for text_box in text_boxes {
+            let box_text = flatten_text_box_for_search(&text_box);
+            if !box_text.trim().is_empty() {
+                chunks.push(box_text);
+            }
+        }
+
+        pages.push(SearchPage {
+            page_index: slide_index as u32,
+            text: chunks.join("\n"),
+        });
+    }
+
+    Ok(pages)
+}
+
+pub fn search_slides(
+    archive: &OoxmlArchive,
+    slide_tree: &PptxSlideTree,
+    query: &str,
+) -> Result<Vec<SearchMatch>, ViewerError> {
+    let pages = build_search_pages(archive, slide_tree)?;
+    Ok(search_pages(&pages, query))
 }
 
 pub fn parse_slide_tree(archive: &OoxmlArchive) -> Result<PptxSlideTree, ViewerError> {
@@ -1007,6 +1043,25 @@ fn parse_alignment(value: &str) -> Option<SlideTextAlignment> {
 
 fn field_text(field: &XmlElement) -> Option<String> {
     field.child("t").map(|text| text.text.clone())
+}
+
+fn flatten_text_box_for_search(text_box: &SlideTextBox) -> String {
+    text_box
+        .paragraphs
+        .iter()
+        .map(flatten_paragraph_for_search)
+        .filter(|paragraph| !paragraph.trim().is_empty())
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn flatten_paragraph_for_search(paragraph: &SlideTextParagraph) -> String {
+    paragraph
+        .runs
+        .iter()
+        .map(|run| run.text.as_str())
+        .collect::<String>()
+        .replace('\u{000B}', "\n")
 }
 
 fn rect_from_emu_bounds(bounds: &EmuRectangle) -> Rect {

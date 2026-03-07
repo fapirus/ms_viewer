@@ -503,7 +503,15 @@
   - Tests:
     - centered title line positioning fixture
     - narrow body text multi-line wrap fixture
-- [ ] slide search index 구현
+- [x] slide search index 구현
+  - Done:
+    - slide 단위 `SearchPage` 생성
+    - text box paragraph/run 텍스트를 검색용 문자열로 평탄화
+    - notes/animation subtree를 제외한 본문 슬라이드 텍스트만 인덱싱
+    - 대소문자 무시 검색 매치 생성
+  - Tests:
+    - multi-slide search page fixture
+    - case-insensitive slide search fixture
 - [ ] slide text selection metadata 구현
 
 ### PPTX tests and acceptance
