@@ -2,6 +2,7 @@
 members = [
   "crates/viewer_core",
   "crates/viewer_ffi",
+  "crates/viewer_cli",
   "crates/format_shared",
   "crates/format_docx",
   "crates/format_pptx",

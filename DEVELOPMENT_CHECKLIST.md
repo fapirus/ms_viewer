@@ -262,7 +262,8 @@
     - selection overlay integration widget test
 
 ### Demo app
-- [ ] demo fixture 목록에서 실제 DOCX 열기 연결
+- [x] demo fixture 목록에서 실제 DOCX 열기 연결
+  - Done: fixture asset bytes -> viewer_cli -> viewer_ffi open/page fetch path, demo smoke now verifies actual open call
   - Demo scope:
     - bundled fixture를 실제 engine open path로 연결
     - first page render 확인

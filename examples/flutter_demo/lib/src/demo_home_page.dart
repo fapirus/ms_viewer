@@ -1,9 +1,15 @@
+import 'dart:async';
+import 'dart:convert';
+
 import 'package:cross_file/cross_file.dart';
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'package:ms_viewer/ms_viewer.dart';
+import 'package:ms_viewer_platform_interface/ms_viewer_platform_interface.dart'
+    as platform;
 import 'package:path/path.dart' as p;
 
 import 'demo_document.dart';
@@ -11,7 +17,14 @@ import 'demo_fixture_catalog.dart';
 import 'demo_page_models.dart';
 
 class DemoHomePage extends StatefulWidget {
-  const DemoHomePage({super.key});
+  const DemoHomePage({
+    super.key,
+    required this.viewerPlatform,
+    required this.assetBundle,
+  });
+
+  final platform.MsViewerPlatform viewerPlatform;
+  final AssetBundle assetBundle;
 
   @override
   State<DemoHomePage> createState() => _DemoHomePageState();
@@ -33,9 +46,9 @@ class _DemoHomePageState extends State<DemoHomePage> {
   @override
   void initState() {
     super.initState();
-    _controller = MsViewerController();
+    _controller = MsViewerController(platform: widget.viewerPlatform);
     _fixtures = buildFixtureEntries();
-    _selectEntry(_fixtures.first);
+    unawaited(_selectEntry(_fixtures.first));
   }
 
   @override
@@ -68,7 +81,7 @@ class _DemoHomePageState extends State<DemoHomePage> {
     setState(() {
       _imports.insertAll(0, added.reversed);
     });
-    _selectEntry(added.first);
+    unawaited(_selectEntry(added.first));
   }
 
   Future<void> _openDroppedFiles(List<XFile> files) async {
@@ -87,7 +100,7 @@ class _DemoHomePageState extends State<DemoHomePage> {
       _imports.insertAll(0, added.reversed);
       _dragging = false;
     });
-    _selectEntry(added.first);
+    unawaited(_selectEntry(added.first));
   }
 
   DemoDocumentEntry _importedEntry(String path, DemoDocumentOrigin origin) {
@@ -100,7 +113,7 @@ class _DemoHomePageState extends State<DemoHomePage> {
     };
     final note = switch (extension) {
       'docx' =>
-        'External DOCX preview shell. Engine-backed FFI page loading is the next step.',
+        'External DOCX file. Real engine open is wired in the next demo phases.',
       'pptx' => 'PPTX parser and renderer are not implemented yet.',
       'xlsx' => 'XLSX parser and renderer are not implemented yet.',
       _ => 'Unknown document type.',
@@ -124,10 +137,24 @@ class _DemoHomePageState extends State<DemoHomePage> {
     );
   }
 
-  void _selectEntry(DemoDocumentEntry entry) {
+  Future<void> _selectEntry(DemoDocumentEntry entry) async {
     setState(() {
       _selected = entry;
     });
+
+    if (entry.origin == DemoDocumentOrigin.fixture &&
+        entry.kind == DocumentKind.docx &&
+        entry.location != null) {
+      final bytes = await widget.assetBundle.load(entry.location!);
+      final encoded = base64Encode(bytes.buffer.asUint8List());
+      await _controller.openDocument(
+        platform.OpenDocumentRequest(
+          source: platform.OpenDocumentSource.bytesBase64(encoded),
+        ),
+      );
+      return;
+    }
+
     _controller.attachDocument(entry.descriptor);
   }
 
@@ -242,7 +269,7 @@ class _DemoHomePageState extends State<DemoHomePage> {
           trailing: entry.requiresPassword
               ? const Icon(Icons.lock_outline)
               : null,
-          onTap: () => _selectEntry(entry),
+          onTap: () => unawaited(_selectEntry(entry)),
         ),
       ),
     );
