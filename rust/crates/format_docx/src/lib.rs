@@ -4,6 +4,7 @@ use viewer_core::model::{
     Block, ImageReference, ListKind, ListMarker, TableCell, TableCellMerge, TableRow, TextRun,
     TextStyle,
 };
+use viewer_core::search::{search_pages, SearchMatch, SearchPage};
 use viewer_core::xml::parse_document;
 use viewer_core::ViewerError;
 
@@ -122,6 +123,7 @@ pub struct LaidOutTableCell {
     pub width: f32,
     pub height: f32,
     pub column_span: u16,
+    pub text: String,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -629,6 +631,62 @@ pub fn layout_header_footers(
     Ok(layouts)
 }
 
+pub fn build_search_pages(
+    archive: &OoxmlArchive,
+    package: &DocxPackage,
+) -> Result<Vec<SearchPage>, ViewerError> {
+    let pages = layout_document(archive, package)?;
+    let mut search_pages = Vec::new();
+
+    for page in pages {
+        let mut chunks = Vec::new();
+        for block in page.blocks {
+            match block {
+                LaidOutBlock::Paragraph { lines, .. } => {
+                    let text = lines
+                        .into_iter()
+                        .map(|line| line.text)
+                        .collect::<Vec<_>>()
+                        .join(" ");
+                    if !text.trim().is_empty() {
+                        chunks.push(text);
+                    }
+                }
+                LaidOutBlock::Table { rows, .. } => {
+                    for row in rows {
+                        let row_text = row
+                            .cells
+                            .into_iter()
+                            .map(|cell| cell.text)
+                            .collect::<Vec<_>>()
+                            .join(" ");
+                        if !row_text.is_empty() {
+                            chunks.push(row_text);
+                        }
+                    }
+                }
+                LaidOutBlock::Image { .. } => {}
+            }
+        }
+
+        search_pages.push(SearchPage {
+            page_index: page.page_index,
+            text: chunks.join("\n"),
+        });
+    }
+
+    Ok(search_pages)
+}
+
+pub fn search_document(
+    archive: &OoxmlArchive,
+    package: &DocxPackage,
+    query: &str,
+) -> Result<Vec<SearchMatch>, ViewerError> {
+    let pages = build_search_pages(archive, package)?;
+    Ok(search_pages(&pages, query))
+}
+
 fn parse_document_relationships(
     archive: &OoxmlArchive,
     main_document: &str,
@@ -853,6 +911,7 @@ fn layout_table_row(
             width: cell_width,
             height: row_height,
             column_span: cell.column_span,
+            text: flatten_cell_text(cell),
         });
         cell_x += cell_width;
     }

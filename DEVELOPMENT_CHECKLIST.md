@@ -180,7 +180,8 @@
     - table page split behavior fixture
 
 ### DOCX interaction layer
-- [ ] DOCX text extraction and search index 구현
+- [x] DOCX text extraction and search index 구현
+  - Done: page text extraction, case-insensitive search matches, Flutter search result state and list shell
   - Rust tests:
     - simple query match fixture
     - case-insensitive match fixture

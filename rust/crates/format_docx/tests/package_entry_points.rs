@@ -7,7 +7,7 @@ use zip::ZipWriter;
 
 use format_docx::{
     layout_document, layout_header_footers, parse_docx, parse_page_boxes,
-    parse_paragraph_blocks, parse_section_layouts, parse_style_catalog,
+    parse_paragraph_blocks, parse_section_layouts, parse_style_catalog, search_document,
 };
 use viewer_core::model::{Block, TableCellMerge};
 
@@ -1291,6 +1291,89 @@ fn splits_table_rows_across_pages_when_needed() {
         }
         other => panic!("expected table layout, got {other:?}"),
     }
+}
+
+#[test]
+fn finds_simple_query_match_from_docx_pages() {
+    let file = create_docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+              <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+            </Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+              <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+            </Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+              <w:body>
+                <w:p><w:r><w:t>Alpha search target appears here.</w:t></w:r></w:p>
+                <w:sectPr>
+                  <w:pgSz w:w="12240" w:h="15840"/>
+                  <w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"/>
+                </w:sectPr>
+              </w:body>
+            </w:document>"#,
+        ),
+    ]);
+    let archive = OoxmlArchive::open_path(file.path()).expect("docx archive should open");
+    let package = parse_docx(&archive).expect("docx package should parse");
+
+    let matches = search_document(&archive, &package, "target").expect("search should succeed");
+
+    assert_eq!(matches.len(), 1);
+    assert_eq!(matches[0].page_index, 0);
+    assert_eq!(matches[0].query, "target");
+    assert!(matches[0].preview.contains("search target appears"));
+  }
+
+#[test]
+fn docx_search_is_case_insensitive() {
+    let file = create_docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+              <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+            </Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+              <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+            </Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+              <w:body>
+                <w:p><w:r><w:t>MiXeDCaSe Needle text.</w:t></w:r></w:p>
+                <w:sectPr>
+                  <w:pgSz w:w="12240" w:h="15840"/>
+                  <w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"/>
+                </w:sectPr>
+              </w:body>
+            </w:document>"#,
+        ),
+    ]);
+    let archive = OoxmlArchive::open_path(file.path()).expect("docx archive should open");
+    let package = parse_docx(&archive).expect("docx package should parse");
+
+    let matches = search_document(&archive, &package, "mixedcase").expect("search should succeed");
+
+    assert_eq!(matches.len(), 1);
+    assert_eq!(matches[0].page_index, 0);
+    assert!(matches[0].preview.contains("MiXeDCaSe Needle"));
 }
 
 fn create_docx_fixture(entries: &[(&str, &str)]) -> NamedTempFile {
