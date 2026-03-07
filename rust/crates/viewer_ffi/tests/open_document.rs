@@ -60,6 +60,61 @@ fn opens_docx_path_request_and_returns_basic_metadata() {
 }
 
 #[test]
+fn opens_pptx_path_request_and_exposes_text_capabilities() {
+    let file = create_pptx_package(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+        <p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+               xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+          <p:cSld>
+            <p:spTree>
+              <p:sp>
+                <p:nvSpPr>
+                  <p:cNvPr id="2" name="Title 1" />
+                  <p:cNvSpPr />
+                  <p:nvPr>
+                    <p:ph type="title" />
+                  </p:nvPr>
+                </p:nvSpPr>
+                <p:spPr>
+                  <a:xfrm>
+                    <a:off x="127000" y="254000" />
+                    <a:ext cx="3048000" cy="914400" />
+                  </a:xfrm>
+                </p:spPr>
+                <p:txBody>
+                  <a:bodyPr />
+                  <a:lstStyle />
+                  <a:p>
+                    <a:r>
+                      <a:t>PPTX Deck</a:t>
+                    </a:r>
+                  </a:p>
+                </p:txBody>
+              </p:sp>
+            </p:spTree>
+          </p:cSld>
+        </p:sld>"#,
+        None,
+    );
+    let path = file.path().to_string_lossy().to_string();
+
+    let response = open_document(OpenDocumentRequest {
+        source: DocumentSource::Path(path),
+        options: OpenOptions::default(),
+    });
+
+    match response {
+        OpenDocumentResponse::Success(success) => {
+            assert_eq!(success.kind, viewer_core::DocumentKind::Pptx);
+            assert_eq!(success.page_count, 1);
+            assert!(success.capabilities.search);
+            assert!(success.capabilities.text_selection);
+        }
+        other => panic!("expected success, got {other:?}"),
+    }
+}
+
+#[test]
 fn opens_rendered_page_break_regression_fixture_with_two_pages() {
     let path = regression_fixture_path("docx_rendered_page_break.docx");
     let document_id = format!("path:{}", path.display());
@@ -688,6 +743,62 @@ fn search_query_returns_docx_matches() {
 }
 
 #[test]
+fn search_query_returns_pptx_matches() {
+    let file = create_pptx_package(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+        <p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+               xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+          <p:cSld>
+            <p:spTree>
+              <p:sp>
+                <p:nvSpPr>
+                  <p:cNvPr id="2" name="Title 1" />
+                  <p:cNvSpPr />
+                  <p:nvPr />
+                </p:nvSpPr>
+                <p:spPr>
+                  <a:xfrm>
+                    <a:off x="127000" y="254000" />
+                    <a:ext cx="3048000" cy="914400" />
+                  </a:xfrm>
+                </p:spPr>
+                <p:txBody>
+                  <a:bodyPr />
+                  <a:lstStyle />
+                  <a:p>
+                    <a:r><a:t>Quarterly Results</a:t></a:r>
+                  </a:p>
+                  <a:p>
+                    <a:r><a:t>Revenue grew 20%</a:t></a:r>
+                  </a:p>
+                </p:txBody>
+              </p:sp>
+            </p:spTree>
+          </p:cSld>
+        </p:sld>"#,
+        None,
+    );
+    let path = file.path().to_string_lossy().to_string();
+
+    let response = search_document_pages(SearchDocumentRequest {
+        source: DocumentSource::Path(path),
+        document_id: "unused".to_string(),
+        query: "results".to_string(),
+        options: OpenOptions::default(),
+    });
+
+    match response {
+        SearchDocumentResponse::Success(matches) => {
+            assert_eq!(matches.len(), 1);
+            assert_eq!(matches[0].page_index, 0);
+            assert_eq!(matches[0].query, "results");
+            assert!(matches[0].preview.to_lowercase().contains("results"));
+        }
+        other => panic!("expected search matches, got {other:?}"),
+    }
+}
+
+#[test]
 fn selection_metadata_fetch_returns_page_with_anchors() {
     let file = create_package(&[
         (
@@ -731,6 +842,114 @@ fn selection_metadata_fetch_returns_page_with_anchors() {
         }
         other => panic!("expected selection page, got {other:?}"),
     }
+}
+
+#[test]
+fn selection_metadata_fetch_returns_pptx_slide_with_anchors() {
+    let file = create_pptx_package(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+        <p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+               xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+          <p:cSld>
+            <p:spTree>
+              <p:sp>
+                <p:nvSpPr>
+                  <p:cNvPr id="2" name="Body 1" />
+                  <p:cNvSpPr />
+                  <p:nvPr />
+                </p:nvSpPr>
+                <p:spPr>
+                  <a:xfrm>
+                    <a:off x="127000" y="254000" />
+                    <a:ext cx="3048000" cy="914400" />
+                  </a:xfrm>
+                </p:spPr>
+                <p:txBody>
+                  <a:bodyPr />
+                  <a:lstStyle />
+                  <a:p>
+                    <a:r><a:t>PPTX selection smoke</a:t></a:r>
+                  </a:p>
+                </p:txBody>
+              </p:sp>
+            </p:spTree>
+          </p:cSld>
+        </p:sld>"#,
+        None,
+    );
+    let path = file.path().to_string_lossy().to_string();
+
+    let response = get_selection_page(GetSelectionPageRequest {
+        source: DocumentSource::Path(path),
+        document_id: "unused".to_string(),
+        page_index: 0,
+        options: OpenOptions::default(),
+    });
+
+    match response {
+        GetSelectionPageResponse::Success(page) => {
+            let text_nodes = page
+                .nodes
+                .iter()
+                .filter_map(|node| match node {
+                    viewer_core::model::RenderNode::Text(text) => Some(text),
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+
+            assert_eq!(page.page_index, 0);
+            assert_eq!(text_nodes.len(), 1);
+            assert_eq!(text_nodes[0].text, "PPTX selection smoke");
+            assert!(!page.selection_anchors.is_empty());
+        }
+        other => panic!("expected selection page, got {other:?}"),
+    }
+}
+
+fn create_pptx_package(slide_xml: &str, slide_rels_xml: Option<&str>) -> NamedTempFile {
+    create_package(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+              <Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/>
+              <Override PartName="/ppt/slides/slide1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>
+            </Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+              <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="ppt/presentation.xml"/>
+            </Relationships>"#,
+        ),
+        (
+            "ppt/presentation.xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <p:presentation xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+                            xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+              <p:sldSz cx="9144000" cy="6858000" />
+              <p:sldIdLst>
+                <p:sldId id="256" r:id="rId2" />
+              </p:sldIdLst>
+            </p:presentation>"#,
+        ),
+        (
+            "ppt/_rels/presentation.xml.rels",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+              <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide1.xml"/>
+            </Relationships>"#,
+        ),
+        ("ppt/slides/slide1.xml", slide_xml),
+        (
+            "ppt/slides/_rels/slide1.xml.rels",
+            slide_rels_xml.unwrap_or(
+                r#"<?xml version="1.0" encoding="UTF-8"?>
+                <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships" />"#,
+            ),
+        ),
+    ])
 }
 
 fn create_package(entries: &[(&str, &str)]) -> NamedTempFile {

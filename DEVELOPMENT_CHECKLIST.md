@@ -561,7 +561,11 @@
   - Tests:
     - first slide fetch fixture test
     - invalid slide index error mapping test
-- [ ] PPTX search and selection FFI endpoint 연결
+- [x] PPTX search and selection FFI endpoint 연결
+  - Done:
+    - `viewer_ffi`에서 PPTX search를 `search_slides(...)`로 연결
+    - `get_selection_page`가 PPTX slide selection metadata를 반환하도록 page fetch 경로 재사용
+    - `OpenDocumentSuccess.capabilities`에 PPTX search/selection 지원 반영
   - Tests:
     - slide search round-trip test
     - slide selection metadata fetch smoke test
