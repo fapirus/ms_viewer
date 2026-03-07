@@ -12,6 +12,8 @@ const SLIDE_LAYOUT_RELATIONSHIP: &str =
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout";
 const SLIDE_MASTER_RELATIONSHIP: &str =
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster";
+const NOTES_SLIDE_RELATIONSHIP: &str =
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/notesSlide";
 const THEME_RELATIONSHIP: &str =
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme";
 const IMAGE_RELATIONSHIP: &str =
@@ -37,6 +39,9 @@ pub struct SlideReference {
     pub relationship_id: String,
     pub part_name: String,
     pub layout_part_name: Option<String>,
+    pub notes_part_name: Option<String>,
+    pub has_transition: bool,
+    pub ignored_animation_nodes: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -389,15 +394,33 @@ fn parse_slide_references(
             })
             .ok_or(ViewerError::InvalidDocument)?;
 
+        let slide_part_name = relationship.resolved_target.trim_start_matches('/').to_string();
+        let slide_relationships = parse_part_relationships(archive, &slide_part_name)?;
+        let slide_xml = archive.read_part(&slide_part_name)?;
+        let slide_text = String::from_utf8(slide_xml).map_err(|_| ViewerError::InvalidDocument)?;
+        let slide_root = parse_document(&slide_text)?;
+
+        if slide_root.local_name() != "sld" {
+            return Err(ViewerError::InvalidDocument);
+        }
+
         slides.push(SlideReference {
             slide_id,
             relationship_id,
-            part_name: relationship.resolved_target.trim_start_matches('/').to_string(),
-            layout_part_name: find_single_related_part(
-                archive,
-                relationship.resolved_target.trim_start_matches('/'),
-                SLIDE_LAYOUT_RELATIONSHIP,
-            )?,
+            part_name: slide_part_name.clone(),
+            layout_part_name: slide_relationships
+                .iter()
+                .find(|relationship| relationship.relationship_type == SLIDE_LAYOUT_RELATIONSHIP)
+                .map(|relationship| relationship.resolved_target.trim_start_matches('/').to_string()),
+            notes_part_name: slide_relationships
+                .iter()
+                .find(|relationship| relationship.relationship_type == NOTES_SLIDE_RELATIONSHIP)
+                .map(|relationship| relationship.resolved_target.trim_start_matches('/').to_string()),
+            has_transition: slide_root.child("transition").is_some(),
+            ignored_animation_nodes: slide_root
+                .child("timing")
+                .map(count_descendant_elements)
+                .unwrap_or(0),
         });
     }
 
@@ -460,16 +483,12 @@ fn parse_slide_master_references(
     Ok(masters)
 }
 
-fn find_single_related_part(
-    archive: &OoxmlArchive,
-    part_name: &str,
-    relationship_type: &str,
-) -> Result<Option<String>, ViewerError> {
-    let relationships = parse_part_relationships(archive, part_name)?;
-    Ok(relationships
+fn count_descendant_elements(element: &XmlElement) -> u32 {
+    element
+        .children
         .iter()
-        .find(|relationship| relationship.relationship_type == relationship_type)
-        .map(|relationship| relationship.resolved_target.trim_start_matches('/').to_string()))
+        .map(|child| 1 + count_descendant_elements(child))
+        .sum()
 }
 
 fn relationship_part_name(part_name: &str) -> Result<String, ViewerError> {

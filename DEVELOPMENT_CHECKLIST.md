@@ -472,7 +472,16 @@
     - embedded image relationship fixture
     - external linked image fixture
     - missing image relationship fixture
-- [ ] notes and animation exclusion handling 구현
+- [x] notes and animation exclusion handling 구현
+  - Done:
+    - `notesSlide` relationship 파싱과 slide metadata 연결
+    - slide `transition` 존재 여부 추출
+    - `timing` subtree element count를 ignored animation metadata로 기록
+    - text box parser에서 `timing` subtree를 렌더 파싱 대상에서 제외
+  - Tests:
+    - notes relationship fixture
+    - transition and animation metadata fixture
+    - timing subtree exclusion fixture
 
 ### PPTX layout and interaction
 - [ ] slide render model 구현

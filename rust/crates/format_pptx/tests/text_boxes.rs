@@ -201,3 +201,54 @@ fn invalid_transform_geometry_fails() {
 
     assert!(matches!(error, ViewerError::InvalidDocument));
 }
+
+#[test]
+fn text_box_parser_ignores_timing_subtree_content() {
+    let dir = tempdir().expect("tempdir should exist");
+    let path = dir.path().join("ignore-timing.pptx");
+    create_zip(
+        &path,
+        &[(
+            "ppt/slides/slide1.xml",
+            br#"
+<p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+       xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <p:cSld>
+    <p:spTree>
+      <p:sp>
+        <p:nvSpPr>
+          <p:cNvPr id="2" name="Title 1" />
+          <p:cNvSpPr />
+          <p:nvPr />
+        </p:nvSpPr>
+        <p:txBody>
+          <a:bodyPr />
+          <a:lstStyle />
+          <a:p>
+            <a:r><a:t>Visible Text</a:t></a:r>
+          </a:p>
+        </p:txBody>
+      </p:sp>
+    </p:spTree>
+  </p:cSld>
+  <p:timing>
+    <p:tnLst>
+      <p:par>
+        <a:t>Should Not Be Parsed</a:t>
+      </p:par>
+    </p:tnLst>
+  </p:timing>
+</p:sld>
+"#,
+        )],
+    );
+
+    let archive = OoxmlArchive::open_path(&path).expect("archive should open");
+    let text_boxes =
+        parse_slide_text_boxes(&archive, "ppt/slides/slide1.xml").expect("text boxes should parse");
+
+    assert_eq!(text_boxes.len(), 1);
+    assert_eq!(text_boxes[0].paragraphs.len(), 1);
+    assert_eq!(text_boxes[0].paragraphs[0].runs.len(), 1);
+    assert_eq!(text_boxes[0].paragraphs[0].runs[0].text, "Visible Text");
+}

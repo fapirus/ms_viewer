@@ -72,13 +72,32 @@ fn parses_presentation_slide_tree_in_document_order() {
 </Relationships>
 "#,
             ),
-            ("ppt/slides/slide1.xml", br#"<p:sld xmlns:p="urn:test" />"#),
-            ("ppt/slides/slide2.xml", br#"<p:sld xmlns:p="urn:test" />"#),
+            (
+                "ppt/slides/slide1.xml",
+                br#"
+<p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
+  <p:cSld />
+  <p:transition advClick="1" />
+  <p:timing>
+    <p:tnLst>
+      <p:par>
+        <p:cTn id="1" />
+      </p:par>
+    </p:tnLst>
+  </p:timing>
+</p:sld>
+"#,
+            ),
+            (
+                "ppt/slides/slide2.xml",
+                br#"<p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"><p:cSld /></p:sld>"#,
+            ),
             (
                 "ppt/slides/_rels/slide1.xml.rels",
                 br#"
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout1.xml" />
+  <Relationship Id="rId8" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/notesSlide" Target="../notesSlides/notesSlide1.xml" />
 </Relationships>
 "#,
             ),
@@ -94,7 +113,7 @@ fn parses_presentation_slide_tree_in_document_order() {
             ("ppt/slideLayouts/slideLayout2.xml", br#"<p:sldLayout xmlns:p="urn:test" />"#),
             (
                 "ppt/slideMasters/slideMaster1.xml",
-                br#"<p:sldMaster xmlns:p=\"urn:test\" />"#,
+                br#"<p:sldMaster xmlns:p="urn:test" />"#,
             ),
             (
                 "ppt/slideMasters/_rels/slideMaster1.xml.rels",
@@ -106,7 +125,11 @@ fn parses_presentation_slide_tree_in_document_order() {
 </Relationships>
 "#,
             ),
-            ("ppt/theme/theme1.xml", br#"<a:theme xmlns:a=\"urn:test\" />"#),
+            ("ppt/theme/theme1.xml", br#"<a:theme xmlns:a="urn:test" />"#),
+            (
+                "ppt/notesSlides/notesSlide1.xml",
+                br#"<p:notes xmlns:p="urn:test" />"#,
+            ),
         ],
     );
 
@@ -129,8 +152,17 @@ fn parses_presentation_slide_tree_in_document_order() {
         slide_tree.slides[0].layout_part_name.as_deref(),
         Some("ppt/slideLayouts/slideLayout1.xml")
     );
+    assert_eq!(
+        slide_tree.slides[0].notes_part_name.as_deref(),
+        Some("ppt/notesSlides/notesSlide1.xml")
+    );
+    assert!(slide_tree.slides[0].has_transition);
+    assert_eq!(slide_tree.slides[0].ignored_animation_nodes, 3);
     assert_eq!(slide_tree.slides[1].slide_id, 512);
     assert_eq!(slide_tree.slides[1].part_name, "ppt/slides/slide2.xml");
+    assert!(slide_tree.slides[1].notes_part_name.is_none());
+    assert!(!slide_tree.slides[1].has_transition);
+    assert_eq!(slide_tree.slides[1].ignored_animation_nodes, 0);
     assert_eq!(slide_tree.slide_masters.len(), 1);
     assert_eq!(slide_tree.slide_masters[0].master_id, 2_147_483_648);
     assert_eq!(
@@ -142,6 +174,89 @@ fn parses_presentation_slide_tree_in_document_order() {
         slide_tree.slide_masters[0].layouts[0].part_name,
         "ppt/slideLayouts/slideLayout1.xml"
     );
+}
+
+#[test]
+fn notes_and_animation_metadata_do_not_block_slide_tree_parse() {
+    let dir = tempdir().expect("tempdir should exist");
+    let path = dir.path().join("notes-and-animations.pptx");
+    create_zip(
+        &path,
+        &[
+            (
+                "[Content_Types].xml",
+                br#"
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Override PartName="/ppt/presentation.xml" ContentType="application/test" />
+  <Override PartName="/ppt/slides/slide1.xml" ContentType="application/test" />
+  <Override PartName="/ppt/notesSlides/notesSlide1.xml" ContentType="application/test" />
+</Types>
+"#,
+            ),
+            (
+                "_rels/.rels",
+                br#"
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="ppt/presentation.xml" />
+</Relationships>
+"#,
+            ),
+            (
+                "ppt/presentation.xml",
+                br#"
+<p:presentation xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+                xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <p:sldIdLst>
+    <p:sldId id="256" r:id="rId2" />
+  </p:sldIdLst>
+</p:presentation>
+"#,
+            ),
+            (
+                "ppt/_rels/presentation.xml.rels",
+                br#"
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide1.xml" />
+</Relationships>
+"#,
+            ),
+            (
+                "ppt/slides/slide1.xml",
+                br#"
+<p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
+  <p:cSld />
+  <p:timing>
+    <p:bldLst>
+      <p:bldP />
+    </p:bldLst>
+  </p:timing>
+</p:sld>
+"#,
+            ),
+            (
+                "ppt/slides/_rels/slide1.xml.rels",
+                br#"
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId4" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/notesSlide" Target="../notesSlides/notesSlide1.xml" />
+</Relationships>
+"#,
+            ),
+            (
+                "ppt/notesSlides/notesSlide1.xml",
+                br#"<p:notes xmlns:p="urn:test" />"#,
+            ),
+        ],
+    );
+
+    let archive = OoxmlArchive::open_path(&path).expect("archive should open");
+    let slide_tree = parse_slide_tree(&archive).expect("slide tree should parse");
+
+    assert_eq!(slide_tree.slides.len(), 1);
+    assert_eq!(
+        slide_tree.slides[0].notes_part_name.as_deref(),
+        Some("ppt/notesSlides/notesSlide1.xml")
+    );
+    assert_eq!(slide_tree.slides[0].ignored_animation_nodes, 2);
 }
 
 #[test]
