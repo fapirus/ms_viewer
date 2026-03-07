@@ -1,3 +1,5 @@
+import 'render_model.dart';
+
 class OpenOptions {
   const OpenOptions({
     this.password,
@@ -52,6 +54,29 @@ class OpenDocumentRequest {
   Map<String, Object?> toJson() {
     return {
       'source': source.toJson(),
+      'options': options.toJson(),
+    };
+  }
+}
+
+class GetPageRenderModelRequest {
+  const GetPageRenderModelRequest({
+    required this.source,
+    required this.documentId,
+    required this.pageIndex,
+    this.options = const OpenOptions(),
+  });
+
+  final OpenDocumentSource source;
+  final String documentId;
+  final int pageIndex;
+  final OpenOptions options;
+
+  Map<String, Object?> toJson() {
+    return {
+      'source': source.toJson(),
+      'documentId': documentId,
+      'pageIndex': pageIndex,
       'options': options.toJson(),
     };
   }
@@ -151,6 +176,32 @@ class OpenDocumentOpened extends OpenDocumentResult {
 
 class OpenDocumentFailure extends OpenDocumentResult {
   const OpenDocumentFailure(this.error);
+
+  final OpenDocumentError error;
+}
+
+sealed class GetPageRenderModelResult {
+  const GetPageRenderModelResult();
+
+  factory GetPageRenderModelResult.fromJson(Map<String, Object?> json) {
+    if (json.containsKey('code')) {
+      return GetPageRenderModelFailure(OpenDocumentError.fromJson(json));
+    }
+
+    return GetPageRenderModelSuccess(
+      PageRenderModel.fromJson(json),
+    );
+  }
+}
+
+class GetPageRenderModelSuccess extends GetPageRenderModelResult {
+  const GetPageRenderModelSuccess(this.page);
+
+  final PageRenderModel page;
+}
+
+class GetPageRenderModelFailure extends GetPageRenderModelResult {
+  const GetPageRenderModelFailure(this.error);
 
   final OpenDocumentError error;
 }

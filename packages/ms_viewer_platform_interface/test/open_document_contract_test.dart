@@ -75,4 +75,40 @@ void main() {
 
     expect(result, isA<OpenDocumentFailure>());
   });
+
+  test('get page render model request encodes to rust-compatible json-like map', () {
+    const request = GetPageRenderModelRequest(
+      source: OpenDocumentSource.path('/tmp/sample.docx'),
+      documentId: 'path:/tmp/sample.docx',
+      pageIndex: 1,
+    );
+
+    expect(request.toJson(), {
+      'source': {'kind': 'path', 'value': '/tmp/sample.docx'},
+      'documentId': 'path:/tmp/sample.docx',
+      'pageIndex': 1,
+      'options': {'password': null, 'preferLazyLoading': true},
+    });
+  });
+
+  test('get page render model result decodes success response', () {
+    final result = GetPageRenderModelResult.fromJson({
+      'pageIndex': 0,
+      'width': 595.0,
+      'height': 842.0,
+      'nodes': const [],
+      'selectionAnchors': const [],
+    });
+
+    expect(result, isA<GetPageRenderModelSuccess>());
+  });
+
+  test('get page render model result decodes error response', () {
+    final result = GetPageRenderModelResult.fromJson({
+      'code': 'invalid_document',
+      'message': 'Invalid page index.',
+    });
+
+    expect(result, isA<GetPageRenderModelFailure>());
+  });
 }

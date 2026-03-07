@@ -1,4 +1,4 @@
-use crate::ffi::{ErrorResponse, ViewerErrorCode};
+use crate::wire::{ErrorResponse, ViewerErrorCode};
 use thiserror::Error;
 
 #[derive(Debug, Error)]

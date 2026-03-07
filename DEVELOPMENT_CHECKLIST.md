@@ -225,7 +225,8 @@
 
 ## Phase 1.5: DOCX demo real integration
 ### Rust and FFI
-- [ ] DOCX page render model FFI endpoint 구현
+- [x] DOCX page render model FFI endpoint 구현
+  - Done: viewer_ffi crate split, real docx page count, getPageRenderModel FFI request/response, first page fetch path
   - Rust scope:
     - document session open result에 실제 page count 반영
     - `getPageRenderModel(documentId, pageIndex)` 또는 동등한 FFI 추가

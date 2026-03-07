@@ -3,7 +3,7 @@ use format_docx::{
 };
 use std::path::PathBuf;
 use viewer_core::archive::OoxmlArchive;
-use viewer_core::ffi::{open_document, DocumentSource, OpenDocumentRequest, OpenDocumentResponse};
+use viewer_ffi::{open_document, DocumentSource, OpenDocumentRequest, OpenDocumentResponse};
 use viewer_core::OpenOptions;
 
 fn fixture_path(relative: &str) -> String {
@@ -66,7 +66,7 @@ fn acceptance_encrypted_document_asks_for_password() {
 
     match response {
         OpenDocumentResponse::Error(error) => {
-            assert_eq!(error.code, viewer_core::ffi::ViewerErrorCode::PasswordRequired);
+            assert_eq!(error.code, viewer_core::wire::ViewerErrorCode::PasswordRequired);
         }
         other => panic!("expected password required error, got {other:?}"),
     }

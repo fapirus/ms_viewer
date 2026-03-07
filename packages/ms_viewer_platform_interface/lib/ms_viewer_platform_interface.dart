@@ -27,6 +27,17 @@ abstract class MsViewerPlatform extends PlatformInterface {
       ),
     );
   }
+
+  Future<GetPageRenderModelResult> getPageRenderModel(
+    GetPageRenderModelRequest request,
+  ) async {
+    return const GetPageRenderModelFailure(
+      OpenDocumentError(
+        code: ViewerErrorCode.notImplemented,
+        message: 'getPageRenderModel is not implemented.',
+      ),
+    );
+  }
 }
 
 class _NoopMsViewerPlatform extends MsViewerPlatform {}

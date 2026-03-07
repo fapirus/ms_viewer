@@ -3,8 +3,10 @@ use std::io::Write;
 
 use base64::Engine;
 use tempfile::NamedTempFile;
-use viewer_core::ffi::{
-    open_document, open_document_json, DocumentSource, OpenDocumentRequest, OpenDocumentResponse,
+use viewer_ffi::{
+    get_page_render_model, open_document, open_document_json, DocumentSource,
+    GetPageRenderModelRequest, GetPageRenderModelResponse, OpenDocumentRequest,
+    OpenDocumentResponse,
 };
 use viewer_core::OpenOptions;
 use zip::write::SimpleFileOptions;
@@ -24,13 +26,13 @@ fn opens_docx_path_request_and_returns_basic_metadata() {
             "_rels/.rels",
             r#"<?xml version="1.0" encoding="UTF-8"?>
             <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-              <Relationship Id="rId1" Type="officeDocument" Target="word/document.xml"/>
+              <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
             </Relationships>"#,
         ),
         (
             "word/document.xml",
             r#"<?xml version="1.0" encoding="UTF-8"?>
-            <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"/>"#,
+            <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Hello DOCX render</w:t></w:r></w:p><w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"/></w:sectPr></w:body></w:document>"#,
         ),
     ]);
     let path = file.path().to_string_lossy().to_string();
@@ -44,9 +46,9 @@ fn opens_docx_path_request_and_returns_basic_metadata() {
         OpenDocumentResponse::Success(success) => {
             assert_eq!(success.kind, viewer_core::DocumentKind::Docx);
             assert_eq!(success.title, file.path().file_name().unwrap().to_string_lossy());
-            assert_eq!(success.page_count, 0);
-            assert!(!success.capabilities.search);
-            assert!(!success.capabilities.text_selection);
+            assert_eq!(success.page_count, 1);
+            assert!(success.capabilities.search);
+            assert!(success.capabilities.text_selection);
         }
         other => panic!("expected success, got {other:?}"),
     }
@@ -117,7 +119,7 @@ fn encrypted_document_requires_password_first() {
 
     match response {
         OpenDocumentResponse::Error(error) => {
-            assert_eq!(error.code, viewer_core::ffi::ViewerErrorCode::PasswordRequired);
+            assert_eq!(error.code, viewer_core::wire::ViewerErrorCode::PasswordRequired);
         }
         other => panic!("expected error, got {other:?}"),
     }
@@ -140,8 +142,101 @@ fn encrypted_document_with_password_is_reported_as_unsupported_for_now() {
         OpenDocumentResponse::Error(error) => {
             assert_eq!(
                 error.code,
-                viewer_core::ffi::ViewerErrorCode::UnsupportedEncryption
+                viewer_core::wire::ViewerErrorCode::UnsupportedEncryption
             );
+        }
+        other => panic!("expected error, got {other:?}"),
+    }
+}
+
+#[test]
+fn fetches_first_docx_page_render_model() {
+    let file = create_package(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+              <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+            </Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+              <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+            </Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+              <w:body>
+                <w:p><w:r><w:t>Hello DOCX render</w:t></w:r></w:p>
+                <w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"/></w:sectPr>
+              </w:body>
+            </w:document>"#,
+        ),
+    ]);
+    let path = file.path().to_string_lossy().to_string();
+    let document_id = format!("path:{path}");
+
+    let response = get_page_render_model(GetPageRenderModelRequest {
+        source: DocumentSource::Path(path),
+        document_id,
+        page_index: 0,
+        options: OpenOptions::default(),
+    });
+
+    match response {
+        GetPageRenderModelResponse::Success(page) => {
+            assert_eq!(page.page_index, 0);
+            assert!(!page.nodes.is_empty());
+            assert!(!page.selection_anchors.is_empty());
+        }
+        other => panic!("expected page render model, got {other:?}"),
+    }
+}
+
+#[test]
+fn invalid_page_index_maps_to_invalid_document_error() {
+    let file = create_package(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+              <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+            </Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+              <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+            </Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+              <w:body>
+                <w:p><w:r><w:t>Hello DOCX render</w:t></w:r></w:p>
+                <w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"/></w:sectPr>
+              </w:body>
+            </w:document>"#,
+        ),
+    ]);
+    let path = file.path().to_string_lossy().to_string();
+
+    let response = get_page_render_model(GetPageRenderModelRequest {
+        source: DocumentSource::Path(path),
+        document_id: "unused".to_string(),
+        page_index: 9,
+        options: OpenOptions::default(),
+    });
+
+    match response {
+        GetPageRenderModelResponse::Error(error) => {
+            assert_eq!(error.code, viewer_core::wire::ViewerErrorCode::InvalidDocument);
         }
         other => panic!("expected error, got {other:?}"),
     }
