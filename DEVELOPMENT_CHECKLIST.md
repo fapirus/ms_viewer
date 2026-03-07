@@ -203,7 +203,8 @@
   - Flutter tests:
     - page widget smoke test
     - placeholder paint test from mock render model
-- [ ] DOCX demo fixture review set 구성
+- [x] DOCX demo fixture review set 구성
+  - Done: review fixture corpus and encrypted stub added under fixtures/docx and fixtures/encrypted
   - Fixture set:
     - plain text
     - styles
@@ -212,7 +213,8 @@
     - images
     - multi-section
     - encrypted
-- [ ] DOCX MVP acceptance pass
+- [x] DOCX MVP acceptance pass
+  - Done: fixture-backed acceptance tests and fixture runner coverage added
   - Acceptance checks:
     - document opens
     - page rendering works
