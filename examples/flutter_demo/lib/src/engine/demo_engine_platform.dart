@@ -126,7 +126,36 @@ bool get _supportsCliBridge =>
     (Platform.isMacOS || Platform.isWindows || Platform.isLinux);
 
 Directory _findWorkspaceRoot() {
-  var current = Directory.current.absolute;
+  final override = const String.fromEnvironment('MS_VIEWER_WORKSPACE_ROOT');
+  if (override.isNotEmpty) {
+    final directory = Directory(override);
+    final candidate = File(p.join(directory.path, 'rust', 'Cargo.toml'));
+    if (candidate.existsSync()) {
+      return directory.absolute;
+    }
+  }
+
+  final startDirectories = <Directory>[
+    Directory.current.absolute,
+    File(Platform.resolvedExecutable).absolute.parent,
+    File(Platform.executable).absolute.parent,
+  ];
+
+  for (final start in startDirectories) {
+    final resolved = _searchWorkspaceRootFrom(start);
+    if (resolved != null) {
+      return resolved;
+    }
+  }
+
+  throw StateError(
+    'Could not find workspace root containing rust/Cargo.toml. '
+    'Tried from: ${startDirectories.map((dir) => dir.path).join(', ')}',
+  );
+}
+
+Directory? _searchWorkspaceRootFrom(Directory start) {
+  var current = start.absolute;
   while (true) {
     final candidate = File(p.join(current.path, 'rust', 'Cargo.toml'));
     if (candidate.existsSync()) {
@@ -135,7 +164,7 @@ Directory _findWorkspaceRoot() {
 
     final parent = current.parent;
     if (parent.path == current.path) {
-      throw StateError('Could not find workspace root containing rust/Cargo.toml.');
+      return null;
     }
     current = parent;
   }
@@ -146,6 +175,13 @@ OpenDocumentError _platformError(Object error) {
     return const OpenDocumentError(
       code: ViewerErrorCode.notImplemented,
       message: 'Rust CLI bridge is only available on desktop platforms.',
+    );
+  }
+
+  if (error is ProcessException && error.errorCode == 2) {
+    return const OpenDocumentError(
+      code: ViewerErrorCode.notImplemented,
+      message: 'cargo was not found. Install Rust and ensure cargo is on PATH.',
     );
   }
 
