@@ -5,6 +5,7 @@
 
 ## Working rules
 - 큰 기능은 `Rust 엔진 구현 -> 테스트 -> Flutter 연결 -> 테스트` 순서로 진행한다.
+- 각 포맷은 `MVP 구현 -> demo 실연동 -> acceptance` 순서로 닫는다.
 - 각 단계는 fixture 또는 자동 테스트가 있어야 완료로 본다.
 - 체크는 코드와 테스트가 모두 들어간 뒤에만 한다.
 - 새 범위가 생기면 이 문서에 먼저 체크박스로 추가한 뒤 작업한다.
@@ -222,6 +223,66 @@
     - text selection works
     - encrypted document asks for password
 
+## Phase 1.5: DOCX demo real integration
+### Rust and FFI
+- [ ] DOCX page render model FFI endpoint 구현
+  - Rust scope:
+    - document session open result에 실제 page count 반영
+    - `getPageRenderModel(documentId, pageIndex)` 또는 동등한 FFI 추가
+    - page render model 직렬화
+  - Tests:
+    - first page fetch fixture test
+    - invalid page index error mapping test
+- [ ] DOCX search and selection FFI endpoint 구현
+  - Rust scope:
+    - search result fetch
+    - selection metadata page fetch
+  - Tests:
+    - search query round-trip test
+    - selection metadata fetch smoke test
+
+### Flutter bridge
+- [ ] Flutter platform bridge에서 DOCX page fetch 연결
+  - Flutter scope:
+    - document open 후 page fetch
+    - loading/error/page state 분리
+  - Tests:
+    - page fetch controller test
+    - page fetch error state widget test
+- [ ] Flutter search/selection bridge 연결
+  - Flutter scope:
+    - search result request/consume
+    - selection overlay consume
+  - Tests:
+    - search action integration widget test
+    - selection overlay integration widget test
+
+### Demo app
+- [ ] demo fixture 목록에서 실제 DOCX 열기 연결
+  - Demo scope:
+    - bundled fixture를 실제 engine open path로 연결
+    - first page render 확인
+  - Tests:
+    - fixture open smoke test
+- [ ] demo file picker DOCX 실연동
+  - Demo scope:
+    - picked `.docx`를 실제 engine으로 open
+    - password-required 오류 표시
+  - Tests:
+    - picked docx open smoke test
+- [ ] demo desktop drop DOCX 실연동
+  - Demo scope:
+    - dropped `.docx`를 실제 engine으로 open
+  - Tests:
+    - drop docx open smoke test
+- [ ] DOCX demo real integration acceptance pass
+  - Acceptance checks:
+    - fixture docx opens through real engine path
+    - picked docx opens through real engine path
+    - dropped docx opens through real engine path
+    - first page render matches real model
+    - encrypted docx asks for password in demo flow
+
 ## Phase 2: PPTX MVP
 ### PPTX parse layer
 - [ ] PPTX slide tree parser 구현
@@ -245,6 +306,38 @@
     - slide render
     - text search
     - text selection
+
+## Phase 2.5: PPTX demo real integration
+### Rust and FFI
+- [ ] PPTX slide render model FFI endpoint 연결
+  - Tests:
+    - first slide fetch fixture test
+    - invalid slide index error mapping test
+- [ ] PPTX search and selection FFI endpoint 연결
+  - Tests:
+    - slide search round-trip test
+    - slide selection metadata fetch smoke test
+
+### Flutter bridge
+- [ ] Flutter platform bridge에서 PPTX slide fetch 연결
+  - Tests:
+    - slide fetch controller test
+    - slide fetch error state widget test
+- [ ] Flutter PPTX search/selection bridge 연결
+  - Tests:
+    - slide search integration widget test
+    - slide selection integration widget test
+
+### Demo app
+- [ ] demo fixture 목록에서 실제 PPTX 열기 연결
+- [ ] demo file picker PPTX 실연동
+- [ ] demo desktop drop PPTX 실연동
+- [ ] PPTX demo real integration acceptance pass
+  - Acceptance checks:
+    - fixture pptx opens through real engine path
+    - picked pptx opens through real engine path
+    - dropped pptx opens through real engine path
+    - first slide render matches real model
 
 ## Phase 3: XLSX MVP
 ### XLSX parse layer
@@ -272,6 +365,38 @@
     - search
     - text-only selection
     - cached formula display
+
+## Phase 3.5: XLSX demo real integration
+### Rust and FFI
+- [ ] XLSX visible sheet window FFI endpoint 연결
+  - Tests:
+    - first sheet window fetch fixture test
+    - invalid sheet index error mapping test
+- [ ] XLSX search and selection FFI endpoint 연결
+  - Tests:
+    - sheet search round-trip test
+    - sheet selection metadata fetch smoke test
+
+### Flutter bridge
+- [ ] Flutter platform bridge에서 XLSX sheet window fetch 연결
+  - Tests:
+    - sheet window fetch controller test
+    - sheet fetch error state widget test
+- [ ] Flutter XLSX search/selection bridge 연결
+  - Tests:
+    - sheet search integration widget test
+    - sheet text selection integration widget test
+
+### Demo app
+- [ ] demo fixture 목록에서 실제 XLSX 열기 연결
+- [ ] demo file picker XLSX 실연동
+- [ ] demo desktop drop XLSX 실연동
+- [ ] XLSX demo real integration acceptance pass
+  - Acceptance checks:
+    - fixture xlsx opens through real engine path
+    - picked xlsx opens through real engine path
+    - dropped xlsx opens through real engine path
+    - visible sheet window render matches real model
 
 ## Phase 4: Hardening
 - [ ] password flow end-to-end polish
@@ -305,7 +430,8 @@
    - `cd packages/ms_viewer_platform_interface && fvm flutter test`
 4. Demo smoke 확인
    - `cd examples/flutter_demo && fvm flutter test`
-5. 필요한 경우 수동 확인 결과를 체크박스 아래에 메모
+5. demo 실연동 phase라면 실제 fixture open 경로 수동 확인
+6. 필요한 경우 수동 확인 결과를 체크박스 아래에 메모
 
 ## Progress log rule
 체크박스를 완료 처리할 때는 아래 형식으로 커밋 또는 작업 로그에 남긴다.
