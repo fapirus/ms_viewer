@@ -111,7 +111,8 @@ class _DemoHomePageState extends State<DemoHomePage> {
     final note = switch (extension) {
       'docx' =>
         'External DOCX file. Real engine open is wired in the desktop demo.',
-      'pptx' => 'PPTX parser and renderer are not implemented yet.',
+      'pptx' =>
+        'External PPTX file. Real engine open will be wired in the next demo step.',
       'xlsx' => 'XLSX parser and renderer are not implemented yet.',
       _ => 'Unknown document type.',
     };
@@ -140,7 +141,7 @@ class _DemoHomePageState extends State<DemoHomePage> {
     });
 
     if (entry.origin == DemoDocumentOrigin.fixture &&
-        entry.kind == DocumentKind.docx &&
+        _usesEngineForFixture(entry.kind) &&
         entry.location != null) {
       final bytes = await widget.assetBundle.load(entry.location!);
       final encoded = base64Encode(bytes.buffer.asUint8List());
@@ -165,6 +166,10 @@ class _DemoHomePageState extends State<DemoHomePage> {
     }
 
     _controller.attachDocument(entry.descriptor);
+  }
+
+  bool _usesEngineForFixture(DocumentKind kind) {
+    return kind == DocumentKind.docx || kind == DocumentKind.pptx;
   }
 
   @override
@@ -228,7 +233,7 @@ class _DemoHomePageState extends State<DemoHomePage> {
             Text('Fixtures', style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 6),
             Text(
-              'DOCX review fixtures are bundled here for mid-project checks.',
+              'DOCX/PPTX review fixtures are bundled here for mid-project checks.',
               style: Theme.of(context).textTheme.bodySmall,
             ),
           ],

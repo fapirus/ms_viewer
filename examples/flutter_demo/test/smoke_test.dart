@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -75,6 +76,29 @@ void main() {
     expect(fakePlatform.openSourceKinds.last, platform.DocumentSourceKind.path);
     expect(find.text('dropped.docx'), findsWidgets);
   });
+
+  testWidgets('demo app opens fixture pptx through bytes source', (tester) async {
+    final fakePlatform = _FakeDemoPlatform();
+    await tester.pumpWidget(
+      DemoApp(
+        platform: fakePlatform,
+        assetBundle: _FakeAssetBundle(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.scrollUntilVisible(
+      find.text('pptx_text_shapes.pptx'),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.tap(find.text('pptx_text_shapes.pptx'));
+    await tester.pumpAndSettle();
+
+    expect(fakePlatform.openCallCount, 2);
+    expect(fakePlatform.openSourceKinds.last, platform.DocumentSourceKind.bytesBase64);
+    expect(find.text('pptx_text_shapes.pptx'), findsWidgets);
+  });
 }
 
 class _FakeDemoPlatform extends platform.MsViewerPlatform {
@@ -88,15 +112,15 @@ class _FakeDemoPlatform extends platform.MsViewerPlatform {
   ) async {
     openCallCount += 1;
     openSourceKinds.add(request.source.kind);
+    final kind = _kindFromRequest(request);
+    final title = _titleFromRequest(request, kind);
     return platform.OpenDocumentOpened(
       platform.OpenDocumentSuccess(
         documentId: request.source.kind == platform.DocumentSourceKind.path
-            ? 'picked-docx'
-            : 'fixture-docx',
-        kind: platform.DocumentKind.docx,
-        title: request.source.kind == platform.DocumentSourceKind.path
-            ? 'picked.docx'
-            : 'docx_plain_text.docx',
+            ? 'picked-${kind.name}'
+            : 'fixture-${kind.name}',
+        kind: kind,
+        title: title,
         pageCount: 1,
         capabilities: const platform.DocumentCapabilities(
           search: true,
@@ -136,12 +160,62 @@ class _FakeDemoPlatform extends platform.MsViewerPlatform {
       }),
     );
   }
+
+  platform.DocumentKind _kindFromRequest(platform.OpenDocumentRequest request) {
+    switch (request.source.kind) {
+      case platform.DocumentSourceKind.path:
+        final value = request.source.value.toLowerCase();
+        if (value.endsWith('.pptx')) {
+          return platform.DocumentKind.pptx;
+        }
+        if (value.endsWith('.xlsx')) {
+          return platform.DocumentKind.xlsx;
+        }
+        return platform.DocumentKind.docx;
+      case platform.DocumentSourceKind.bytesBase64:
+        final marker = utf8.decode(
+          base64Decode(request.source.value),
+          allowMalformed: true,
+        );
+        if (marker.contains('assets/fixtures/pptx/')) {
+          return platform.DocumentKind.pptx;
+        }
+        if (marker.contains('assets/fixtures/xlsx/')) {
+          return platform.DocumentKind.xlsx;
+        }
+        return platform.DocumentKind.docx;
+    }
+  }
+
+  String _titleFromRequest(
+    platform.OpenDocumentRequest request,
+    platform.DocumentKind kind,
+  ) {
+    switch (request.source.kind) {
+      case platform.DocumentSourceKind.path:
+        final segments = request.source.value.split('/');
+        return segments.isEmpty ? 'picked.${kind.name}' : segments.last;
+      case platform.DocumentSourceKind.bytesBase64:
+        final marker = utf8.decode(
+          base64Decode(request.source.value),
+          allowMalformed: true,
+        );
+        final segments = marker.split('/');
+        return segments.isEmpty
+            ? switch (kind) {
+                platform.DocumentKind.docx => 'fixture.docx',
+                platform.DocumentKind.pptx => 'fixture.pptx',
+                platform.DocumentKind.xlsx => 'fixture.xlsx',
+              }
+            : segments.last;
+    }
+  }
 }
 
 class _FakeAssetBundle extends CachingAssetBundle {
   @override
   Future<ByteData> load(String key) async {
-    final bytes = Uint8List.fromList(const [0x50, 0x4B, 0x03, 0x04]);
+    final bytes = Uint8List.fromList(utf8.encode(key));
     return ByteData.view(bytes.buffer);
   }
 }

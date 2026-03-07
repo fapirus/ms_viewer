@@ -28,3 +28,4 @@ flutter:
   assets:
     - assets/fixtures/docx/
     - assets/fixtures/encrypted/
+    - assets/fixtures/pptx/

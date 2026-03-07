@@ -589,7 +589,11 @@
     - slide selection integration widget test
 
 ### Demo app
-- [ ] demo fixture 목록에서 실제 PPTX 열기 연결
+- [x] demo fixture 목록에서 실제 PPTX 열기 연결
+  - Done:
+    - demo fixture catalog에 `pptx_text_shapes.pptx`, `pptx_theme_layout_images.pptx` 추가
+    - fixture PPTX를 asset으로 등록하고 선택 시 `bytesBase64` source로 실제 engine open 연결
+    - demo smoke test에 fixture PPTX open 경로 추가
 - [ ] demo file picker PPTX 실연동
 - [ ] demo desktop drop PPTX 실연동
 - [ ] PPTX demo real integration acceptance pass
