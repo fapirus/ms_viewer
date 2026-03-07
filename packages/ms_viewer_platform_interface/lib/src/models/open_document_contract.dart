@@ -82,6 +82,52 @@ class GetPageRenderModelRequest {
   }
 }
 
+class SearchDocumentRequest {
+  const SearchDocumentRequest({
+    required this.source,
+    required this.documentId,
+    required this.query,
+    this.options = const OpenOptions(),
+  });
+
+  final OpenDocumentSource source;
+  final String documentId;
+  final String query;
+  final OpenOptions options;
+
+  Map<String, Object?> toJson() {
+    return {
+      'source': source.toJson(),
+      'documentId': documentId,
+      'query': query,
+      'options': options.toJson(),
+    };
+  }
+}
+
+class GetSelectionPageRequest {
+  const GetSelectionPageRequest({
+    required this.source,
+    required this.documentId,
+    required this.pageIndex,
+    this.options = const OpenOptions(),
+  });
+
+  final OpenDocumentSource source;
+  final String documentId;
+  final int pageIndex;
+  final OpenOptions options;
+
+  Map<String, Object?> toJson() {
+    return {
+      'source': source.toJson(),
+      'documentId': documentId,
+      'pageIndex': pageIndex,
+      'options': options.toJson(),
+    };
+  }
+}
+
 enum ViewerErrorCode {
   unsupportedFormat,
   passwordRequired,
@@ -202,6 +248,88 @@ class GetPageRenderModelSuccess extends GetPageRenderModelResult {
 
 class GetPageRenderModelFailure extends GetPageRenderModelResult {
   const GetPageRenderModelFailure(this.error);
+
+  final OpenDocumentError error;
+}
+
+class SearchMatchModel {
+  const SearchMatchModel({
+    required this.query,
+    required this.pageIndex,
+    required this.start,
+    required this.end,
+    required this.preview,
+  });
+
+  final String query;
+  final int pageIndex;
+  final int start;
+  final int end;
+  final String preview;
+
+  factory SearchMatchModel.fromJson(Map<String, Object?> json) {
+    return SearchMatchModel(
+      query: json['query'] as String,
+      pageIndex: json['pageIndex'] as int,
+      start: json['start'] as int,
+      end: json['end'] as int,
+      preview: json['preview'] as String,
+    );
+  }
+}
+
+sealed class SearchDocumentResult {
+  const SearchDocumentResult();
+
+  factory SearchDocumentResult.fromJson(Object? json) {
+    if (json is Map<String, Object?> && json.containsKey('code')) {
+      return SearchDocumentFailure(OpenDocumentError.fromJson(json));
+    }
+    if (json is List<Object?>) {
+      return SearchDocumentSuccess(
+        json
+            .cast<Map<String, Object?>>()
+            .map(SearchMatchModel.fromJson)
+            .toList(),
+      );
+    }
+
+    throw ArgumentError.value(json, 'json', 'Invalid search result payload');
+  }
+}
+
+class SearchDocumentSuccess extends SearchDocumentResult {
+  const SearchDocumentSuccess(this.matches);
+
+  final List<SearchMatchModel> matches;
+}
+
+class SearchDocumentFailure extends SearchDocumentResult {
+  const SearchDocumentFailure(this.error);
+
+  final OpenDocumentError error;
+}
+
+sealed class GetSelectionPageResult {
+  const GetSelectionPageResult();
+
+  factory GetSelectionPageResult.fromJson(Map<String, Object?> json) {
+    if (json.containsKey('code')) {
+      return GetSelectionPageFailure(OpenDocumentError.fromJson(json));
+    }
+
+    return GetSelectionPageSuccess(PageRenderModel.fromJson(json));
+  }
+}
+
+class GetSelectionPageSuccess extends GetSelectionPageResult {
+  const GetSelectionPageSuccess(this.page);
+
+  final PageRenderModel page;
+}
+
+class GetSelectionPageFailure extends GetSelectionPageResult {
+  const GetSelectionPageFailure(this.error);
 
   final OpenDocumentError error;
 }

@@ -234,7 +234,8 @@
   - Tests:
     - first page fetch fixture test
     - invalid page index error mapping test
-- [ ] DOCX search and selection FFI endpoint 구현
+- [x] DOCX search and selection FFI endpoint 구현
+  - Done: searchDocument/getSelectionPage FFI request-response, JSON entrypoint, Dart contract decode
   - Rust scope:
     - search result fetch
     - selection metadata page fetch

@@ -4,9 +4,10 @@ use std::io::Write;
 use base64::Engine;
 use tempfile::NamedTempFile;
 use viewer_ffi::{
-    get_page_render_model, open_document, open_document_json, DocumentSource,
-    GetPageRenderModelRequest, GetPageRenderModelResponse, OpenDocumentRequest,
-    OpenDocumentResponse,
+    get_page_render_model, get_selection_page, open_document, open_document_json,
+    search_document_pages, DocumentSource, GetPageRenderModelRequest,
+    GetPageRenderModelResponse, GetSelectionPageRequest, GetSelectionPageResponse,
+    OpenDocumentRequest, OpenDocumentResponse, SearchDocumentRequest, SearchDocumentResponse,
 };
 use viewer_core::OpenOptions;
 use zip::write::SimpleFileOptions;
@@ -239,6 +240,100 @@ fn invalid_page_index_maps_to_invalid_document_error() {
             assert_eq!(error.code, viewer_core::wire::ViewerErrorCode::InvalidDocument);
         }
         other => panic!("expected error, got {other:?}"),
+    }
+}
+
+#[test]
+fn search_query_returns_docx_matches() {
+    let file = create_package(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+              <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+            </Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+              <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+            </Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+              <w:body>
+                <w:p><w:r><w:t>Hello searchable DOCX render</w:t></w:r></w:p>
+                <w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"/></w:sectPr>
+              </w:body>
+            </w:document>"#,
+        ),
+    ]);
+    let path = file.path().to_string_lossy().to_string();
+
+    let response = search_document_pages(SearchDocumentRequest {
+        source: DocumentSource::Path(path),
+        document_id: "unused".to_string(),
+        query: "searchable".to_string(),
+        options: OpenOptions::default(),
+    });
+
+    match response {
+        SearchDocumentResponse::Success(matches) => {
+            assert_eq!(matches.len(), 1);
+            assert_eq!(matches[0].page_index, 0);
+            assert_eq!(matches[0].query, "searchable");
+            assert!(matches[0].preview.contains("searchable"));
+        }
+        other => panic!("expected search matches, got {other:?}"),
+    }
+}
+
+#[test]
+fn selection_metadata_fetch_returns_page_with_anchors() {
+    let file = create_package(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+              <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+            </Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+              <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+            </Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+              <w:body>
+                <w:p><w:r><w:t>Anchor smoke test</w:t></w:r></w:p>
+                <w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"/></w:sectPr>
+              </w:body>
+            </w:document>"#,
+        ),
+    ]);
+    let path = file.path().to_string_lossy().to_string();
+
+    let response = get_selection_page(GetSelectionPageRequest {
+        source: DocumentSource::Path(path),
+        document_id: "unused".to_string(),
+        page_index: 0,
+        options: OpenOptions::default(),
+    });
+
+    match response {
+        GetSelectionPageResponse::Success(page) => {
+            assert_eq!(page.page_index, 0);
+            assert!(!page.selection_anchors.is_empty());
+        }
+        other => panic!("expected selection page, got {other:?}"),
     }
 }
 

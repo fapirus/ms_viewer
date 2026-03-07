@@ -1,6 +1,7 @@
 use viewer_ffi::{
     DocumentCapabilities, DocumentSource, ErrorResponse, GetPageRenderModelRequest,
-    OpenDocumentRequest, OpenDocumentSuccess, ViewerErrorCode,
+    GetSelectionPageRequest, OpenDocumentRequest, OpenDocumentSuccess, SearchDocumentRequest,
+    ViewerErrorCode,
 };
 use viewer_core::{DocumentKind, OpenOptions};
 
@@ -74,4 +75,36 @@ fn get_page_render_model_request_serializes_to_expected_shape() {
     assert_eq!(value["source"]["kind"], "path");
     assert_eq!(value["documentId"], "path:/tmp/sample.docx");
     assert_eq!(value["pageIndex"], 2);
+}
+
+#[test]
+fn search_document_request_serializes_to_expected_shape() {
+    let request = SearchDocumentRequest {
+        source: DocumentSource::Path("/tmp/sample.docx".to_string()),
+        document_id: "path:/tmp/sample.docx".to_string(),
+        query: "hello".to_string(),
+        options: OpenOptions::default(),
+    };
+
+    let value = serde_json::to_value(&request).expect("request should serialize");
+
+    assert_eq!(value["source"]["kind"], "path");
+    assert_eq!(value["documentId"], "path:/tmp/sample.docx");
+    assert_eq!(value["query"], "hello");
+}
+
+#[test]
+fn get_selection_page_request_serializes_to_expected_shape() {
+    let request = GetSelectionPageRequest {
+        source: DocumentSource::Path("/tmp/sample.docx".to_string()),
+        document_id: "path:/tmp/sample.docx".to_string(),
+        page_index: 0,
+        options: OpenOptions::default(),
+    };
+
+    let value = serde_json::to_value(&request).expect("request should serialize");
+
+    assert_eq!(value["source"]["kind"], "path");
+    assert_eq!(value["documentId"], "path:/tmp/sample.docx");
+    assert_eq!(value["pageIndex"], 0);
 }

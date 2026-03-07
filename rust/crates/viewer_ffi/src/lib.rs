@@ -1,13 +1,14 @@
 use std::path::Path;
 
 use base64::Engine;
-use format_docx::{build_selection_page_models, parse_docx};
+use format_docx::{build_selection_page_models, parse_docx, search_document};
 use serde::{Deserialize, Serialize};
 use viewer_core::archive::OoxmlArchive;
 use viewer_core::crypto::{
     detect_package_kind_from_bytes, detect_package_kind_from_path, PackageKind,
 };
 use viewer_core::model::{DocumentKind, OpenOptions, PageRenderModel};
+use viewer_core::search::SearchMatch;
 pub use viewer_core::wire::{ErrorResponse, ViewerErrorCode};
 use viewer_core::xml::parse_document;
 use viewer_core::ViewerError;
@@ -54,6 +55,24 @@ pub struct GetPageRenderModelRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchDocumentRequest {
+    pub source: DocumentSource,
+    pub document_id: String,
+    pub query: String,
+    pub options: OpenOptions,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct GetSelectionPageRequest {
+    pub source: DocumentSource,
+    pub document_id: String,
+    pub page_index: u32,
+    pub options: OpenOptions,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(untagged)]
 pub enum OpenDocumentResponse {
     Success(OpenDocumentSuccess),
@@ -63,6 +82,20 @@ pub enum OpenDocumentResponse {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(untagged)]
 pub enum GetPageRenderModelResponse {
+    Success(PageRenderModel),
+    Error(ErrorResponse),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(untagged)]
+pub enum SearchDocumentResponse {
+    Success(Vec<SearchMatch>),
+    Error(ErrorResponse),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(untagged)]
+pub enum GetSelectionPageResponse {
     Success(PageRenderModel),
     Error(ErrorResponse),
 }
@@ -105,13 +138,58 @@ pub fn get_page_render_model_json(request_json: &str) -> GetPageRenderModelRespo
     get_page_render_model(request)
 }
 
+pub fn search_document_pages(request: SearchDocumentRequest) -> SearchDocumentResponse {
+    match search_document_pages_impl(request) {
+        Ok(matches) => SearchDocumentResponse::Success(matches),
+        Err(error) => SearchDocumentResponse::Error(error.to_error_response()),
+    }
+}
+
+pub fn search_document_pages_json(request_json: &str) -> SearchDocumentResponse {
+    let request: SearchDocumentRequest = match serde_json::from_str(request_json) {
+        Ok(request) => request,
+        Err(_) => {
+            return SearchDocumentResponse::Error(
+                ViewerError::InvalidDocument.to_error_response(),
+            )
+        }
+    };
+
+    search_document_pages(request)
+}
+
+pub fn get_selection_page(request: GetSelectionPageRequest) -> GetSelectionPageResponse {
+    match get_selection_page_impl(request) {
+        Ok(page) => GetSelectionPageResponse::Success(page),
+        Err(error) => GetSelectionPageResponse::Error(error.to_error_response()),
+    }
+}
+
+pub fn get_selection_page_json(request_json: &str) -> GetSelectionPageResponse {
+    let request: GetSelectionPageRequest = match serde_json::from_str(request_json) {
+        Ok(request) => request,
+        Err(_) => {
+            return GetSelectionPageResponse::Error(
+                ViewerError::InvalidDocument.to_error_response(),
+            )
+        }
+    };
+
+    get_selection_page(request)
+}
+
 fn open_document_impl(request: OpenDocumentRequest) -> Result<OpenDocumentSuccess, ViewerError> {
     let source = request.source.clone();
     let title = source_title(&source);
 
     match source {
         DocumentSource::Path(path) => {
-            open_document_from_path(&path, &DocumentSource::Path(path.clone()), title, &request.options)
+            open_document_from_path(
+                &path,
+                &DocumentSource::Path(path.clone()),
+                title,
+                &request.options,
+            )
         }
         DocumentSource::BytesBase64(value) => {
             open_document_from_bytes(value, &request.source, title, &request.options)
@@ -246,6 +324,58 @@ fn build_document_id(source: &DocumentSource, title: &str) -> String {
 
 fn get_page_render_model_impl(
     request: GetPageRenderModelRequest,
+) -> Result<PageRenderModel, ViewerError> {
+    let _ = &request.document_id;
+
+    match request.source {
+        DocumentSource::Path(path) => {
+            let archive = OoxmlArchive::open_path(&path)?;
+            let package = parse_docx(&archive)?;
+            let pages = build_selection_page_models(&archive, &package)?;
+            pages
+                .get(request.page_index as usize)
+                .cloned()
+                .ok_or(ViewerError::InvalidDocument)
+        }
+        DocumentSource::BytesBase64(value) => {
+            let bytes = base64::engine::general_purpose::STANDARD
+                .decode(value)
+                .map_err(|_| ViewerError::InvalidDocument)?;
+            let archive = OoxmlArchive::open_bytes(bytes)?;
+            let package = parse_docx(&archive)?;
+            let pages = build_selection_page_models(&archive, &package)?;
+            pages
+                .get(request.page_index as usize)
+                .cloned()
+                .ok_or(ViewerError::InvalidDocument)
+        }
+    }
+}
+
+fn search_document_pages_impl(
+    request: SearchDocumentRequest,
+) -> Result<Vec<SearchMatch>, ViewerError> {
+    let _ = &request.document_id;
+
+    match request.source {
+        DocumentSource::Path(path) => {
+            let archive = OoxmlArchive::open_path(&path)?;
+            let package = parse_docx(&archive)?;
+            search_document(&archive, &package, &request.query)
+        }
+        DocumentSource::BytesBase64(value) => {
+            let bytes = base64::engine::general_purpose::STANDARD
+                .decode(value)
+                .map_err(|_| ViewerError::InvalidDocument)?;
+            let archive = OoxmlArchive::open_bytes(bytes)?;
+            let package = parse_docx(&archive)?;
+            search_document(&archive, &package, &request.query)
+        }
+    }
+}
+
+fn get_selection_page_impl(
+    request: GetSelectionPageRequest,
 ) -> Result<PageRenderModel, ViewerError> {
     let _ = &request.document_id;
 

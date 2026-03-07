@@ -111,4 +111,84 @@ void main() {
 
     expect(result, isA<GetPageRenderModelFailure>());
   });
+
+  test('search document request encodes to rust-compatible json-like map', () {
+    const request = SearchDocumentRequest(
+      source: OpenDocumentSource.path('/tmp/sample.docx'),
+      documentId: 'path:/tmp/sample.docx',
+      query: 'hello',
+    );
+
+    expect(request.toJson(), {
+      'source': {'kind': 'path', 'value': '/tmp/sample.docx'},
+      'documentId': 'path:/tmp/sample.docx',
+      'query': 'hello',
+      'options': {'password': null, 'preferLazyLoading': true},
+    });
+  });
+
+  test('search document result decodes success response', () {
+    final result = SearchDocumentResult.fromJson([
+      {
+        'query': 'hello',
+        'pageIndex': 0,
+        'start': 0,
+        'end': 5,
+        'preview': 'Hello DOCX render',
+      },
+    ]);
+
+    expect(result, isA<SearchDocumentSuccess>());
+    final success = result as SearchDocumentSuccess;
+    expect(success.matches.single.pageIndex, 0);
+  });
+
+  test('search document result decodes error response', () {
+    final result = SearchDocumentResult.fromJson({
+      'code': 'invalid_document',
+      'message': 'Broken package.',
+    });
+
+    expect(result, isA<SearchDocumentFailure>());
+  });
+
+  test('get selection page request encodes to rust-compatible json-like map', () {
+    const request = GetSelectionPageRequest(
+      source: OpenDocumentSource.path('/tmp/sample.docx'),
+      documentId: 'path:/tmp/sample.docx',
+      pageIndex: 0,
+    );
+
+    expect(request.toJson(), {
+      'source': {'kind': 'path', 'value': '/tmp/sample.docx'},
+      'documentId': 'path:/tmp/sample.docx',
+      'pageIndex': 0,
+      'options': {'password': null, 'preferLazyLoading': true},
+    });
+  });
+
+  test('get selection page result decodes success response', () {
+    final result = GetSelectionPageResult.fromJson({
+      'pageIndex': 0,
+      'width': 595.0,
+      'height': 842.0,
+      'nodes': const [],
+      'selectionAnchors': const [
+        {'nodeIndex': 0, 'charIndex': 0, 'x': 12.0, 'y': 24.0},
+      ],
+    });
+
+    expect(result, isA<GetSelectionPageSuccess>());
+    final success = result as GetSelectionPageSuccess;
+    expect(success.page.selectionAnchors, hasLength(1));
+  });
+
+  test('get selection page result decodes error response', () {
+    final result = GetSelectionPageResult.fromJson({
+      'code': 'invalid_document',
+      'message': 'Invalid page index.',
+    });
+
+    expect(result, isA<GetSelectionPageFailure>());
+  });
 }
