@@ -137,7 +137,7 @@ pub struct LaidOutTableCell {
     pub width: f32,
     pub height: f32,
     pub column_span: u16,
-    pub text: String,
+    pub lines: Vec<LaidOutLine>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -731,7 +731,13 @@ pub fn build_search_pages(
                         let row_text = row
                             .cells
                             .into_iter()
-                            .map(|cell| cell.text)
+                            .map(|cell| {
+                                cell.lines
+                                    .into_iter()
+                                    .map(|line| line.text)
+                                    .collect::<Vec<_>>()
+                                    .join("\n")
+                            })
                             .collect::<Vec<_>>()
                             .join(" ");
                         if !row_text.is_empty() {
@@ -825,20 +831,8 @@ pub fn build_selection_page_models(
                                 stroke_width: 1.0,
                             }));
 
-                            let cell_text = cell.text.trim();
-                            if cell_text.is_empty() {
-                                continue;
-                            }
-
-                            let cell_style = default_text_style();
-                            let line_height = (cell_style.font_size * 1.2).max(14.0);
-                            let line_width = (cell.width - 12.0).max(24.0);
-                            let mut line_y = cell.y + 6.0;
-                            for line in
-                                break_text_lines(cell_text, line_width, cell_style.font_size)
-                            {
-                                if line.is_empty() {
-                                    line_y += line_height;
+                            for line in cell.lines {
+                                if line.text.is_empty() {
                                     continue;
                                 }
 
@@ -846,17 +840,15 @@ pub fn build_selection_page_models(
                                     &mut nodes,
                                     &mut anchors,
                                     &mut text_offset,
-                                    line.clone(),
+                                    line.text,
                                     Rect {
-                                        x: cell.x + 6.0,
-                                        y: line_y,
-                                        width: estimate_text_width(&line, cell_style.font_size)
-                                            .min(line_width),
-                                        height: line_height,
+                                        x: line.x,
+                                        y: line.y,
+                                        width: line.width,
+                                        height: line.height,
                                     },
-                                    cell_style.clone(),
+                                    line.style,
                                 );
-                                line_y += line_height;
                             }
                         }
                     }
@@ -1145,13 +1137,14 @@ fn layout_table_row(
             span as usize,
             fallback_width * span as f32,
         );
+        let lines = layout_table_cell_lines(cell, cell_x, y, cell_width);
         cells.push(LaidOutTableCell {
             x: cell_x,
             y,
             width: cell_width,
             height: row_height,
             column_span: cell.column_span,
-            text: flatten_cell_text(cell),
+            lines,
         });
         cell_x += cell_width;
         column_index += span as usize;
@@ -1178,11 +1171,7 @@ fn estimate_table_row_height(row: &TableRow, width: f32, column_widths: &[f32]) 
             span as usize,
             fallback_width * span as f32,
         );
-        let text = flatten_cell_text(cell);
-        let line_count = break_text_lines(&text, (cell_width - 8.0).max(24.0), 12.0)
-            .len()
-            .max(1);
-        max_height = max_height.max(line_count as f32 * 14.0 + 10.0);
+        max_height = max_height.max(measure_table_cell_content_height(cell, cell_width));
         column_index += span as usize;
     }
 
@@ -1223,20 +1212,89 @@ fn resolve_spanned_width(
     }
 }
 
-fn flatten_cell_text(cell: &TableCell) -> String {
-    cell.blocks
-        .iter()
-        .filter_map(|block| match block {
-            Block::Paragraph { runs, .. } => Some(
-                runs.iter()
-                    .map(|run| run.text.as_str())
-                    .collect::<Vec<_>>()
-                    .join(""),
-            ),
-            _ => None,
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
+fn layout_table_cell_lines(cell: &TableCell, x: f32, y: f32, width: f32) -> Vec<LaidOutLine> {
+    const CELL_PADDING_X: f32 = 6.0;
+    const CELL_PADDING_Y: f32 = 6.0;
+    const PARAGRAPH_GAP: f32 = 2.0;
+
+    let mut lines = Vec::new();
+    let available_width = (width - CELL_PADDING_X * 2.0).max(24.0);
+    let mut cursor_y = y + CELL_PADDING_Y;
+    let mut paragraph_seen = false;
+
+    for block in &cell.blocks {
+        let Block::Paragraph { runs, .. } = block else {
+            continue;
+        };
+
+        let font_size = runs.first().map(|run| run.style.font_size).unwrap_or(12.0);
+        let line_height = (font_size * 1.2).max(14.0);
+        let style = runs
+            .first()
+            .map(|run| run.style.clone())
+            .unwrap_or_else(default_text_style);
+        let text = runs
+            .iter()
+            .map(|run| run.text.as_str())
+            .collect::<Vec<_>>()
+            .join("");
+        let paragraph_lines = break_text_lines(&text, available_width, font_size);
+
+        if paragraph_seen {
+            cursor_y += PARAGRAPH_GAP;
+        }
+        paragraph_seen = true;
+
+        for line in paragraph_lines {
+            if !line.is_empty() {
+                lines.push(LaidOutLine {
+                    text: line.clone(),
+                    x: x + CELL_PADDING_X,
+                    y: cursor_y,
+                    width: estimate_text_width(&line, font_size).min(available_width),
+                    height: line_height,
+                    style: style.clone(),
+                });
+            }
+            cursor_y += line_height;
+        }
+    }
+
+    lines
+}
+
+fn measure_table_cell_content_height(cell: &TableCell, width: f32) -> f32 {
+    const CELL_PADDING_Y: f32 = 6.0;
+    const PARAGRAPH_GAP: f32 = 2.0;
+
+    let available_width = (width - 12.0).max(24.0);
+    let mut content_height = CELL_PADDING_Y * 2.0;
+    let mut paragraph_seen = false;
+
+    for block in &cell.blocks {
+        let Block::Paragraph { runs, .. } = block else {
+            continue;
+        };
+
+        let font_size = runs.first().map(|run| run.style.font_size).unwrap_or(12.0);
+        let line_height = (font_size * 1.2).max(14.0);
+        let text = runs
+            .iter()
+            .map(|run| run.text.as_str())
+            .collect::<Vec<_>>()
+            .join("");
+        let line_count = break_text_lines(&text, available_width, font_size)
+            .len()
+            .max(1);
+
+        if paragraph_seen {
+            content_height += PARAGRAPH_GAP;
+        }
+        paragraph_seen = true;
+        content_height += line_count as f32 * line_height;
+    }
+
+    content_height.max(24.0)
 }
 
 fn break_text_lines(text: &str, max_width: f32, font_size: f32) -> Vec<String> {
@@ -1473,6 +1531,9 @@ fn parse_run(run: &viewer_core::xml::XmlElement, styles: &StyleCatalog) -> TextR
                     text.push('\n');
                 }
             }
+            // Word persists rendered pagination hints with this marker.
+            // Treat it as a hard page boundary to keep saved pagination closer to Word.
+            "lastRenderedPageBreak" => text.push('\u{000C}'),
             _ => {}
         }
     }

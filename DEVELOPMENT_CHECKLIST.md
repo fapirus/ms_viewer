@@ -303,22 +303,31 @@
     - `docs/qa/DOCX_VISUAL_TRIAGE.md`에 현재 실문서 분류 결과 반영
 
 ### Pagination correctness
-- [ ] DOCX 페이지 단위 계산 보정
+- [x] DOCX 페이지 단위 계산 보정
   - Rust scope:
     - paragraph spacing, explicit break, section transition, carry-over height 계산 보정
     - 페이지 끝 줄/블록 누락 방지
   - Tests:
     - multi-page real-world regression fixture
     - page boundary carry-over regression test
+  - Done:
+    - `w:lastRenderedPageBreak`를 hard page boundary로 해석
+    - `fixtures/regression/docx_rendered_page_break.docx` 추가
+    - path-based regression test와 synthetic page-break regression test 추가
 
 ### Table layout and media
-- [ ] DOCX 표 크기와 셀 내부 줄바꿈 보정
+- [x] DOCX 표 크기와 셀 내부 줄바꿈 보정
   - Rust scope:
     - tblGrid, preferred width, cell padding, row height, nested paragraph spacing 반영
     - 셀 내부 이미지/텍스트의 폭 기준 줄바꿈과 높이 계산 보정
   - Tests:
     - real-world table regression fixture
     - table cell wrap regression test
+  - Done:
+    - 셀 내부 문단을 line 단위로 배치하도록 테이블 레이아웃 경로 정리
+    - 셀 텍스트에 실제 run style/font size를 반영
+    - `fixtures/regression/docx_table_cell_layout.docx` 추가
+    - synthetic table wrap test와 path-based regression test 추가
 - [ ] DOCX 표 내부 이미지 및 inline image 렌더 보정
   - Rust scope:
     - drawing extent, anchor/inline 차이, cell clipping, image fit 정책 보정

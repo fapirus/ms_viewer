@@ -1314,7 +1314,7 @@ fn splits_table_rows_across_pages_when_needed() {
             assert_eq!(rows[0].cells.len(), 1);
             assert_eq!(rows[1].cells.len(), 1);
             assert_eq!(*y, pages[0].page_box.content.y);
-            assert_eq!(*height, 48.0);
+            assert!((*height - 52.8).abs() < 0.1);
         }
         other => panic!("expected table layout, got {other:?}"),
     }
@@ -1324,7 +1324,7 @@ fn splits_table_rows_across_pages_when_needed() {
         } => {
             assert_eq!(rows.len(), 2);
             assert_eq!(*y, pages[1].page_box.content.y);
-            assert_eq!(*height, 48.0);
+            assert!((*height - 52.8).abs() < 0.1);
             assert!(rows[0].y < rows[1].y);
         }
         other => panic!("expected table layout, got {other:?}"),
@@ -1633,6 +1633,90 @@ fn nested_table_sdts_produce_visible_text_nodes() {
 }
 
 #[test]
+fn table_cell_text_nodes_preserve_style_and_paragraph_order() {
+    let file = create_docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+              <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+            </Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+              <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+            </Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+              <w:body>
+                <w:tbl>
+                  <w:tblGrid>
+                    <w:gridCol w:w="2000"/>
+                    <w:gridCol w:w="2000"/>
+                  </w:tblGrid>
+                  <w:tr>
+                    <w:tc>
+                      <w:p>
+                        <w:r>
+                          <w:rPr>
+                            <w:b/>
+                            <w:sz w:val="32"/>
+                          </w:rPr>
+                          <w:t>Styled table text</w:t>
+                        </w:r>
+                      </w:p>
+                      <w:p>
+                        <w:r>
+                          <w:t>Second paragraph</w:t>
+                        </w:r>
+                      </w:p>
+                    </w:tc>
+                    <w:tc>
+                      <w:p><w:r><w:t>Other cell</w:t></w:r></w:p>
+                    </w:tc>
+                  </w:tr>
+                </w:tbl>
+                <w:sectPr>
+                  <w:pgSz w:w="12240" w:h="15840"/>
+                  <w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"/>
+                </w:sectPr>
+              </w:body>
+            </w:document>"#,
+        ),
+    ]);
+    let archive = OoxmlArchive::open_path(file.path()).expect("docx archive should open");
+    let package = parse_docx(&archive).expect("docx package should parse");
+
+    let models = build_selection_page_models(&archive, &package).expect("selection models");
+    let text_nodes = models[0]
+        .nodes
+        .iter()
+        .filter_map(|node| match node {
+            viewer_core::model::RenderNode::Text(text) => Some(text),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+
+    let styled = text_nodes
+        .iter()
+        .find(|node| node.text.contains("Styled"))
+        .expect("styled text node");
+    let second = text_nodes
+        .iter()
+        .find(|node| node.text.contains("Second"))
+        .expect("second paragraph node");
+
+    assert!(styled.style.bold);
+    assert_eq!(styled.style.font_size, 16.0);
+    assert!(second.bounds.y > styled.bounds.y);
+}
+
+#[test]
 fn empty_paragraphs_force_additional_pages() {
     let mut body = String::new();
     for _ in 0..12 {
@@ -1674,6 +1758,70 @@ fn empty_paragraphs_force_additional_pages() {
     let pages = layout_document(&archive, &package).expect("layout");
 
     assert!(pages.len() >= 2);
+}
+
+#[test]
+fn last_rendered_page_break_forces_new_page() {
+    let file = create_docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+              <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+            </Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+              <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+            </Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+              <w:body>
+                <w:p>
+                  <w:r>
+                    <w:t>alpha</w:t>
+                    <w:lastRenderedPageBreak/>
+                    <w:t>beta</w:t>
+                  </w:r>
+                </w:p>
+                <w:sectPr>
+                  <w:pgSz w:w="12240" w:h="15840"/>
+                  <w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"/>
+                </w:sectPr>
+              </w:body>
+            </w:document>"#,
+        ),
+    ]);
+    let archive = OoxmlArchive::open_path(file.path()).expect("docx archive should open");
+    let package = parse_docx(&archive).expect("docx package should parse");
+
+    let pages = build_selection_page_models(&archive, &package).expect("selection models");
+
+    assert_eq!(pages.len(), 2);
+    let first_page_text = pages[0]
+        .nodes
+        .iter()
+        .filter_map(|node| match node {
+            viewer_core::model::RenderNode::Text(text) => Some(text.text.as_str()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let second_page_text = pages[1]
+        .nodes
+        .iter()
+        .filter_map(|node| match node {
+            viewer_core::model::RenderNode::Text(text) => Some(text.text.as_str()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(first_page_text, vec!["alpha"]);
+    assert_eq!(second_page_text, vec!["beta"]);
 }
 
 fn create_docx_fixture(entries: &[(&str, &str)]) -> NamedTempFile {
