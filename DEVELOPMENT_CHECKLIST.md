@@ -422,7 +422,16 @@
 - shared render model 또는 공통 text metrics 변경이 필요해지면 즉시 작업을 멈추고 `develop` 기준 공통 통합 작업으로 전환한다.
 
 ### PPTX parse layer
-- [ ] PPTX slide tree parser 구현
+- [x] PPTX slide tree parser 구현
+  - Done:
+    - package root에서 `presentation.xml` 진입점 탐색
+    - `sldIdLst` 기반 slide 순서와 slide id 파싱
+    - `presentation.xml.rels`에서 slide part target 해석
+    - presentation size와 external relationship 예외 처리
+  - Tests:
+    - minimal slide tree fixture
+    - missing slide relationship fixture
+    - external relationship handling fixture
 - [ ] slide master/layout/theme link parser 구현
 - [ ] text box parser 구현
 - [ ] basic shape parser 구현
