@@ -381,6 +381,7 @@ void main() {
         home: Scaffold(body: MsDocumentView(controller: controller)),
       ),
     );
+    await controller.loadPage(0);
     await tester.pumpAndSettle();
 
     final pageFinder = find.byType(DocumentPageView);
@@ -398,6 +399,114 @@ void main() {
 
     expect(controller.pageHighlights, isNotEmpty);
     expect(find.byType(Positioned), findsWidgets);
+  });
+
+  testWidgets('view renders pptx slide preview and navigation shell', (
+    tester,
+  ) async {
+    final controller = MsViewerController(
+      platform: _FakeMsViewerPlatform(
+        onOpen: (_) async => platform.OpenDocumentOpened(
+          const platform.OpenDocumentSuccess(
+            documentId: 'ppt_001',
+            kind: platform.DocumentKind.pptx,
+            title: 'deck.pptx',
+            pageCount: 2,
+            capabilities: platform.DocumentCapabilities(
+              search: true,
+              textSelection: true,
+              passwordProtected: false,
+            ),
+          ),
+        ),
+        onGetPage: (request) async => platform.GetPageRenderModelSuccess(
+          platform.PageRenderModel.fromJson({
+            'pageIndex': request.pageIndex,
+            'width': 720.0,
+            'height': 540.0,
+            'nodes': [
+              {
+                'type': 'box',
+                'bounds': {
+                  'x': 40.0,
+                  'y': 60.0,
+                  'width': 180.0,
+                  'height': 72.0,
+                },
+                'fillColorHex': '#FFAA00',
+                'strokeColorHex': '#333333',
+                'strokeWidth': 1.0,
+              },
+              {
+                'type': 'text',
+                'text': request.pageIndex == 0
+                    ? 'Quarterly Results'
+                    : 'Revenue Forecast',
+                'bounds': {
+                  'x': 66.0,
+                  'y': 24.0,
+                  'width': 220.0,
+                  'height': 28.0,
+                },
+                'style': {
+                  'fontFamily': 'Aptos',
+                  'fontSize': 24.0,
+                  'bold': true,
+                  'italic': false,
+                  'colorHex': '#000000',
+                },
+                'range': {
+                  'start': 0,
+                  'end': request.pageIndex == 0 ? 17 : 16,
+                },
+              },
+              {
+                'type': 'image',
+                'resourceId': 'ppt/media/image1.png',
+                'description': 'Fixture image',
+                'contentType': 'image/png',
+                'dataBase64':
+                    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+lm2cAAAAASUVORK5CYII=',
+                'bounds': {
+                  'x': 300.0,
+                  'y': 120.0,
+                  'width': 100.0,
+                  'height': 75.0,
+                },
+              },
+            ],
+            'selectionAnchors': const [
+              {'nodeIndex': 1, 'charIndex': 0, 'x': 66.0, 'y': 24.0},
+            ],
+          }),
+        ),
+      ),
+    );
+
+    await controller.openDocument(
+      const platform.OpenDocumentRequest(
+        source: platform.OpenDocumentSource.path('/tmp/deck.pptx'),
+      ),
+    );
+    await controller.loadPage(0);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: MsDocumentView(controller: controller)),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('deck.pptx'), findsOneWidget);
+    expect(find.text('2 pages'), findsOneWidget);
+    expect(find.text('Page 1 / 2'), findsOneWidget);
+    expect(find.byType(DocumentPageView), findsOneWidget);
+    expect(find.byType(Image), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(OutlinedButton, 'Next'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Page 2 / 2'), findsOneWidget);
   });
 }
 

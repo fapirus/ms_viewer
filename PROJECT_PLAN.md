@@ -11,6 +11,30 @@ Flutter에서 사용할 수 있는 Microsoft Office 문서 뷰어를 만든다.
 - 개발 순서는 `docx -> pptx -> xlsx`다.
 - 각 포맷은 `MVP 구현 -> demo 실연동 -> 다음 포맷` 순서로 진행한다.
 - 정확도와 안정성을 성능보다 조금 더 우선한다.
+- 각 포맷에서 발견한 후속 품질/성능/호환성 문제는 즉시 hardening backlog로 승격한다.
+
+## Parallel development policy
+병렬 작업은 가능하지만, 범위를 잘못 잡으면 공유 레이어 충돌이 커진다.
+
+### Parallel-safe scope
+- `rust/crates/format_docx/`, `rust/crates/format_pptx/`, `rust/crates/format_xlsx/`의 포맷 전용 parser/layout/search 구현
+- 포맷 전용 fixture와 regression fixture 추가
+- 포맷 전용 테스트 코드
+
+### Serialized scope
+- `rust/crates/viewer_core/`
+- `rust/crates/viewer_ffi/`
+- `packages/ms_viewer_platform_interface/`
+- `packages/ms_viewer/`
+- `examples/flutter_demo/`
+- 공통 계획/아키텍처 문서
+
+### Working rule
+- `PPTX`와 `XLSX`의 엔진 MVP는 병렬 진행 가능하다.
+- shared render model, FFI contract, Flutter bridge, demo app은 직렬 단계로 본다.
+- demo 실연동 phase는 포맷별로 순차 진행한다.
+- 공통 계약 변경이 필요하면 작은 통합 커밋을 먼저 `develop`에 반영한 뒤 각 phase 브랜치가 이를 따라간다.
+- 권장 브랜치 전략은 `format engine branch -> demo integration branch -> visual parity branch` 순서로 끊는 것이다.
 
 ## Target platforms
 ### Phase 1 targets
@@ -204,6 +228,17 @@ OOXML은 ZIP 기반이라 완전한 스트리밍이 쉽지 않다.
 - 전체 문서는 필요 시점에만 파싱
 - 성능보다 안정성을 우선
 - 큰 파일에서도 크래시 없이 동작하는 것을 우선 목표로 둔다.
+
+## Hardening posture
+`docx`, `pptx`, `xlsx`를 한 바퀴 모두 돌고 나면 hardening phase에서 아래를 묶어 처리한다.
+
+- 포맷별로 미뤄둔 시각 충실도 보강
+- 공통 text metrics / fallback / theme font 보강
+- 암호화/비밀번호 UX polish
+- 대용량 파일과 cache/memory profiling
+- coverage tooling과 품질 기준 고정
+
+즉, 포맷 phase에서는 "출시 가능한 MVP + 실연동"을 우선 확보하고, hardening에서는 각 포맷에서 수집된 잔여 debt를 체계적으로 갚는 구조로 간다.
 
 ## Test corpus strategy
 전략은 fixture 중심으로 간다.
