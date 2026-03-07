@@ -538,11 +538,14 @@
   - Tests:
     - embedded image layer widget test
     - PPTX page preview and next-page navigation widget test
-- [ ] PPTX MVP acceptance pass
+- [x] PPTX MVP acceptance pass
   - Acceptance checks:
     - slide render
     - text search
     - text selection
+  - Verified by:
+    - `acceptance_pptx_review_set` review fixture render/search/selection 통과
+    - Flutter slide preview/navigation widget tests 통과
 
 ## Phase 2.5: PPTX demo real integration
 ### Serialized integration gate
