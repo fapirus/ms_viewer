@@ -16,15 +16,19 @@ import 'demo_document.dart';
 import 'demo_fixture_catalog.dart';
 import 'demo_page_models.dart';
 
+typedef DemoFilePicker = Future<List<String>> Function();
+
 class DemoHomePage extends StatefulWidget {
   const DemoHomePage({
     super.key,
     required this.viewerPlatform,
     required this.assetBundle,
+    this.pickFiles = _defaultPickFiles,
   });
 
   final platform.MsViewerPlatform viewerPlatform;
   final AssetBundle assetBundle;
+  final DemoFilePicker pickFiles;
 
   @override
   State<DemoHomePage> createState() => _DemoHomePageState();
@@ -58,22 +62,10 @@ class _DemoHomePageState extends State<DemoHomePage> {
   }
 
   Future<void> _pickFiles() async {
-    final result = await FilePicker.platform.pickFiles(
-      allowMultiple: true,
-      type: FileType.custom,
-      allowedExtensions: const ['docx', 'pptx', 'xlsx'],
-    );
-    if (result == null) {
-      return;
-    }
-
-    final added = <DemoDocumentEntry>[];
-    for (final file in result.files) {
-      if (file.path == null) {
-        continue;
-      }
-      added.add(_importedEntry(file.path!, DemoDocumentOrigin.picked));
-    }
+    final paths = await widget.pickFiles();
+    final added = paths
+        .map((path) => _importedEntry(path, DemoDocumentOrigin.picked))
+        .toList(growable: false);
     if (added.isEmpty) {
       return;
     }
@@ -150,6 +142,17 @@ class _DemoHomePageState extends State<DemoHomePage> {
       await _controller.openDocument(
         platform.OpenDocumentRequest(
           source: platform.OpenDocumentSource.bytesBase64(encoded),
+        ),
+      );
+      return;
+    }
+
+    if (entry.origin == DemoDocumentOrigin.picked &&
+        entry.kind == DocumentKind.docx &&
+        entry.location != null) {
+      await _controller.openDocument(
+        platform.OpenDocumentRequest(
+          source: platform.OpenDocumentSource.path(entry.location!),
         ),
       );
       return;
@@ -423,4 +426,20 @@ class _DemoHomePageState extends State<DemoHomePage> {
       DocumentKind.xlsx => Icons.table_chart_outlined,
     };
   }
+}
+
+Future<List<String>> _defaultPickFiles() async {
+  final result = await FilePicker.platform.pickFiles(
+    allowMultiple: true,
+    type: FileType.custom,
+    allowedExtensions: const ['docx', 'pptx', 'xlsx'],
+  );
+  if (result == null) {
+    return const [];
+  }
+
+  return result.files
+      .map((file) => file.path)
+      .whereType<String>()
+      .toList(growable: false);
 }

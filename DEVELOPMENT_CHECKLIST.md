@@ -269,7 +269,8 @@
     - first page render 확인
   - Tests:
     - fixture open smoke test
-- [ ] demo file picker DOCX 실연동
+- [x] demo file picker DOCX 실연동
+  - Done: picked docx -> OpenDocumentSource.path real open path, widget-injected picker smoke covers engine path open
   - Demo scope:
     - picked `.docx`를 실제 engine으로 open
     - password-required 오류 표시
