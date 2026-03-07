@@ -283,7 +283,7 @@
     - dropped `.docx`를 실제 engine으로 open
   - Tests:
     - drop docx open smoke test
-- [ ] DOCX demo real integration acceptance pass
+- [x] DOCX demo real integration acceptance pass
   - Acceptance checks:
     - fixture docx opens through real engine path
     - picked docx opens through real engine path
@@ -385,7 +385,7 @@
     - CJK line break regression fixture
 
 ### Acceptance
-- [ ] DOCX visual parity acceptance pass
+- [x] DOCX visual parity acceptance pass
   - Acceptance checks:
     - 주요 issue 문서가 빈 페이지 없이 렌더된다
     - 실제 Word 대비 페이지 분할이 허용 범위 내에 있다
