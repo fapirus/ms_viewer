@@ -343,7 +343,7 @@
     - synthetic image-in-table test, path-based regression test, Flutter image sizing widget test 추가
 
 ### Typography and spacing
-- [ ] DOCX 문단 간격과 기본 스타일 메트릭 보정
+- [x] DOCX 문단 간격과 기본 스타일 메트릭 보정
   - Rust scope:
     - `before/after`, line spacing, default paragraph style, section defaults 반영
   - Tests:

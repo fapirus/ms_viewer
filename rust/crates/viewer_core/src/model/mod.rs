@@ -61,6 +61,14 @@ pub struct TextRun {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
+pub struct ParagraphMetrics {
+    pub line_height: Option<f32>,
+    pub spacing_before: f32,
+    pub spacing_after: f32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct ImageReference {
     pub resource_id: String,
     pub description: Option<String>,
@@ -111,6 +119,7 @@ pub enum Block {
     Paragraph {
         runs: Vec<TextRun>,
         list: Option<ListMarker>,
+        metrics: ParagraphMetrics,
     },
     Table {
         rows: Vec<TableRow>,

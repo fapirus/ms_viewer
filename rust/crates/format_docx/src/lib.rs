@@ -2,15 +2,15 @@ use base64::Engine;
 use format_shared::{parse_package_relationships, resolve_relationship_target};
 use viewer_core::archive::OoxmlArchive;
 use viewer_core::model::{
-    Block, BoxNode, ImageNode, ImageReference, ListKind, ListMarker, PageRenderModel, Rect,
-    RenderNode, SelectionAnchor, TableCell, TableCellMerge, TableRow, TextNode, TextRange, TextRun,
-    TextStyle,
+    Block, BoxNode, ImageNode, ImageReference, ListKind, ListMarker, PageRenderModel,
+    ParagraphMetrics, Rect, RenderNode, SelectionAnchor, TableCell, TableCellMerge, TableRow,
+    TextNode, TextRange, TextRun, TextStyle,
 };
 use viewer_core::search::{search_pages, SearchMatch, SearchPage};
 use viewer_core::xml::parse_document;
 use viewer_core::ViewerError;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 const OFFICE_DOCUMENT_REL: &str =
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument";
@@ -45,21 +45,37 @@ pub struct DocxPackage {
 #[derive(Debug, Clone, PartialEq)]
 pub struct StyleCatalog {
     pub default_run_style: ResolvedTextStyle,
-    pub default_paragraph_metrics: ParagraphMetrics,
+    pub default_paragraph_metrics: ParagraphMetricsSpec,
+    pub paragraph_styles: HashMap<String, ParagraphStyleDefinition>,
     pub run_styles: HashMap<String, RunStyleDefinition>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct ParagraphMetrics {
-    pub line_height: Option<f32>,
-    pub spacing_before: f32,
-    pub spacing_after: f32,
+pub struct ParagraphMetricsSpec {
+    pub line_value: Option<f32>,
+    pub line_rule: Option<ParagraphLineRule>,
+    pub spacing_before: Option<f32>,
+    pub spacing_after: Option<f32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ParagraphLineRule {
+    Auto,
+    Exact,
+    AtLeast,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct RunStyleDefinition {
     pub based_on: Option<String>,
     pub style: ResolvedTextStyle,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ParagraphStyleDefinition {
+    pub based_on: Option<String>,
+    pub metrics: ParagraphMetricsSpec,
+    pub run_style: ResolvedTextStyle,
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -345,11 +361,13 @@ pub fn parse_style_catalog(
     let Some(styles_part) = &package.styles else {
         return Ok(StyleCatalog {
             default_run_style: ResolvedTextStyle::default(),
-            default_paragraph_metrics: ParagraphMetrics {
-                line_height: None,
-                spacing_before: 0.0,
-                spacing_after: 6.0,
+            default_paragraph_metrics: ParagraphMetricsSpec {
+                line_value: None,
+                line_rule: None,
+                spacing_before: Some(0.0),
+                spacing_after: Some(6.0),
             },
+            paragraph_styles: HashMap::new(),
             run_styles: HashMap::new(),
         });
     };
@@ -359,11 +377,13 @@ pub fn parse_style_catalog(
     let root = parse_document(&text)?;
 
     let mut default_run_style = ResolvedTextStyle::default();
-    let mut default_paragraph_metrics = ParagraphMetrics {
-        line_height: None,
-        spacing_before: 0.0,
-        spacing_after: 6.0,
+    let mut default_paragraph_metrics = ParagraphMetricsSpec {
+        line_value: None,
+        line_rule: None,
+        spacing_before: Some(0.0),
+        spacing_after: Some(6.0),
     };
+    let mut paragraph_styles = HashMap::new();
     let mut run_styles = HashMap::new();
 
     for child in &root.children {
@@ -377,8 +397,25 @@ pub fn parse_style_catalog(
                 if let Some(ppr_default) =
                     child.child("pPrDefault").and_then(|node| node.child("pPr"))
                 {
-                    default_paragraph_metrics = parse_paragraph_metrics(Some(ppr_default));
+                    default_paragraph_metrics = parse_paragraph_metrics_spec(Some(ppr_default));
                 }
+            }
+            "style" if child.attribute("type") == Some("paragraph") => {
+                let Some(style_id) = child.attribute("styleId") else {
+                    continue;
+                };
+                let based_on = child
+                    .child("basedOn")
+                    .and_then(|node| node.attribute("val"))
+                    .map(ToString::to_string);
+                paragraph_styles.insert(
+                    style_id.to_string(),
+                    ParagraphStyleDefinition {
+                        based_on,
+                        metrics: parse_paragraph_metrics_spec(child.child("pPr")),
+                        run_style: parse_resolved_style(child.child("rPr")),
+                    },
+                );
             }
             "style" if child.attribute("type") == Some("character") => {
                 let Some(style_id) = child.attribute("styleId") else {
@@ -398,6 +435,7 @@ pub fn parse_style_catalog(
     Ok(StyleCatalog {
         default_run_style,
         default_paragraph_metrics,
+        paragraph_styles,
         run_styles,
     })
 }
@@ -456,7 +494,6 @@ pub fn layout_document(
     archive: &OoxmlArchive,
     package: &DocxPackage,
 ) -> Result<Vec<DocxPageLayout>, ViewerError> {
-    let styles = parse_style_catalog(archive, package)?;
     let blocks = parse_paragraph_blocks(archive, package)?;
     let mut page_boxes = parse_page_boxes(archive, package)?;
     if page_boxes.is_empty() {
@@ -489,15 +526,18 @@ pub fn layout_document(
 
     for block in blocks {
         match block {
-            Block::Paragraph { runs, list } => {
+            Block::Paragraph {
+                runs,
+                list,
+                metrics,
+            } => {
                 let font_size = runs.first().map(|run| run.style.font_size).unwrap_or(12.0);
-                let line_height = styles
-                    .default_paragraph_metrics
+                let line_height = metrics
                     .line_height
                     .unwrap_or_else(|| (font_size * 1.2).max(14.0))
                     .max(font_size);
-                let paragraph_spacing_before = styles.default_paragraph_metrics.spacing_before;
-                let paragraph_spacing_after = styles.default_paragraph_metrics.spacing_after;
+                let paragraph_spacing_before = metrics.spacing_before;
+                let paragraph_spacing_after = metrics.spacing_after;
                 let full_text = runs
                     .iter()
                     .map(|run| run.text.as_str())
@@ -1253,7 +1293,6 @@ fn layout_table_cell_content(
 ) -> (Vec<LaidOutLine>, Vec<LaidOutTableCellImage>, f32) {
     const CELL_PADDING_X: f32 = 6.0;
     const CELL_PADDING_Y: f32 = 6.0;
-    const PARAGRAPH_GAP: f32 = 2.0;
     const IMAGE_GAP: f32 = 4.0;
 
     let mut lines = Vec::new();
@@ -1264,9 +1303,12 @@ fn layout_table_cell_content(
 
     for block in &cell.blocks {
         match block {
-            Block::Paragraph { runs, .. } => {
+            Block::Paragraph { runs, metrics, .. } => {
                 let font_size = runs.first().map(|run| run.style.font_size).unwrap_or(12.0);
-                let line_height = (font_size * 1.2).max(14.0);
+                let line_height = metrics
+                    .line_height
+                    .unwrap_or_else(|| (font_size * 1.2).max(14.0))
+                    .max(font_size);
                 let style = runs
                     .first()
                     .map(|run| run.style.clone())
@@ -1278,9 +1320,7 @@ fn layout_table_cell_content(
                     .join("");
                 let paragraph_lines = break_text_lines(&text, available_width, font_size);
 
-                if has_content {
-                    cursor_y += PARAGRAPH_GAP;
-                }
+                cursor_y += metrics.spacing_before;
                 has_content = true;
 
                 for line in paragraph_lines {
@@ -1296,6 +1336,8 @@ fn layout_table_cell_content(
                     }
                     cursor_y += line_height;
                 }
+
+                cursor_y += metrics.spacing_after;
             }
             Block::Image { image } => {
                 let (image_width, image_height) = image_display_size(image, available_width);
@@ -1391,9 +1433,10 @@ fn estimate_text_width(text: &str, font_size: f32) -> f32 {
 fn parse_paragraph_runs(
     paragraph: &viewer_core::xml::XmlElement,
     styles: &StyleCatalog,
+    paragraph_style: &ResolvedTextStyle,
 ) -> Vec<TextRun> {
     let mut runs = Vec::new();
-    collect_paragraph_runs(paragraph, styles, &mut runs);
+    collect_paragraph_runs(paragraph, styles, paragraph_style, &mut runs);
 
     runs
 }
@@ -1413,7 +1456,13 @@ fn parse_paragraph_blocks_with_media(
     numbering: &NumberingCatalog,
     package: Option<&DocxPackage>,
 ) -> Result<Vec<Block>, ViewerError> {
-    let runs = parse_paragraph_runs(paragraph, styles);
+    let paragraph_style = resolve_paragraph_base_run_style(paragraph, styles);
+    let runs = parse_paragraph_runs(paragraph, styles, &paragraph_style);
+    let paragraph_font_size = runs
+        .first()
+        .map(|run| run.style.font_size)
+        .unwrap_or_else(|| materialize_text_style(&paragraph_style).font_size);
+    let metrics = resolve_paragraph_metrics(paragraph, styles, paragraph_font_size);
     let list = parse_paragraph_list(paragraph, numbering);
     let images = if let Some(package) = package {
         parse_paragraph_images(paragraph, package)?
@@ -1423,14 +1472,19 @@ fn parse_paragraph_blocks_with_media(
 
     let mut blocks = Vec::new();
     if !runs.is_empty() {
-        blocks.push(Block::Paragraph { runs, list });
+        blocks.push(Block::Paragraph {
+            runs,
+            list,
+            metrics: metrics.clone(),
+        });
     } else if images.is_empty() {
         blocks.push(Block::Paragraph {
             runs: vec![TextRun {
                 text: String::new(),
-                style: materialize_text_style(&styles.default_run_style),
+                style: materialize_text_style(&paragraph_style),
             }],
             list,
+            metrics,
         });
     }
     blocks.extend(images.into_iter().map(|image| Block::Image { image }));
@@ -1538,8 +1592,12 @@ fn parse_paragraph_list(
     })
 }
 
-fn parse_run(run: &viewer_core::xml::XmlElement, styles: &StyleCatalog) -> TextRun {
-    let style = resolve_run_style(run, styles);
+fn parse_run(
+    run: &viewer_core::xml::XmlElement,
+    styles: &StyleCatalog,
+    paragraph_style: &ResolvedTextStyle,
+) -> TextRun {
+    let style = resolve_run_style(run, styles, paragraph_style);
     let mut text = String::new();
 
     for child in &run.children {
@@ -1651,21 +1709,6 @@ fn infer_content_type(path: &str) -> Option<String> {
     Some(content_type.to_string())
 }
 
-fn parse_paragraph_metrics(
-    paragraph_properties: Option<&viewer_core::xml::XmlElement>,
-) -> ParagraphMetrics {
-    let spacing = paragraph_properties.and_then(|node| node.child("spacing"));
-    ParagraphMetrics {
-        line_height: spacing.and_then(|node| node.attribute("line").and_then(parse_twips_value)),
-        spacing_before: spacing
-            .and_then(|node| node.attribute("before").and_then(parse_twips_value))
-            .unwrap_or(0.0),
-        spacing_after: spacing
-            .and_then(|node| node.attribute("after").and_then(parse_twips_value))
-            .unwrap_or(6.0),
-    }
-}
-
 fn parse_emu_value(value: &str) -> Option<f32> {
     value.parse::<f32>().ok().map(|emu| emu / 12_700.0)
 }
@@ -1740,18 +1783,19 @@ fn is_wide_character(character: char) -> bool {
 fn collect_paragraph_runs(
     element: &viewer_core::xml::XmlElement,
     styles: &StyleCatalog,
+    paragraph_style: &ResolvedTextStyle,
     runs: &mut Vec<TextRun>,
 ) {
     for child in &element.children {
         if child.local_name() == "r" {
-            let run = parse_run(child, styles);
+            let run = parse_run(child, styles, paragraph_style);
             if !run.text.is_empty() {
                 runs.push(run);
             }
             continue;
         }
 
-        collect_paragraph_runs(child, styles, runs);
+        collect_paragraph_runs(child, styles, paragraph_style, runs);
     }
 }
 
@@ -1821,8 +1865,12 @@ fn push_text_node(
     *text_offset = end;
 }
 
-fn resolve_run_style(run: &viewer_core::xml::XmlElement, styles: &StyleCatalog) -> TextStyle {
-    let mut resolved = styles.default_run_style.clone();
+fn resolve_run_style(
+    run: &viewer_core::xml::XmlElement,
+    styles: &StyleCatalog,
+    paragraph_style: &ResolvedTextStyle,
+) -> TextStyle {
+    let mut resolved = paragraph_style.clone();
     let run_properties = run.child("rPr");
 
     if let Some(style_id) = run_properties
@@ -1842,8 +1890,12 @@ fn resolve_run_style(run: &viewer_core::xml::XmlElement, styles: &StyleCatalog) 
 fn resolve_named_style(styles: &StyleCatalog, style_id: &str) -> ResolvedTextStyle {
     let mut chain = Vec::new();
     let mut current = Some(style_id);
+    let mut visited = HashSet::new();
 
     while let Some(next_style_id) = current {
+        if !visited.insert(next_style_id.to_string()) {
+            break;
+        }
         let Some(style) = styles.run_styles.get(next_style_id) else {
             break;
         };
@@ -1857,6 +1909,157 @@ fn resolve_named_style(styles: &StyleCatalog, style_id: &str) -> ResolvedTextSty
     }
 
     resolved
+}
+
+fn parse_paragraph_metrics_spec(
+    paragraph_properties: Option<&viewer_core::xml::XmlElement>,
+) -> ParagraphMetricsSpec {
+    let spacing = paragraph_properties.and_then(|node| node.child("spacing"));
+
+    ParagraphMetricsSpec {
+        line_value: spacing
+            .and_then(|node| node.attribute("line"))
+            .and_then(|value| value.parse::<f32>().ok()),
+        line_rule: spacing.and_then(|node| {
+            node.attribute("lineRule").map(|value| match value {
+                "exact" => ParagraphLineRule::Exact,
+                "atLeast" => ParagraphLineRule::AtLeast,
+                _ => ParagraphLineRule::Auto,
+            })
+        }),
+        spacing_before: spacing
+            .and_then(|node| node.attribute("before").and_then(parse_twips_value)),
+        spacing_after: spacing.and_then(|node| node.attribute("after").and_then(parse_twips_value)),
+    }
+}
+
+fn resolve_paragraph_base_run_style(
+    paragraph: &viewer_core::xml::XmlElement,
+    styles: &StyleCatalog,
+) -> ResolvedTextStyle {
+    let mut resolved = styles.default_run_style.clone();
+    let paragraph_properties = paragraph.child("pPr");
+
+    if let Some(style_id) = paragraph_style_id(paragraph_properties) {
+        let named_style = resolve_named_paragraph_run_style(styles, style_id);
+        merge_resolved_style(&mut resolved, &named_style);
+    }
+
+    let paragraph_run_style =
+        parse_resolved_style(paragraph_properties.and_then(|properties| properties.child("rPr")));
+    merge_resolved_style(&mut resolved, &paragraph_run_style);
+
+    resolved
+}
+
+fn paragraph_style_id<'a>(
+    paragraph_properties: Option<&'a viewer_core::xml::XmlElement>,
+) -> Option<&'a str> {
+    paragraph_properties
+        .and_then(|properties| properties.child("pStyle"))
+        .and_then(|style| style.attribute("val"))
+}
+
+fn resolve_paragraph_metrics(
+    paragraph: &viewer_core::xml::XmlElement,
+    styles: &StyleCatalog,
+    font_size: f32,
+) -> ParagraphMetrics {
+    let paragraph_properties = paragraph.child("pPr");
+    let mut resolved_spec = styles.default_paragraph_metrics.clone();
+
+    if let Some(style_id) = paragraph_style_id(paragraph_properties) {
+        let named_metrics = resolve_named_paragraph_metrics(styles, style_id);
+        merge_paragraph_metrics_spec(&mut resolved_spec, &named_metrics);
+    }
+
+    let direct_metrics = parse_paragraph_metrics_spec(paragraph_properties);
+    merge_paragraph_metrics_spec(&mut resolved_spec, &direct_metrics);
+
+    ParagraphMetrics {
+        line_height: resolve_line_height(&resolved_spec, font_size)
+            .or(Some((font_size * 1.2).max(14.0).max(font_size))),
+        spacing_before: resolved_spec.spacing_before.unwrap_or(0.0),
+        spacing_after: resolved_spec.spacing_after.unwrap_or(6.0),
+    }
+}
+
+fn resolve_named_paragraph_metrics(styles: &StyleCatalog, style_id: &str) -> ParagraphMetricsSpec {
+    let mut chain = Vec::new();
+    let mut current = Some(style_id);
+    let mut visited = HashSet::new();
+
+    while let Some(next_style_id) = current {
+        if !visited.insert(next_style_id.to_string()) {
+            break;
+        }
+        let Some(style) = styles.paragraph_styles.get(next_style_id) else {
+            break;
+        };
+        chain.push(style.metrics.clone());
+        current = style.based_on.as_deref();
+    }
+
+    let mut resolved = ParagraphMetricsSpec {
+        line_value: None,
+        line_rule: None,
+        spacing_before: None,
+        spacing_after: None,
+    };
+    for metrics in chain.into_iter().rev() {
+        merge_paragraph_metrics_spec(&mut resolved, &metrics);
+    }
+
+    resolved
+}
+
+fn resolve_named_paragraph_run_style(styles: &StyleCatalog, style_id: &str) -> ResolvedTextStyle {
+    let mut chain = Vec::new();
+    let mut current = Some(style_id);
+    let mut visited = HashSet::new();
+
+    while let Some(next_style_id) = current {
+        if !visited.insert(next_style_id.to_string()) {
+            break;
+        }
+        let Some(style) = styles.paragraph_styles.get(next_style_id) else {
+            break;
+        };
+        chain.push(style.run_style.clone());
+        current = style.based_on.as_deref();
+    }
+
+    let mut resolved = ResolvedTextStyle::default();
+    for style in chain.into_iter().rev() {
+        merge_resolved_style(&mut resolved, &style);
+    }
+
+    resolved
+}
+
+fn merge_paragraph_metrics_spec(target: &mut ParagraphMetricsSpec, source: &ParagraphMetricsSpec) {
+    if let Some(line_value) = source.line_value {
+        target.line_value = Some(line_value);
+    }
+    if let Some(line_rule) = &source.line_rule {
+        target.line_rule = Some(line_rule.clone());
+    }
+    if let Some(spacing_before) = source.spacing_before {
+        target.spacing_before = Some(spacing_before);
+    }
+    if let Some(spacing_after) = source.spacing_after {
+        target.spacing_after = Some(spacing_after);
+    }
+}
+
+fn resolve_line_height(spec: &ParagraphMetricsSpec, font_size: f32) -> Option<f32> {
+    let line_value = spec.line_value?;
+
+    match spec.line_rule.as_ref().unwrap_or(&ParagraphLineRule::Auto) {
+        ParagraphLineRule::Exact => Some((line_value / 20.0).max(font_size)),
+        ParagraphLineRule::AtLeast => Some((line_value / 20.0).max((font_size * 1.2).max(14.0))),
+        ParagraphLineRule::Auto => Some((font_size * (line_value / 240.0)).max(font_size)),
+    }
 }
 
 fn parse_resolved_style(

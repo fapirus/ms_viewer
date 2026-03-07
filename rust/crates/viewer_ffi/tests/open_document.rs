@@ -191,6 +191,39 @@ fn table_inline_image_regression_fixture_emits_image_node() {
 }
 
 #[test]
+fn paragraph_spacing_regression_fixture_preserves_style_metrics() {
+    let path = regression_fixture_path("docx_paragraph_spacing.docx");
+    let response = get_page_render_model(GetPageRenderModelRequest {
+        source: DocumentSource::Path(path.display().to_string()),
+        document_id: format!("path:{}", path.display()),
+        page_index: 0,
+        options: OpenOptions::default(),
+    });
+
+    match response {
+        GetPageRenderModelResponse::Success(page) => {
+            let text_nodes = page
+                .nodes
+                .iter()
+                .filter_map(|node| match node {
+                    viewer_core::model::RenderNode::Text(text) => Some(text),
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+
+            assert!(text_nodes.len() >= 2);
+            assert_eq!(text_nodes[0].text, "Styled paragraph");
+            assert_eq!(text_nodes[0].style.font_family, "Calibri");
+            assert_eq!(text_nodes[0].style.font_size, 14.0);
+            assert!(text_nodes[0].style.bold);
+            assert!((text_nodes[0].bounds.y - 84.0).abs() < 0.5);
+            assert!((text_nodes[1].bounds.y - 141.0).abs() < 0.5);
+        }
+        other => panic!("expected page render model, got {other:?}"),
+    }
+}
+
+#[test]
 fn opens_xlsx_bytes_request_from_json() {
     let file = create_package(&[
         (

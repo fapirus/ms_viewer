@@ -1,6 +1,6 @@
 use viewer_core::model::{
-    Block, ImageReference, ListKind, ListMarker, TableCell, TableCellMerge, TableRow, TextRun,
-    TextStyle,
+    Block, ImageReference, ListKind, ListMarker, ParagraphMetrics, TableCell, TableCellMerge,
+    TableRow, TextRun, TextStyle,
 };
 
 #[test]
@@ -23,6 +23,11 @@ fn shared_text_model_can_be_constructed() {
             kind: ListKind::Bullet,
             num_id: 1,
         }),
+        metrics: ParagraphMetrics {
+            line_height: Some(14.0),
+            spacing_before: 6.0,
+            spacing_after: 8.0,
+        },
     };
 
     let image = Block::Image {
@@ -43,6 +48,11 @@ fn shared_text_model_can_be_constructed() {
                         style: style.clone(),
                     }],
                     list: None,
+                    metrics: ParagraphMetrics {
+                        line_height: Some(14.0),
+                        spacing_before: 0.0,
+                        spacing_after: 0.0,
+                    },
                 }],
                 column_span: 2,
                 row_merge: Some(TableCellMerge::Restart),
@@ -52,10 +62,15 @@ fn shared_text_model_can_be_constructed() {
     };
 
     match paragraph {
-        Block::Paragraph { runs, list } => {
+        Block::Paragraph {
+            runs,
+            list,
+            metrics,
+        } => {
             assert_eq!(runs.len(), 1);
             assert_eq!(runs[0].style, style);
             assert_eq!(list.unwrap().kind, ListKind::Bullet);
+            assert_eq!(metrics.spacing_before, 6.0);
         }
         _ => panic!("expected paragraph block"),
     }
@@ -98,6 +113,11 @@ fn shared_text_model_round_trips_via_serde() {
             kind: ListKind::Decimal,
             num_id: 9,
         }),
+        metrics: ParagraphMetrics {
+            line_height: Some(16.0),
+            spacing_before: 4.0,
+            spacing_after: 10.0,
+        },
     };
 
     let json = serde_json::to_string(&block).expect("block should serialize");
