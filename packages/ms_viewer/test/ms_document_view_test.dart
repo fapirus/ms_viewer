@@ -103,6 +103,34 @@ void main() {
             ),
           ),
         ),
+        onGetPage: (_) async => platform.GetPageRenderModelSuccess(
+          platform.PageRenderModel.fromJson({
+            'pageIndex': 0,
+            'width': 200.0,
+            'height': 300.0,
+            'nodes': [
+              {
+                'type': 'text',
+                'text': 'Rendered DOCX page',
+                'bounds': {
+                  'x': 24.0,
+                  'y': 32.0,
+                  'width': 120.0,
+                  'height': 18.0,
+                },
+                'style': {
+                  'fontFamily': 'Calibri',
+                  'fontSize': 12.0,
+                  'bold': false,
+                  'italic': false,
+                  'colorHex': '#000000',
+                },
+                'range': {'start': 0, 'end': 18},
+              },
+            ],
+            'selectionAnchors': const [],
+          }),
+        ),
       ),
     );
 
@@ -157,20 +185,89 @@ void main() {
       findsWidgets,
     );
   });
+
+  testWidgets('view shows page fetch error state', (tester) async {
+    final controller = MsViewerController(
+      platform: _FakeMsViewerPlatform(
+        onOpen: (_) async => platform.OpenDocumentOpened(
+          const platform.OpenDocumentSuccess(
+            documentId: 'doc_001',
+            kind: platform.DocumentKind.docx,
+            title: 'sample.docx',
+            pageCount: 1,
+            capabilities: platform.DocumentCapabilities(
+              search: true,
+              textSelection: true,
+              passwordProtected: false,
+            ),
+          ),
+        ),
+        onGetPage: (_) async => const platform.GetPageRenderModelFailure(
+          platform.OpenDocumentError(
+            code: platform.ViewerErrorCode.invalidDocument,
+            message: 'Failed to load page preview.',
+          ),
+        ),
+      ),
+    );
+
+    await controller.openDocument(
+      const platform.OpenDocumentRequest(
+        source: platform.OpenDocumentSource.path('/tmp/sample.docx'),
+      ),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: MsDocumentView(controller: controller),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('sample.docx'), findsOneWidget);
+    expect(find.text('Failed to load page preview.'), findsOneWidget);
+    expect(find.byType(DocumentPageView), findsNothing);
+  });
 }
 
 class _FakeMsViewerPlatform extends platform.MsViewerPlatform
     with MockPlatformInterfaceMixin {
-  _FakeMsViewerPlatform({required this.onOpen});
+  _FakeMsViewerPlatform({
+    required this.onOpen,
+    this.onGetPage,
+  });
 
   final Future<platform.OpenDocumentResult> Function(
     platform.OpenDocumentRequest request,
   ) onOpen;
+  final Future<platform.GetPageRenderModelResult> Function(
+    platform.GetPageRenderModelRequest request,
+  )? onGetPage;
 
   @override
   Future<platform.OpenDocumentResult> openDocument(
     platform.OpenDocumentRequest request,
   ) {
     return onOpen(request);
+  }
+
+  @override
+  Future<platform.GetPageRenderModelResult> getPageRenderModel(
+    platform.GetPageRenderModelRequest request,
+  ) {
+    final onGetPage = this.onGetPage;
+    if (onGetPage == null) {
+      return Future.value(
+        const platform.GetPageRenderModelFailure(
+          platform.OpenDocumentError(
+            code: platform.ViewerErrorCode.notImplemented,
+            message: 'getPageRenderModel is not implemented.',
+          ),
+        ),
+      );
+    }
+    return onGetPage(request);
   }
 }

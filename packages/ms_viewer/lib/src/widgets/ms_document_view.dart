@@ -67,7 +67,11 @@ class _MsDocumentViewState extends State<MsDocumentView> {
   }
 
   Widget _buildReadyState(String title, int pageCount) {
-    final page = widget.previewPages.isEmpty ? null : widget.previewPages.first;
+    final fetchedPage = widget.controller.currentPage;
+    final fallbackPreviewPage = widget.previewPages.isEmpty
+        ? null
+        : widget.previewPages.first;
+    final page = fetchedPage ?? fallbackPreviewPage;
     return Padding(
       padding: const EdgeInsets.all(24),
       child: Column(
@@ -81,19 +85,36 @@ class _MsDocumentViewState extends State<MsDocumentView> {
           Text('$pageCount pages'),
           const SizedBox(height: 16),
           Expanded(
-            child: page == null
-                ? const Center(
-                    child: Text(
-                      'Viewer placeholder: render model not loaded',
-                      textAlign: TextAlign.center,
-                    ),
-                  )
-                : Center(
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 640),
-                      child: DocumentPageView(page: page),
-                    ),
+            child: switch (widget.controller.pageStatus) {
+              ViewerPageStatus.loading => const Center(
+                  child: CircularProgressIndicator(),
+                ),
+              ViewerPageStatus.error => Center(
+                  child: Text(
+                    widget.controller.pageError?.message ??
+                        'Failed to load page preview.',
+                    textAlign: TextAlign.center,
                   ),
+                ),
+              ViewerPageStatus.ready when page != null => Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 640),
+                    child: DocumentPageView(page: page),
+                  ),
+                ),
+              _ when page != null => Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 640),
+                    child: DocumentPageView(page: page),
+                  ),
+                ),
+              _ => const Center(
+                  child: Text(
+                    'Viewer placeholder: render model not loaded',
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+            },
           ),
         ],
       ),

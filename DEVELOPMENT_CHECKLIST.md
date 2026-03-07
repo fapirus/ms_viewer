@@ -244,7 +244,8 @@
     - selection metadata fetch smoke test
 
 ### Flutter bridge
-- [ ] Flutter platform bridge에서 DOCX page fetch 연결
+- [x] Flutter platform bridge에서 DOCX page fetch 연결
+  - Done: controller first-page auto fetch, page loading/error/render state split, widget error rendering
   - Flutter scope:
     - document open 후 page fetch
     - loading/error/page state 분리
