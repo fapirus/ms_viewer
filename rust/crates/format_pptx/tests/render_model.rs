@@ -1123,3 +1123,87 @@ fn render_model_applies_default_table_styles_to_fill_and_text() {
         .find(|node| node.text == "Value")
         .is_some_and(|node| node.style.color_hex == "#111111"));
 }
+
+#[test]
+fn render_model_preserves_no_wrap_text_and_underline_runs() {
+    let dir = tempdir().expect("tempdir should exist");
+    let path = dir.path().join("render-model-nowrap.pptx");
+    create_zip(
+        &path,
+        &[
+            (
+                "ppt/slides/slide1.xml",
+                br#"
+<p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+       xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <p:cSld>
+    <p:spTree>
+      <p:sp>
+        <p:nvSpPr><p:cNvPr id="2" name="NoWrap Box"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr>
+        <p:spPr>
+          <a:xfrm>
+            <a:off x="254000" y="254000"/>
+            <a:ext cx="1100000" cy="700000"/>
+          </a:xfrm>
+        </p:spPr>
+        <p:txBody>
+          <a:bodyPr wrap="none"><a:spAutoFit/></a:bodyPr>
+          <a:lstStyle/>
+          <a:p>
+            <a:r>
+              <a:rPr sz="3200" b="1" u="sng">
+                <a:solidFill><a:srgbClr val="428097"/></a:solidFill>
+                <a:latin typeface="Pretendard SemiBold"/>
+                <a:ea typeface="Pretendard SemiBold"/>
+              </a:rPr>
+              <a:t>Client</a:t>
+            </a:r>
+          </a:p>
+        </p:txBody>
+      </p:sp>
+    </p:spTree>
+  </p:cSld>
+</p:sld>
+"#,
+            ),
+            (
+                "ppt/slides/_rels/slide1.xml.rels",
+                br#"
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships" />
+"#,
+            ),
+        ],
+    );
+
+    let archive = OoxmlArchive::open_path(&path).expect("archive should open");
+    let slide_tree = PptxSlideTree {
+        presentation_part: "ppt/presentation.xml".to_string(),
+        presentation_size: None,
+        slides: vec![SlideReference {
+            slide_id: 256,
+            relationship_id: "rIdSlide1".to_string(),
+            part_name: "ppt/slides/slide1.xml".to_string(),
+            layout_part_name: None,
+            notes_part_name: None,
+            has_transition: false,
+            ignored_animation_nodes: 0,
+        }],
+        slide_masters: Vec::new(),
+    };
+    let page = build_slide_render_model(&archive, &slide_tree, 0).expect("render model");
+
+    let text_nodes: Vec<_> = page
+        .nodes
+        .iter()
+        .filter_map(|node| match node {
+            RenderNode::Text(node) => Some(node),
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(text_nodes.len(), 1);
+    assert_eq!(text_nodes[0].text, "Client");
+    assert!(text_nodes[0].style.underline);
+    assert!(text_nodes[0].style.bold);
+    assert_eq!(text_nodes[0].style.color_hex, "#428097");
+}

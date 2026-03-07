@@ -646,7 +646,7 @@
     - centered title regression fixture
     - mixed font line break regression fixture
     - bullet/default paragraph indent regression fixture
-- [ ] PPTX 밑줄, 텍스트 clipping, 제목/본문 개행 보정
+- [x] PPTX 밑줄, 텍스트 clipping, 제목/본문 개행 보정
   - Notes:
     - `fixday` slide 2~5에서 underline이 빠지고 `Client -> Clien` clipping이 발생한다
     - 제목 영역의 띄어쓰기/개행도 여전히 PDF와 차이가 있어 acceptance 전 보정이 필요하다
@@ -654,6 +654,7 @@
     - underline text render regression fixture
     - last-glyph clipping regression fixture
     - mixed Korean/Latin title wrapping regression fixture
+    - `wrap=\"none\"` text box regression fixture
 - [ ] PPTX shape/image transform 및 crop 보정
   - Tests:
     - image crop regression fixture

@@ -131,4 +131,32 @@ void main() {
     expect(node.style.gradientEndColorHex, '#70AD47');
     expect(node.style.gradientAngleDegrees, 32.0);
   });
+
+  test('page render model decodes underline text style field', () {
+    final page = PageRenderModel.fromJson({
+      'pageIndex': 0,
+      'width': 720.0,
+      'height': 540.0,
+      'nodes': [
+        {
+          'type': 'text',
+          'text': '두 가지',
+          'bounds': {'x': 32.0, 'y': 48.0, 'width': 120.0, 'height': 36.0},
+          'style': {
+            'fontFamily': 'Pretendard Medium',
+            'fontSize': 30.0,
+            'bold': true,
+            'italic': false,
+            'underline': true,
+            'colorHex': '#003296',
+          },
+          'range': {'start': 0, 'end': 4},
+        },
+      ],
+      'selectionAnchors': const [],
+    });
+
+    final node = page.nodes.single as TextRenderNodeModel;
+    expect(node.style.underline, isTrue);
+  });
 }

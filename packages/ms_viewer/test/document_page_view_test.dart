@@ -30,6 +30,35 @@ void main() {
     expect(painter.didExceedMaxLines, isFalse);
   });
 
+  test('render text painter applies underline decoration from engine style', () {
+    final node = TextRenderNodeModel.fromJson({
+      'type': 'text',
+      'text': '두 가지',
+      'bounds': {'x': 72.0, 'y': 132.0, 'width': 120.0, 'height': 38.0},
+      'style': {
+        'fontFamily': 'Pretendard Medium',
+        'fontSize': 30.0,
+        'bold': true,
+        'italic': false,
+        'underline': true,
+        'colorHex': '#003296',
+      },
+      'range': {'start': 0, 'end': 4},
+    });
+
+    final painter = buildRenderTextPainter(
+      node: node,
+      platform: ViewerPlatform.macOs,
+      scaleX: 1.0,
+      scaleY: 1.0,
+    );
+
+    expect(
+      painter.text!.style!.decoration,
+      TextDecoration.underline,
+    );
+  });
+
   testWidgets('placeholder paint test from mock render model', (tester) async {
     final page = PageRenderModel.fromJson({
       'pageIndex': 0,

@@ -166,6 +166,7 @@ pub enum SlideTextAlignment {
 pub struct SlideTextRunStyle {
     pub bold: Option<bool>,
     pub italic: Option<bool>,
+    pub underline: Option<bool>,
     pub font_size_centipoints: Option<u32>,
     pub font_face: Option<String>,
     pub east_asia_font_face: Option<String>,
@@ -233,6 +234,7 @@ pub struct SlideTextBox {
     pub name: String,
     pub bounds: Option<EmuRectangle>,
     pub insets: SlideTextInsets,
+    wrap_none: bool,
     pub placeholder: Option<SlidePlaceholderReference>,
     style_sheet: SlideTextStyleSheet,
     pub paragraphs: Vec<SlideTextParagraph>,
@@ -295,6 +297,7 @@ struct CoordinateTransform {
 struct PlaceholderTemplate {
     bounds: Option<EmuRectangle>,
     insets: SlideTextInsets,
+    wrap_none: bool,
     style_sheet: SlideTextStyleSheet,
 }
 
@@ -414,6 +417,9 @@ impl SlideTextRunStyle {
         if self.italic.is_none() {
             self.italic = fallback.italic;
         }
+        if self.underline.is_none() {
+            self.underline = fallback.underline;
+        }
         if self.font_size_centipoints.is_none() {
             self.font_size_centipoints = fallback.font_size_centipoints;
         }
@@ -434,6 +440,9 @@ impl SlideTextRunStyle {
         }
         if overrides.italic.is_some() {
             self.italic = overrides.italic;
+        }
+        if overrides.underline.is_some() {
+            self.underline = overrides.underline;
         }
         if overrides.font_size_centipoints.is_some() {
             self.font_size_centipoints = overrides.font_size_centipoints;
@@ -827,6 +836,7 @@ fn build_placeholder_catalog(
                 PlaceholderTemplate {
                     bounds: text_box.bounds.clone(),
                     insets: text_box.insets.clone(),
+                    wrap_none: text_box.wrap_none,
                     style_sheet: text_box.style_sheet.clone(),
                 },
             );
@@ -844,6 +854,7 @@ fn build_placeholder_catalog(
                 PlaceholderTemplate {
                     bounds: text_box.bounds.clone(),
                     insets: text_box.insets.clone(),
+                    wrap_none: text_box.wrap_none,
                     style_sheet: text_box.style_sheet.clone(),
                 },
             );
@@ -875,6 +886,10 @@ fn apply_placeholder_templates(
 
         if text_box.insets == SlideTextInsets::default() {
             text_box.insets = template.insets.clone();
+        }
+
+        if !text_box.wrap_none {
+            text_box.wrap_none = template.wrap_none;
         }
 
         text_box.style_sheet.merge_missing_from(&template.style_sheet);
@@ -1514,17 +1529,20 @@ fn parse_text_box_shape_with_context(
 
     let shape_id = parse_u32_attribute(properties, "id")?;
     let name = properties.required_attribute("name")?.to_string();
+    let body_properties = text_body.child("bodyPr");
     let bounds = shape
         .child("spPr")
         .and_then(|shape_properties| shape_properties.child("xfrm"))
         .map(|transform| parse_shape_transform_with_context(transform, coordinate_transform))
         .transpose()?
         .map(|transform| transform.bounds);
-    let insets = text_body
-        .child("bodyPr")
+    let insets = body_properties
         .map(parse_text_insets)
         .transpose()?
         .unwrap_or_default();
+    let wrap_none = body_properties
+        .and_then(|body_properties| body_properties.attribute("wrap"))
+        == Some("none");
     let placeholder = parse_placeholder_reference(non_visual)?;
     let style_sheet = text_body
         .child("lstStyle")
@@ -1538,6 +1556,7 @@ fn parse_text_box_shape_with_context(
         name,
         bounds,
         insets,
+        wrap_none,
         placeholder,
         style_sheet,
         paragraphs,
@@ -1967,6 +1986,9 @@ fn parse_text_run_style(run_properties: &XmlElement) -> Result<SlideTextRunStyle
         .transpose()?;
     let bold = run_properties.attribute("b").map(|value| value == "1");
     let italic = run_properties.attribute("i").map(|value| value == "1");
+    let underline = run_properties
+        .attribute("u")
+        .map(|value| !matches!(value, "none" | "0" | "false" | "off"));
     let font_face = run_properties
         .child("latin")
         .and_then(|latin| latin.attribute("typeface"))
@@ -1986,6 +2008,7 @@ fn parse_text_run_style(run_properties: &XmlElement) -> Result<SlideTextRunStyle
     Ok(SlideTextRunStyle {
         bold,
         italic,
+        underline,
         font_size_centipoints,
         font_face,
         east_asia_font_face,
@@ -2534,6 +2557,7 @@ fn build_table_nodes(
                     name: table.name.clone(),
                     bounds: Some(cell_bounds),
                     insets: cell.margins.clone(),
+                    wrap_none: false,
                     placeholder: None,
                     style_sheet,
                     paragraphs: cell.paragraphs.clone(),
@@ -2655,11 +2679,16 @@ fn build_text_nodes(
         let bullet_x = (base_x + margin_left + indent).max(base_x);
         let bullet_style =
             resolve_bullet_text_style(resolved_style.bullet.as_ref(), &resolved_style.default_run_style, theme_context);
+        let wrap_width = if text_box.wrap_none {
+            f32::MAX
+        } else {
+            line_available_width
+        };
         let lines = wrap_paragraph_lines(
             paragraph,
             &resolved_style.default_run_style,
             theme_context,
-            line_available_width,
+            wrap_width,
         );
 
         for (line_index, line) in lines.into_iter().enumerate() {
@@ -2759,6 +2788,7 @@ fn slide_run_style_to_text_style(
         font_size,
         bold: style.bold.unwrap_or(false),
         italic: style.italic.unwrap_or(false),
+        underline: style.underline.unwrap_or(false),
         color_hex: color_hex.unwrap_or_else(|| "#000000".to_string()),
         gradient_end_color_hex,
         gradient_angle_degrees,

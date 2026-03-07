@@ -38,6 +38,7 @@ class TextStyleModel {
     required this.fontSize,
     required this.bold,
     required this.italic,
+    required this.underline,
     required this.colorHex,
     required this.gradientEndColorHex,
     required this.gradientAngleDegrees,
@@ -47,6 +48,7 @@ class TextStyleModel {
   final double fontSize;
   final bool bold;
   final bool italic;
+  final bool underline;
   final String colorHex;
   final String? gradientEndColorHex;
   final double? gradientAngleDegrees;
@@ -57,6 +59,7 @@ class TextStyleModel {
       fontSize: (json['fontSize'] as num).toDouble(),
       bold: json['bold'] as bool? ?? false,
       italic: json['italic'] as bool? ?? false,
+      underline: json['underline'] as bool? ?? false,
       colorHex: json['colorHex'] as String,
       gradientEndColorHex: json['gradientEndColorHex'] as String?,
       gradientAngleDegrees: (json['gradientAngleDegrees'] as num?)?.toDouble(),

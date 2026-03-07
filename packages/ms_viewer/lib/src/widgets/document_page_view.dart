@@ -297,6 +297,8 @@ TextPainter buildRenderTextPainter({
         fontStyle: node.style.italic ? FontStyle.italic : FontStyle.normal,
         color: foreground == null ? baseColor : null,
         foreground: foreground,
+        decoration: node.style.underline ? TextDecoration.underline : null,
+        decorationColor: baseColor,
       ),
     ),
     textDirection: TextDirection.ltr,

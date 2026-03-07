@@ -49,6 +49,7 @@ pub struct TextStyle {
     pub font_size: f32,
     pub bold: bool,
     pub italic: bool,
+    pub underline: bool,
     pub color_hex: String,
     pub gradient_end_color_hex: Option<String>,
     pub gradient_angle_degrees: Option<f32>,
