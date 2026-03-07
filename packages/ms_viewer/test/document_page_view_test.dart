@@ -195,4 +195,37 @@ void main() {
     expect(find.byType(SelectionHighlightOverlay), findsOneWidget);
     expect(tester.getSize(find.byType(Image)), const Size(50, 37.5));
   });
+
+  testWidgets('renders gradient background boxes without crashing', (tester) async {
+    final page = PageRenderModel.fromJson({
+      'pageIndex': 0,
+      'width': 720.0,
+      'height': 540.0,
+      'nodes': [
+        {
+          'type': 'box',
+          'bounds': {'x': 0.0, 'y': 0.0, 'width': 720.0, 'height': 540.0},
+          'fillColorHex': '#003EA7',
+          'gradientEndColorHex': '#70AD47',
+          'gradientAngleDegrees': 62.0,
+          'strokeColorHex': null,
+          'strokeWidth': 0.0,
+        },
+      ],
+      'selectionAnchors': const [],
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: SizedBox(width: 360, height: 270, child: DocumentPageView(page: page)),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byType(DocumentPageView), findsOneWidget);
+    expect(find.byType(CustomPaint), findsWidgets);
+  });
 }

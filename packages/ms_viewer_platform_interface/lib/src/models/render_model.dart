@@ -151,12 +151,16 @@ class BoxRenderNodeModel extends RenderNodeModel {
   const BoxRenderNodeModel({
     required this.bounds,
     required this.fillColorHex,
+    required this.gradientEndColorHex,
+    required this.gradientAngleDegrees,
     required this.strokeColorHex,
     required this.strokeWidth,
   });
 
   final RectModel bounds;
   final String? fillColorHex;
+  final String? gradientEndColorHex;
+  final double? gradientAngleDegrees;
   final String? strokeColorHex;
   final double strokeWidth;
 
@@ -164,6 +168,8 @@ class BoxRenderNodeModel extends RenderNodeModel {
     return BoxRenderNodeModel(
       bounds: RectModel.fromJson(json['bounds'] as Map<String, Object?>),
       fillColorHex: json['fillColorHex'] as String?,
+      gradientEndColorHex: json['gradientEndColorHex'] as String?,
+      gradientAngleDegrees: (json['gradientAngleDegrees'] as num?)?.toDouble(),
       strokeColorHex: json['strokeColorHex'] as String?,
       strokeWidth: (json['strokeWidth'] as num).toDouble(),
     );

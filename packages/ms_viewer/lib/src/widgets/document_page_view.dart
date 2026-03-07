@@ -1,4 +1,6 @@
 import 'dart:convert';
+import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart'
     show TargetPlatform, defaultTargetPlatform, visibleForTesting;
@@ -122,6 +124,7 @@ List<Widget> _buildImageLayers({
           base64Decode(node.dataBase64!),
           fit: BoxFit.contain,
           filterQuality: FilterQuality.medium,
+          gaplessPlayback: true,
           errorBuilder: (context, error, stackTrace) => ColoredBox(
             color: const Color(0xFFE9EEF7),
             child: Center(
@@ -174,9 +177,19 @@ class _PageRenderPainter extends CustomPainter {
             node.bounds.width * scaleX,
             node.bounds.height * scaleY,
           );
-          final paint = Paint()
-            ..style = PaintingStyle.fill
-            ..color = _parseColor(node.fillColorHex) ?? Colors.transparent;
+          final paint = Paint()..style = PaintingStyle.fill;
+          final fillColor = _parseColor(node.fillColorHex);
+          final gradientEndColor = _parseColor(node.gradientEndColorHex);
+          if (fillColor != null && gradientEndColor != null) {
+            paint.shader = _buildLinearGradientShader(
+              rect,
+              fillColor,
+              gradientEndColor,
+              node.gradientAngleDegrees ?? 0,
+            );
+          } else {
+            paint.color = fillColor ?? Colors.transparent;
+          }
           canvas.drawRect(rect, paint);
           if (node.strokeWidth > 0) {
             canvas.drawRect(
@@ -216,6 +229,22 @@ class _PageRenderPainter extends CustomPainter {
   bool shouldRepaint(covariant _PageRenderPainter oldDelegate) {
     return oldDelegate.page != page;
   }
+}
+
+Shader _buildLinearGradientShader(
+  Rect rect,
+  Color startColor,
+  Color endColor,
+  double angleDegrees,
+) {
+  final radians = angleDegrees * 3.141592653589793 / 180.0;
+  final dx = math.cos(radians);
+  final dy = math.sin(radians);
+  final center = rect.center;
+  final extent = Offset(rect.width * dx, rect.height * dy) / 2;
+  final start = center - extent;
+  final end = center + extent;
+  return ui.Gradient.linear(start, end, [startColor, endColor]);
 }
 
 @visibleForTesting

@@ -52,6 +52,31 @@ void main() {
     expect(page.nodes.single, isA<BoxRenderNodeModel>());
   });
 
+  test('page render model decodes gradient box node', () {
+    final page = PageRenderModel.fromJson({
+      'pageIndex': 1,
+      'width': 1024.0,
+      'height': 768.0,
+      'nodes': [
+        {
+          'type': 'box',
+          'bounds': {'x': 0.0, 'y': 0.0, 'width': 1024.0, 'height': 768.0},
+          'fillColorHex': '#003EA7',
+          'gradientEndColorHex': '#70AD47',
+          'gradientAngleDegrees': 62.0,
+          'strokeColorHex': null,
+          'strokeWidth': 0.0,
+        },
+      ],
+      'selectionAnchors': [],
+    });
+
+    final node = page.nodes.single as BoxRenderNodeModel;
+    expect(node.fillColorHex, '#003EA7');
+    expect(node.gradientEndColorHex, '#70AD47');
+    expect(node.gradientAngleDegrees, 62.0);
+  });
+
   test('page render model decodes image node payload', () {
     final page = PageRenderModel.fromJson({
       'pageIndex': 2,

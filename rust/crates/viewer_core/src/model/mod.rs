@@ -219,6 +219,8 @@ pub struct ImageNode {
 pub struct BoxNode {
     pub bounds: Rect,
     pub fill_color_hex: Option<String>,
+    pub gradient_end_color_hex: Option<String>,
+    pub gradient_angle_degrees: Option<f32>,
     pub stroke_color_hex: Option<String>,
     pub stroke_width: f32,
 }

@@ -907,6 +907,8 @@ pub fn build_selection_page_models(
                             height,
                         },
                         fill_color_hex: None,
+                        gradient_end_color_hex: None,
+                        gradient_angle_degrees: None,
                         stroke_color_hex: Some("#CBD5E1".to_string()),
                         stroke_width: 1.0,
                     }));
@@ -921,6 +923,8 @@ pub fn build_selection_page_models(
                                     height: cell.height,
                                 },
                                 fill_color_hex: Some("#FFFFFF".to_string()),
+                                gradient_end_color_hex: None,
+                                gradient_angle_degrees: None,
                                 stroke_color_hex: Some("#CBD5E1".to_string()),
                                 stroke_width: 1.0,
                             }));

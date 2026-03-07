@@ -611,10 +611,26 @@
 
 ## Phase 2.6: PPTX visual parity pass
 ### Visual regression triage
-- [ ] issue 기반 PPTX 시각 회귀 분류 규칙 정리
+- [x] issue 기반 PPTX 시각 회귀 분류 규칙 정리
   - Scope:
     - slide 배치, 텍스트 박스 정렬, shape/image fit, theme font 차이를 `issue/` 기준으로 분류
     - 최소 재현 fixture 후보를 `fixtures/regression/`에 승격
+  - Notes:
+    - `fixday` 케이스는 [docs/qa/PPTX_VISUAL_TRIAGE.md](/Users/ultramarine/Documents/Workspace/Fapirus/ms_viewer/docs/qa/PPTX_VISUAL_TRIAGE.md) 기준으로 관리한다
+
+### Rendering completeness
+- [x] PPTX placeholder layout inheritance 보정
+  - Tests:
+    - placeholder without local `spPr` inherits layout bounds
+- [x] PPTX group shape, table, background rendering 보정
+  - Tests:
+    - `grpSp` recursive image render regression
+    - `graphicFrame/a:tbl` render regression
+    - master background regression
+- [ ] PPTX repaint flicker 완화
+  - Notes:
+    - `gaplessPlayback` 1차 적용
+    - 수동 점검에서 잔존 여부 확인
 
 ### Geometry and typography
 - [ ] PPTX 텍스트 박스 정렬과 줄바꿈 보정

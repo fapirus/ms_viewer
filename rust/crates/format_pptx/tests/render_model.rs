@@ -1,7 +1,9 @@
 use std::fs;
 use std::io::Write;
 
-use format_pptx::{build_slide_render_model, PptxSlideTree, PresentationSize, SlideReference};
+use format_pptx::{
+    build_slide_render_model, parse_pptx, PptxSlideTree, PresentationSize, SlideReference,
+};
 use tempfile::tempdir;
 use viewer_core::archive::OoxmlArchive;
 use viewer_core::model::RenderNode;
@@ -359,4 +361,281 @@ fn render_model_ignores_non_hex_shape_colors_but_keeps_nodes() {
         .collect();
     assert_eq!(box_nodes.len(), 1);
     assert!(box_nodes[0].fill_color_hex.is_none());
+}
+
+#[test]
+fn render_model_inherits_layout_bounds_recurses_groups_and_renders_tables_and_background() {
+    let dir = tempdir().expect("tempdir should exist");
+    let path = dir.path().join("render-model-inheritance.pptx");
+    create_zip(
+        &path,
+        &[
+            (
+                "[Content_Types].xml",
+                br#"
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Default Extension="png" ContentType="image/png"/>
+  <Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/>
+  <Override PartName="/ppt/slides/slide1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>
+  <Override PartName="/ppt/slideLayouts/slideLayout1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideLayout+xml"/>
+  <Override PartName="/ppt/slideMasters/slideMaster1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideMaster+xml"/>
+  <Override PartName="/ppt/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>
+</Types>
+"#,
+            ),
+            (
+                "_rels/.rels",
+                br#"
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="ppt/presentation.xml"/>
+</Relationships>
+"#,
+            ),
+            (
+                "ppt/presentation.xml",
+                br#"
+<p:presentation xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+                xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <p:sldMasterIdLst>
+    <p:sldMasterId id="2147483648" r:id="rIdMaster1"/>
+  </p:sldMasterIdLst>
+  <p:sldIdLst>
+    <p:sldId id="256" r:id="rIdSlide1"/>
+  </p:sldIdLst>
+  <p:sldSz cx="9144000" cy="6858000"/>
+</p:presentation>
+"#,
+            ),
+            (
+                "ppt/_rels/presentation.xml.rels",
+                br#"
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdMaster1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster" Target="slideMasters/slideMaster1.xml"/>
+  <Relationship Id="rIdSlide1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide1.xml"/>
+</Relationships>
+"#,
+            ),
+            (
+                "ppt/slides/slide1.xml",
+                br#"
+<p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+       xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"
+       xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <p:cSld>
+    <p:spTree>
+      <p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>
+      <p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr>
+      <p:sp>
+        <p:nvSpPr>
+          <p:cNvPr id="2" name="Body Placeholder"/>
+          <p:cNvSpPr/>
+          <p:nvPr><p:ph type="body" idx="1"/></p:nvPr>
+        </p:nvSpPr>
+        <p:txBody>
+          <a:bodyPr/>
+          <a:lstStyle/>
+          <a:p><a:r><a:t>Inherited placeholder</a:t></a:r></a:p>
+        </p:txBody>
+      </p:sp>
+      <p:grpSp>
+        <p:nvGrpSpPr><p:cNvPr id="3" name="Group 1"/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>
+        <p:grpSpPr>
+          <a:xfrm>
+            <a:off x="127000" y="1778000"/>
+            <a:ext cx="2540000" cy="1524000"/>
+            <a:chOff x="0" y="0"/>
+            <a:chExt cx="2540000" cy="1524000"/>
+          </a:xfrm>
+        </p:grpSpPr>
+        <p:pic>
+          <p:nvPicPr><p:cNvPr id="4" name="Grouped Picture"/><p:cNvPicPr/><p:nvPr/></p:nvPicPr>
+          <p:blipFill><a:blip r:embed="rIdImage1"/></p:blipFill>
+          <p:spPr>
+            <a:xfrm><a:off x="254000" y="254000"/><a:ext cx="1270000" cy="762000"/></a:xfrm>
+            <a:prstGeom prst="rect"><a:avLst/></a:prstGeom>
+          </p:spPr>
+        </p:pic>
+      </p:grpSp>
+      <p:graphicFrame>
+        <p:nvGraphicFramePr><p:cNvPr id="5" name="Table 1"/><p:cNvGraphicFramePr/><p:nvPr/></p:nvGraphicFramePr>
+        <p:xfrm><a:off x="5080000" y="1778000"/><a:ext cx="2032000" cy="1016000"/></p:xfrm>
+        <a:graphic>
+          <a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/table">
+            <a:tbl>
+              <a:tblGrid>
+                <a:gridCol w="1016000"/>
+                <a:gridCol w="1016000"/>
+              </a:tblGrid>
+              <a:tr h="508000">
+                <a:tc>
+                  <a:txBody><a:bodyPr/><a:lstStyle/><a:p><a:r><a:t>Cell A</a:t></a:r></a:p></a:txBody>
+                  <a:tcPr marL="63500" marR="63500" marT="31750" marB="31750"><a:solidFill><a:schemeClr val="accent1"/></a:solidFill></a:tcPr>
+                </a:tc>
+                <a:tc>
+                  <a:txBody><a:bodyPr/><a:lstStyle/><a:p><a:r><a:t>Cell B</a:t></a:r></a:p></a:txBody>
+                  <a:tcPr marL="63500" marR="63500" marT="31750" marB="31750"><a:lnL w="12700"><a:solidFill><a:schemeClr val="accent2"/></a:solidFill></a:lnL></a:tcPr>
+                </a:tc>
+              </a:tr>
+            </a:tbl>
+          </a:graphicData>
+        </a:graphic>
+      </p:graphicFrame>
+    </p:spTree>
+  </p:cSld>
+</p:sld>
+"#,
+            ),
+            (
+                "ppt/slides/_rels/slide1.xml.rels",
+                br#"
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdLayout1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout1.xml"/>
+  <Relationship Id="rIdImage1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image1.png"/>
+</Relationships>
+"#,
+            ),
+            (
+                "ppt/slideLayouts/slideLayout1.xml",
+                br#"
+<p:sldLayout xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+             xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"
+             xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <p:cSld>
+    <p:spTree>
+      <p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>
+      <p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr>
+      <p:sp>
+        <p:nvSpPr>
+          <p:cNvPr id="2" name="Body Placeholder Layout"/>
+          <p:cNvSpPr/>
+          <p:nvPr><p:ph type="body" idx="1"/></p:nvPr>
+        </p:nvSpPr>
+        <p:spPr>
+          <a:xfrm><a:off x="762000" y="889000"/><a:ext cx="3810000" cy="1016000"/></a:xfrm>
+          <a:prstGeom prst="rect"><a:avLst/></a:prstGeom>
+        </p:spPr>
+        <p:txBody><a:bodyPr lIns="127000" rIns="127000" tIns="63500" bIns="63500"/><a:lstStyle/><a:p/></p:txBody>
+      </p:sp>
+    </p:spTree>
+  </p:cSld>
+</p:sldLayout>
+"#,
+            ),
+            (
+                "ppt/slideLayouts/_rels/slideLayout1.xml.rels",
+                br#"
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdMaster1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster" Target="../slideMasters/slideMaster1.xml"/>
+</Relationships>
+"#,
+            ),
+            (
+                "ppt/slideMasters/slideMaster1.xml",
+                br#"
+<p:sldMaster xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+             xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"
+             xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <p:cSld>
+    <p:spTree>
+      <p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>
+      <p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr>
+      <p:sp>
+        <p:nvSpPr><p:cNvPr id="2" name="Background"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr>
+        <p:spPr>
+          <a:xfrm><a:off x="0" y="0"/><a:ext cx="9144000" cy="6858000"/></a:xfrm>
+          <a:prstGeom prst="rect"><a:avLst/></a:prstGeom>
+          <a:gradFill>
+            <a:gsLst>
+              <a:gs pos="0"><a:srgbClr val="003EA7"/></a:gs>
+              <a:gs pos="100000"><a:srgbClr val="70AD47"/></a:gs>
+            </a:gsLst>
+            <a:lin ang="3720000" scaled="0"/>
+          </a:gradFill>
+          <a:ln><a:noFill/></a:ln>
+        </p:spPr>
+      </p:sp>
+    </p:spTree>
+  </p:cSld>
+  <p:clrMap bg1="lt1" tx1="dk1" bg2="lt2" tx2="dk2" accent1="accent1" accent2="accent2" accent3="accent3" accent4="accent4" accent5="accent5" accent6="accent6" hlink="hlink" folHlink="folHlink"/>
+</p:sldMaster>
+"#,
+            ),
+            (
+                "ppt/slideMasters/_rels/slideMaster1.xml.rels",
+                br#"
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdLayout1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout1.xml"/>
+  <Relationship Id="rIdTheme1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="../theme/theme1.xml"/>
+</Relationships>
+"#,
+            ),
+            (
+                "ppt/theme/theme1.xml",
+                br#"
+<a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" name="Fixture Theme">
+  <a:themeElements>
+    <a:clrScheme name="Fixture">
+      <a:dk1><a:srgbClr val="111111"/></a:dk1>
+      <a:lt1><a:srgbClr val="FFFFFF"/></a:lt1>
+      <a:dk2><a:srgbClr val="222222"/></a:dk2>
+      <a:lt2><a:srgbClr val="EEEEEE"/></a:lt2>
+      <a:accent1><a:srgbClr val="2F45A5"/></a:accent1>
+      <a:accent2><a:srgbClr val="4BB0D8"/></a:accent2>
+      <a:accent3><a:srgbClr val="70AD47"/></a:accent3>
+      <a:accent4><a:srgbClr val="FFC000"/></a:accent4>
+      <a:accent5><a:srgbClr val="5B9BD5"/></a:accent5>
+      <a:accent6><a:srgbClr val="7030A0"/></a:accent6>
+      <a:hlink><a:srgbClr val="0563C1"/></a:hlink>
+      <a:folHlink><a:srgbClr val="954F72"/></a:folHlink>
+    </a:clrScheme>
+  </a:themeElements>
+</a:theme>
+"#,
+            ),
+            ("ppt/media/image1.png", b"fake-png"),
+        ],
+    );
+
+    let archive = OoxmlArchive::open_path(&path).expect("archive should open");
+    let slide_tree = parse_pptx(&archive).expect("slide tree");
+    let page = build_slide_render_model(&archive, &slide_tree, 0).expect("render model");
+
+    let text_nodes: Vec<_> = page
+        .nodes
+        .iter()
+        .filter_map(|node| match node {
+            RenderNode::Text(node) => Some(node),
+            _ => None,
+        })
+        .collect();
+    let box_nodes: Vec<_> = page
+        .nodes
+        .iter()
+        .filter_map(|node| match node {
+            RenderNode::Box(node) => Some(node),
+            _ => None,
+        })
+        .collect();
+    let image_nodes: Vec<_> = page
+        .nodes
+        .iter()
+        .filter_map(|node| match node {
+            RenderNode::Image(node) => Some(node),
+            _ => None,
+        })
+        .collect();
+
+    assert!(text_nodes.iter().any(|node| node.text.contains("Inherited placeholder")));
+    assert!(text_nodes.iter().any(|node| node.text.contains("Cell A")));
+    assert!(text_nodes.iter().any(|node| node.text.contains("Cell B")));
+    assert_eq!(image_nodes.len(), 1);
+    assert!(image_nodes[0].bounds.x > 25.0);
+    assert!(box_nodes.iter().any(|node| {
+        node.bounds.width >= 719.0
+            && (node.fill_color_hex.is_some() || node.gradient_end_color_hex.is_some())
+    }));
+    assert!(box_nodes.iter().any(|node| node.fill_color_hex.as_deref() == Some("#2F45A5")));
+    assert!(box_nodes.iter().any(|node| node.stroke_color_hex.as_deref() == Some("#4BB0D8")));
 }

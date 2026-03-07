@@ -2,7 +2,7 @@ use std::fs;
 use std::io::Write;
 
 use format_pptx::{
-    parse_slide_text_boxes, SlidePlaceholderKind, SlideTextAlignment,
+    parse_slide_text_boxes, SlidePlaceholderKind, SlidePlaceholderReference, SlideTextAlignment,
 };
 use tempfile::tempdir;
 use viewer_core::archive::OoxmlArchive;
@@ -116,7 +116,13 @@ fn parses_slide_text_boxes_with_placeholder_bounds_and_runs() {
     let title = &text_boxes[0];
     assert_eq!(title.shape_id, 2);
     assert_eq!(title.name, "Title 1");
-    assert_eq!(title.placeholder, Some(SlidePlaceholderKind::Title));
+    assert_eq!(
+        title.placeholder,
+        Some(SlidePlaceholderReference {
+            kind: SlidePlaceholderKind::Title,
+            index: None,
+        })
+    );
     assert_eq!(title.bounds.as_ref().expect("bounds").x, 457_200);
     assert_eq!(title.bounds.as_ref().expect("bounds").width, 8_229_600);
     assert_eq!(title.paragraphs.len(), 1);
@@ -145,7 +151,13 @@ fn parses_slide_text_boxes_with_placeholder_bounds_and_runs() {
     assert_eq!(title.paragraphs[0].runs[2].text, "World");
 
     let body = &text_boxes[1];
-    assert_eq!(body.placeholder, Some(SlidePlaceholderKind::Body));
+    assert_eq!(
+        body.placeholder,
+        Some(SlidePlaceholderReference {
+            kind: SlidePlaceholderKind::Body,
+            index: None,
+        })
+    );
     assert!(body.bounds.is_none());
     assert_eq!(body.paragraphs[0].level, Some(1));
     assert_eq!(body.paragraphs[0].runs.len(), 1);
