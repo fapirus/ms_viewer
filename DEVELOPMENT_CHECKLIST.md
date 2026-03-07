@@ -493,7 +493,16 @@
   - Tests:
     - render model contains text, image, box nodes fixture
     - non-hex scheme color normalization fixture
-- [ ] text layout in slide coordinates 구현
+- [x] text layout in slide coordinates 구현
+  - Done:
+    - `bodyPr` inset 파싱과 text box content frame 반영
+    - paragraph level 기반 indent 반영
+    - token/character 단위 wrap 추가
+    - box 높이 경계 안에서 line 배치
+    - centered/right paragraph의 line x 계산 보강
+  - Tests:
+    - centered title line positioning fixture
+    - narrow body text multi-line wrap fixture
 - [ ] slide search index 구현
 - [ ] slide text selection metadata 구현
 

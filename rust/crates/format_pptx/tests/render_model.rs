@@ -150,7 +150,8 @@ fn builds_slide_render_model_from_shapes_images_and_text() {
     assert_eq!(text_nodes[0].text, "Title Text");
     assert_eq!(text_nodes[0].style.font_family, "Aptos");
     assert_eq!(text_nodes[0].style.font_size, 24.0);
-    assert!(text_nodes[0].bounds.x > 10.0);
+    assert!(text_nodes[0].bounds.x > 60.0);
+    assert!(text_nodes[0].bounds.x < 70.0);
 
     let box_nodes: Vec<_> = page
         .nodes
@@ -176,6 +177,100 @@ fn builds_slide_render_model_from_shapes_images_and_text() {
     assert_eq!(image_nodes[0].resource_id, "ppt/media/image1.png");
     assert_eq!(image_nodes[0].description.as_deref(), Some("Sample image"));
     assert!(image_nodes[0].data_base64.is_some());
+}
+
+#[test]
+fn wraps_text_into_multiple_lines_with_level_indent_inside_box() {
+    let dir = tempdir().expect("tempdir should exist");
+    let path = dir.path().join("render-model-wrap.pptx");
+    create_zip(
+        &path,
+        &[
+            (
+                "ppt/slides/slide1.xml",
+                br#"
+<p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+       xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <p:cSld>
+    <p:spTree>
+      <p:sp>
+        <p:nvSpPr>
+          <p:cNvPr id="2" name="Body 1" />
+          <p:cNvSpPr />
+          <p:nvPr />
+        </p:nvSpPr>
+        <p:spPr>
+          <a:xfrm>
+            <a:off x="254000" y="254000" />
+            <a:ext cx="1200000" cy="2000000" />
+          </a:xfrm>
+        </p:spPr>
+        <p:txBody>
+          <a:bodyPr lIns="127000" rIns="127000" tIns="127000" bIns="127000" />
+          <a:lstStyle />
+          <a:p>
+            <a:pPr lvl="1" />
+            <a:r>
+              <a:rPr sz="2000">
+                <a:latin typeface="Aptos" />
+              </a:rPr>
+              <a:t>alpha beta gamma delta</a:t>
+            </a:r>
+          </a:p>
+        </p:txBody>
+      </p:sp>
+    </p:spTree>
+  </p:cSld>
+</p:sld>
+"#,
+            ),
+            (
+                "ppt/slides/_rels/slide1.xml.rels",
+                br#"
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships" />
+"#,
+            ),
+        ],
+    );
+
+    let archive = OoxmlArchive::open_path(&path).expect("archive should open");
+    let slide_tree = PptxSlideTree {
+        presentation_part: "ppt/presentation.xml".to_string(),
+        presentation_size: None,
+        slides: vec![SlideReference {
+            slide_id: 256,
+            relationship_id: "rIdSlide1".to_string(),
+            part_name: "ppt/slides/slide1.xml".to_string(),
+            layout_part_name: None,
+            notes_part_name: None,
+            has_transition: false,
+            ignored_animation_nodes: 0,
+        }],
+        slide_masters: Vec::new(),
+    };
+    let page = build_slide_render_model(&archive, &slide_tree, 0).expect("render model");
+
+    let text_nodes: Vec<_> = page
+        .nodes
+        .iter()
+        .filter_map(|node| match node {
+            RenderNode::Text(node) => Some(node),
+            _ => None,
+        })
+        .collect();
+
+    assert!(text_nodes.len() >= 3);
+    let mut line_ys: Vec<i32> = text_nodes
+        .iter()
+        .map(|node| node.bounds.y.round() as i32)
+        .collect();
+    line_ys.sort_unstable();
+    line_ys.dedup();
+    assert!(line_ys.len() >= 3);
+    assert!(text_nodes.iter().all(|node| node.bounds.x >= 48.0));
+    assert!(text_nodes
+        .iter()
+        .all(|node| node.bounds.x + node.bounds.width <= 114.6));
 }
 
 #[test]

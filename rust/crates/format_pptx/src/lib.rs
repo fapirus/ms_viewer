@@ -172,11 +172,20 @@ pub struct SlideTextParagraph {
     pub runs: Vec<SlideTextRun>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct SlideTextInsets {
+    pub left: i64,
+    pub top: i64,
+    pub right: i64,
+    pub bottom: i64,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SlideTextBox {
     pub shape_id: u32,
     pub name: String,
     pub bounds: Option<EmuRectangle>,
+    pub insets: SlideTextInsets,
     pub placeholder: Option<SlidePlaceholderKind>,
     pub paragraphs: Vec<SlideTextParagraph>,
 }
@@ -619,6 +628,11 @@ fn parse_text_box_shape(shape: &XmlElement) -> Result<Option<SlideTextBox>, View
         .map(parse_shape_transform)
         .transpose()?
         .map(|transform| transform.bounds);
+    let insets = text_body
+        .child("bodyPr")
+        .map(parse_text_insets)
+        .transpose()?
+        .unwrap_or_default();
     let placeholder = parse_placeholder_kind(non_visual);
     let paragraphs = parse_text_paragraphs(text_body)?;
 
@@ -626,6 +640,7 @@ fn parse_text_box_shape(shape: &XmlElement) -> Result<Option<SlideTextBox>, View
         shape_id,
         name,
         bounds,
+        insets,
         placeholder,
         paragraphs,
     }))
@@ -935,6 +950,15 @@ fn parse_image_crop(src_rect: &XmlElement) -> Result<ImageCrop, ViewerError> {
     })
 }
 
+fn parse_text_insets(body_properties: &XmlElement) -> Result<SlideTextInsets, ViewerError> {
+    Ok(SlideTextInsets {
+        left: parse_i64_optional_attribute(body_properties, "lIns")?.unwrap_or(0),
+        top: parse_i64_optional_attribute(body_properties, "tIns")?.unwrap_or(0),
+        right: parse_i64_optional_attribute(body_properties, "rIns")?.unwrap_or(0),
+        bottom: parse_i64_optional_attribute(body_properties, "bIns")?.unwrap_or(0),
+    })
+}
+
 fn parse_u32_optional_attribute(
     element: &XmlElement,
     name: &str,
@@ -942,6 +966,16 @@ fn parse_u32_optional_attribute(
     element
         .attribute(name)
         .map(|value| value.parse::<u32>().map_err(|_| ViewerError::InvalidDocument))
+        .transpose()
+}
+
+fn parse_i64_optional_attribute(
+    element: &XmlElement,
+    name: &str,
+) -> Result<Option<i64>, ViewerError> {
+    element
+        .attribute(name)
+        .map(|value| value.parse::<i64>().map_err(|_| ViewerError::InvalidDocument))
         .transpose()
 }
 
@@ -1014,106 +1048,68 @@ fn build_text_nodes(text_box: &SlideTextBox) -> Vec<RenderNode> {
         return Vec::new();
     };
 
-    let available_width = emu_to_points(bounds.width).max(1.0);
-    let mut cursor_y = emu_to_points(bounds.y);
-    let base_x = emu_to_points(bounds.x);
+    let left_inset = emu_to_points(text_box.insets.left);
+    let top_inset = emu_to_points(text_box.insets.top);
+    let right_inset = emu_to_points(text_box.insets.right);
+    let bottom_inset = emu_to_points(text_box.insets.bottom);
+    let content_width = (emu_to_points(bounds.width) - left_inset - right_inset).max(1.0);
+    let base_x = emu_to_points(bounds.x) + left_inset;
+    let mut cursor_y = emu_to_points(bounds.y) + top_inset;
+    let max_bottom = emu_to_points(bounds.y + bounds.height) - bottom_inset;
     let mut nodes = Vec::new();
     let mut text_offset = 0u32;
 
-    for paragraph in &text_box.paragraphs {
-        let line_runs = paragraph_line_runs(paragraph);
+    'paragraphs: for paragraph in &text_box.paragraphs {
         let alignment = paragraph
             .alignment
             .as_ref()
             .map(slide_alignment_to_paragraph_alignment)
             .unwrap_or(ParagraphAlignment::Left);
-        let paragraph_font_size = paragraph
-            .runs
-            .iter()
-            .map(|run| slide_run_style_to_text_style(&run.style))
-            .map(|style| style.font_size)
-            .find(|size| *size > 0.0)
-            .unwrap_or(18.0);
-        let line_height = (paragraph_font_size * 1.2).max(18.0);
+        let paragraph_font_size = paragraph_default_font_size(paragraph);
+        let paragraph_spacing = (paragraph_font_size * 0.2).max(4.0);
+        let indent = paragraph.level.unwrap_or(0) as f32 * 18.0;
+        let line_base_x = base_x + indent;
+        let line_available_width = (content_width - indent).max(1.0);
+        let lines = wrap_paragraph_lines(paragraph, line_available_width);
 
-        for line_runs in line_runs {
-            let line_width = line_runs
-                .iter()
-                .map(|run| {
-                    let style = slide_run_style_to_text_style(&run.style);
-                    estimate_text_width(&run.text, &style)
-                })
-                .sum::<f32>();
-            let mut cursor_x = resolve_line_x(base_x, available_width, line_width, &alignment);
+        for line in lines {
+            if cursor_y + line.height > max_bottom {
+                break 'paragraphs;
+            }
 
-            for run in line_runs {
-                if run.text.is_empty() {
-                    continue;
-                }
+            let mut cursor_x =
+                resolve_line_x(line_base_x, line_available_width, line.width, &alignment);
 
-                let style = slide_run_style_to_text_style(&run.style);
-                let width = estimate_text_width(&run.text, &style).max(1.0);
-                let char_count = run.text.chars().count() as u32;
-                let bounds = Rect {
-                    x: cursor_x,
-                    y: cursor_y,
-                    width,
-                    height: line_height,
-                };
-
+            for span in line.spans {
+                let char_count = span.text.chars().count() as u32;
                 nodes.push(RenderNode::Text(TextNode {
-                    text: run.text.clone(),
-                    bounds,
-                    style,
+                    text: span.text,
+                    bounds: Rect {
+                        x: cursor_x,
+                        y: cursor_y,
+                        width: span.width.max(1.0),
+                        height: line.height,
+                    },
+                    style: span.style,
                     range: TextRange {
                         start: text_offset,
                         end: text_offset + char_count,
                     },
                 }));
-
                 text_offset += char_count;
-                cursor_x += width;
+                cursor_x += span.width;
             }
 
-            cursor_y += line_height;
+            cursor_y += line.height;
         }
 
-        cursor_y += (line_height * 0.2).max(4.0);
+        if cursor_y + paragraph_spacing > max_bottom {
+            break;
+        }
+        cursor_y += paragraph_spacing;
     }
 
     nodes
-}
-
-fn paragraph_line_runs(paragraph: &SlideTextParagraph) -> Vec<Vec<SlideTextRun>> {
-    let mut lines = Vec::new();
-    let mut current = Vec::new();
-
-    for run in &paragraph.runs {
-        let parts: Vec<&str> = run.text.split('\n').collect();
-        for (index, part) in parts.iter().enumerate() {
-            if !part.is_empty() {
-                current.push(SlideTextRun {
-                    text: (*part).to_string(),
-                    style: run.style.clone(),
-                });
-            }
-
-            if index + 1 < parts.len() {
-                lines.push(current);
-                current = Vec::new();
-            }
-        }
-    }
-
-    if !current.is_empty() {
-        lines.push(current);
-    }
-
-    if lines.is_empty() {
-        lines.push(Vec::new());
-    }
-
-    lines
 }
 
 fn slide_alignment_to_paragraph_alignment(alignment: &SlideTextAlignment) -> ParagraphAlignment {
@@ -1194,4 +1190,261 @@ fn is_wide_character(character: char) -> bool {
             | 0xFFE0..=0xFFE6
             | 0x1F300..=0x1FAFF
     )
+}
+
+#[derive(Debug, Clone)]
+struct WrappedTextSpan {
+    text: String,
+    style: TextStyle,
+    width: f32,
+}
+
+#[derive(Debug, Clone)]
+struct WrappedLine {
+    spans: Vec<WrappedTextSpan>,
+    width: f32,
+    height: f32,
+}
+
+#[derive(Debug, Clone)]
+struct LineBuilder {
+    spans: Vec<WrappedTextSpan>,
+    width: f32,
+    max_font_size: f32,
+}
+
+impl LineBuilder {
+    fn new() -> Self {
+        Self {
+            spans: Vec::new(),
+            width: 0.0,
+            max_font_size: 0.0,
+        }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.spans.is_empty()
+    }
+
+    fn push_text(&mut self, text: String, style: TextStyle) {
+        if text.is_empty() {
+            return;
+        }
+
+        let width = estimate_text_width(&text, &style);
+        self.max_font_size = self.max_font_size.max(style.font_size);
+
+        if let Some(last) = self.spans.last_mut() {
+            if last.style == style {
+                last.text.push_str(&text);
+                last.width += width;
+                self.width += width;
+                return;
+            }
+        }
+
+        self.width += width;
+        self.spans.push(WrappedTextSpan { text, style, width });
+    }
+
+    fn finish(self, fallback_font_size: f32) -> WrappedLine {
+        WrappedLine {
+            width: self.width,
+            height: (self.max_font_size.max(fallback_font_size) * 1.2).max(18.0),
+            spans: self.spans,
+        }
+    }
+}
+
+fn paragraph_default_font_size(paragraph: &SlideTextParagraph) -> f32 {
+    paragraph
+        .runs
+        .iter()
+        .map(|run| slide_run_style_to_text_style(&run.style).font_size)
+        .find(|size| *size > 0.0)
+        .unwrap_or(18.0)
+}
+
+fn wrap_paragraph_lines(paragraph: &SlideTextParagraph, max_width: f32) -> Vec<WrappedLine> {
+    let default_font_size = paragraph_default_font_size(paragraph);
+    let mut lines = Vec::new();
+    let mut current = LineBuilder::new();
+
+    for run in &paragraph.runs {
+        let style = slide_run_style_to_text_style(&run.style);
+        let parts: Vec<&str> = run.text.split('\n').collect();
+
+        for (index, part) in parts.iter().enumerate() {
+            push_wrapped_text_part(part, &style, max_width, &mut current, &mut lines, default_font_size);
+
+            if index + 1 < parts.len() {
+                flush_line(&mut current, &mut lines, default_font_size, true);
+            }
+        }
+    }
+
+    let should_emit_empty_line = lines.is_empty();
+    flush_line(
+        &mut current,
+        &mut lines,
+        default_font_size,
+        should_emit_empty_line,
+    );
+    lines
+}
+
+fn push_wrapped_text_part(
+    part: &str,
+    style: &TextStyle,
+    max_width: f32,
+    current: &mut LineBuilder,
+    lines: &mut Vec<WrappedLine>,
+    default_font_size: f32,
+) {
+    for token in tokenize_text_for_layout(part) {
+        let is_whitespace = token.chars().all(char::is_whitespace);
+        if is_whitespace {
+            if current.is_empty() {
+                continue;
+            }
+
+            let width = estimate_text_width(&token, style);
+            if current.width + width <= max_width {
+                current.push_text(token, style.clone());
+            } else {
+                flush_line(current, lines, default_font_size, false);
+            }
+            continue;
+        }
+
+        push_non_whitespace_token(&token, style, max_width, current, lines, default_font_size);
+    }
+}
+
+fn push_non_whitespace_token(
+    token: &str,
+    style: &TextStyle,
+    max_width: f32,
+    current: &mut LineBuilder,
+    lines: &mut Vec<WrappedLine>,
+    default_font_size: f32,
+) {
+    let token_width = estimate_text_width(token, style);
+
+    if current.is_empty() {
+        if token_width <= max_width {
+            current.push_text(token.to_string(), style.clone());
+            return;
+        }
+
+        for segment in break_text_to_width(token, max_width, style) {
+            current.push_text(segment, style.clone());
+            flush_line(current, lines, default_font_size, false);
+        }
+        return;
+    }
+
+    if current.width + token_width <= max_width {
+        current.push_text(token.to_string(), style.clone());
+        return;
+    }
+
+    flush_line(current, lines, default_font_size, false);
+
+    if token_width <= max_width {
+        current.push_text(token.to_string(), style.clone());
+        return;
+    }
+
+    for segment in break_text_to_width(token, max_width, style) {
+        current.push_text(segment, style.clone());
+        flush_line(current, lines, default_font_size, false);
+    }
+}
+
+fn flush_line(
+    current: &mut LineBuilder,
+    lines: &mut Vec<WrappedLine>,
+    default_font_size: f32,
+    force_empty: bool,
+) {
+    if current.is_empty() {
+        if force_empty {
+            lines.push(WrappedLine {
+                spans: Vec::new(),
+                width: 0.0,
+                height: (default_font_size * 1.2).max(18.0),
+            });
+        }
+        return;
+    }
+
+    let line = std::mem::replace(current, LineBuilder::new()).finish(default_font_size);
+    lines.push(line);
+}
+
+fn tokenize_text_for_layout(text: &str) -> Vec<String> {
+    let mut tokens = Vec::new();
+    let mut current = String::new();
+    let mut current_is_whitespace: Option<bool> = None;
+
+    for character in text.chars() {
+        if is_wide_character(character) {
+            if !current.is_empty() {
+                tokens.push(current);
+                current = String::new();
+            }
+            tokens.push(character.to_string());
+            current_is_whitespace = None;
+            continue;
+        }
+
+        let is_whitespace = character.is_whitespace();
+        match current_is_whitespace {
+            Some(flag) if flag == is_whitespace => current.push(character),
+            Some(_) => {
+                tokens.push(current);
+                current = String::from(character);
+                current_is_whitespace = Some(is_whitespace);
+            }
+            None => {
+                current.push(character);
+                current_is_whitespace = Some(is_whitespace);
+            }
+        }
+    }
+
+    if !current.is_empty() {
+        tokens.push(current);
+    }
+
+    tokens
+}
+
+fn break_text_to_width(text: &str, max_width: f32, style: &TextStyle) -> Vec<String> {
+    let mut segments = Vec::new();
+    let mut current = String::new();
+    let mut current_width = 0.0;
+
+    for character in text.chars() {
+        let width = estimated_char_width(character, style);
+        if !current.is_empty() && current_width + width > max_width {
+            segments.push(current);
+            current = String::new();
+            current_width = 0.0;
+        }
+
+        current.push(character);
+        current_width += width;
+    }
+
+    if !current.is_empty() {
+        segments.push(current);
+    }
+
+    if segments.is_empty() {
+        segments.push(text.to_string());
+    }
+
+    segments
 }
