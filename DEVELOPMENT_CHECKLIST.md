@@ -627,6 +627,13 @@
     - `grpSp` recursive image render regression
     - `graphicFrame/a:tbl` render regression
     - master background regression
+- [ ] PPTX 표 셀 배경색과 표 내부 텍스트 스타일 보정
+  - Notes:
+    - `fixday` slide 1 우하단 표에서 cell fill, border, text run style 일부가 누락된다
+    - 표가 읽히는 수준은 넘었지만, 현재는 acceptance를 닫기 어려운 오차다
+  - Tests:
+    - table cell fill regression fixture
+    - table rich-text run style regression fixture
 - [ ] PPTX repaint flicker 완화
   - Notes:
     - `gaplessPlayback` 1차 적용
@@ -638,10 +645,27 @@
     - centered title regression fixture
     - mixed font line break regression fixture
     - bullet/default paragraph indent regression fixture
+- [ ] PPTX 밑줄, 텍스트 clipping, 제목/본문 개행 보정
+  - Notes:
+    - `fixday` slide 2~5에서 underline이 빠지고 `Client -> Clien` clipping이 발생한다
+    - 제목 영역의 띄어쓰기/개행도 여전히 PDF와 차이가 있어 acceptance 전 보정이 필요하다
+  - Tests:
+    - underline text render regression fixture
+    - last-glyph clipping regression fixture
+    - mixed Korean/Latin title wrapping regression fixture
 - [ ] PPTX shape/image transform 및 crop 보정
   - Tests:
     - image crop regression fixture
     - rotated shape bounds regression fixture
+- [ ] PPTX shape z-order, opacity, rounded corner, overlay composition 보정
+  - Notes:
+    - `fixday` slide 2, 5, 6에서 회색 오버레이, 반투명 도형, 흰색 마스크, 곡률, 그림자, 겹침 순서가 PDF와 다르다
+    - 이 영역은 단순 장식이 아니라 내용 가시성에 영향을 줘서 visual parity phase에서 닫아야 한다
+  - Tests:
+    - overlay z-order regression fixture
+    - translucent shape opacity regression fixture
+    - rounded rectangle corner radius regression fixture
+    - shadow effect smoke regression fixture
 - [x] PPTX theme font와 기본 스타일 메트릭 보정
   - Tests:
     - theme font regression fixture
@@ -654,6 +678,7 @@
     - 주요 issue slide가 빈 화면 없이 렌더된다
     - 텍스트 박스 정렬과 줄바꿈이 허용 범위 내에 있다
     - image/shape 배치가 허용 범위 내에 있다
+    - table fill/text, underline, overlay composition이 주요 issue slide에서 재현된다
     - 최소 재현 fixture 회귀 테스트가 추가되었다
 
 ## Phase 3: XLSX MVP
@@ -788,6 +813,13 @@
     - DOCX/PPTX/XLSX에서 남긴 시각 충실도 잔여 항목을 공통 정책과 포맷별 정책으로 다시 나눠 처리
   - Tests:
     - issue screenshot review set
+- [ ] PPTX exact glyph metrics, font spacing, line-wrap fidelity 보강
+  - Notes:
+    - `fixday` slide 1~6 비교 기준으로 남은 띄어쓰기, 글자폭, 줄바꿈 오차는 구조 버그보다 폰트 메트릭 오차 성격이 강하다
+    - acceptance를 막는 구조 이슈를 먼저 닫고, 최종 경화 단계에서 exact glyph metrics와 서체 availability를 같이 본다
+  - Tests:
+    - issue screenshot review set
+    - mixed Korean/Latin glyph width regression fixture
     - representative real-world review documents
 - [ ] coverage tooling and threshold 정리
   - Scope:
