@@ -55,6 +55,28 @@ void main() {
     expect(find.text('picked.docx'), findsWidgets);
   });
 
+  testWidgets('demo app opens picked pptx through path source', (tester) async {
+    final fakePlatform = _FakeDemoPlatform();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: DemoHomePage(
+          viewerPlatform: fakePlatform,
+          assetBundle: _FakeAssetBundle(),
+          pickFiles: () async => const ['/tmp/picked.pptx'],
+          supportsDesktopDropOverride: true,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Open File'));
+    await tester.pumpAndSettle();
+
+    expect(fakePlatform.openCallCount, 2);
+    expect(fakePlatform.openSourceKinds.last, platform.DocumentSourceKind.path);
+    expect(find.text('picked.pptx'), findsWidgets);
+  });
+
   testWidgets('demo app opens dropped docx through path source', (tester) async {
     final fakePlatform = _FakeDemoPlatform();
     await tester.pumpWidget(

@@ -594,7 +594,10 @@
     - demo fixture catalog에 `pptx_text_shapes.pptx`, `pptx_theme_layout_images.pptx` 추가
     - fixture PPTX를 asset으로 등록하고 선택 시 `bytesBase64` source로 실제 engine open 연결
     - demo smoke test에 fixture PPTX open 경로 추가
-- [ ] demo file picker PPTX 실연동
+- [x] demo file picker PPTX 실연동
+  - Done:
+    - picked `.pptx` import가 실제 engine path open을 타도록 분기 확장
+    - picked `.pptx` smoke test 추가
 - [ ] demo desktop drop PPTX 실연동
 - [ ] PPTX demo real integration acceptance pass
   - Acceptance checks:

@@ -108,12 +108,20 @@ class _DemoHomePageState extends State<DemoHomePage> {
       'xlsx' => DocumentKind.xlsx,
       _ => DocumentKind.docx,
     };
-    final note = switch (extension) {
-      'docx' =>
+    final note = switch ((origin, extension)) {
+      (DemoDocumentOrigin.picked, 'docx') =>
         'External DOCX file. Real engine open is wired in the desktop demo.',
-      'pptx' =>
-        'External PPTX file. Real engine open will be wired in the next demo step.',
-      'xlsx' => 'XLSX parser and renderer are not implemented yet.',
+      (DemoDocumentOrigin.picked, 'pptx') =>
+        'External PPTX file. Real engine open is wired in the desktop demo.',
+      (DemoDocumentOrigin.dropped, 'docx') =>
+        'External DOCX file. Real engine open is wired in the desktop demo.',
+      (DemoDocumentOrigin.dropped, 'pptx') =>
+        'External PPTX file. Desktop drop wiring is handled in the next demo step.',
+      (_, 'xlsx') => 'XLSX parser and renderer are not implemented yet.',
+      (_, 'pptx') =>
+        'External PPTX file. Real engine open will be wired in the desktop demo.',
+      (_, 'docx') =>
+        'External DOCX file. Real engine open is wired in the desktop demo.',
       _ => 'Unknown document type.',
     };
 
@@ -153,9 +161,7 @@ class _DemoHomePageState extends State<DemoHomePage> {
       return;
     }
 
-    if ((entry.origin == DemoDocumentOrigin.picked ||
-            entry.origin == DemoDocumentOrigin.dropped) &&
-        entry.kind == DocumentKind.docx &&
+    if (_usesEngineForImportedPath(entry) &&
         entry.location != null) {
       await _controller.openDocument(
         platform.OpenDocumentRequest(
@@ -170,6 +176,22 @@ class _DemoHomePageState extends State<DemoHomePage> {
 
   bool _usesEngineForFixture(DocumentKind kind) {
     return kind == DocumentKind.docx || kind == DocumentKind.pptx;
+  }
+
+  bool _usesEngineForPickedImport(DocumentKind kind) {
+    return kind == DocumentKind.docx || kind == DocumentKind.pptx;
+  }
+
+  bool _usesEngineForImportedPath(DemoDocumentEntry entry) {
+    if (entry.origin == DemoDocumentOrigin.picked) {
+      return _usesEngineForPickedImport(entry.kind);
+    }
+
+    if (entry.origin == DemoDocumentOrigin.dropped) {
+      return entry.kind == DocumentKind.docx;
+    }
+
+    return false;
   }
 
   @override
