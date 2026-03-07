@@ -169,7 +169,8 @@
   - Tests:
     - multi page paragraph fixture
     - explicit page break fixture
-- [ ] header/footer layout 구현
+- [x] header/footer layout 구현
+  - Done: header/footer margin region placement and section-aware overlay positioning
   - Tests:
     - header/footer position fixture
 - [ ] image and table block placement 구현

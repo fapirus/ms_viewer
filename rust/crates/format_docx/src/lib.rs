@@ -143,6 +143,23 @@ pub struct DocxPageLayout {
     pub blocks: Vec<LaidOutBlock>,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct HeaderFooterPlacement {
+    pub kind: HeaderFooterKind,
+    pub target: String,
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SectionHeaderFooterLayout {
+    pub page_box: PageBox,
+    pub headers: Vec<HeaderFooterPlacement>,
+    pub footers: Vec<HeaderFooterPlacement>,
+}
+
 pub fn parse_docx(archive: &OoxmlArchive) -> Result<DocxPackage, ViewerError> {
     let relationships = parse_package_relationships(archive)?;
     let main_document = relationships
@@ -497,6 +514,69 @@ pub fn layout_document(
     }
 
     Ok(pages)
+}
+
+pub fn layout_header_footers(
+    archive: &OoxmlArchive,
+    package: &DocxPackage,
+) -> Result<Vec<SectionHeaderFooterLayout>, ViewerError> {
+    let sections = parse_section_layouts(archive, package)?;
+    let page_boxes = parse_page_boxes(archive, package)?;
+
+    let mut layouts = Vec::new();
+    for (index, section) in sections.iter().enumerate() {
+        let page_box = page_boxes
+            .get(index)
+            .cloned()
+            .or_else(|| page_boxes.first().cloned())
+            .unwrap_or(PageBox {
+                width: 612.0,
+                height: 792.0,
+                margins: PageMargins {
+                    top: 72.0,
+                    right: 72.0,
+                    bottom: 72.0,
+                    left: 72.0,
+                },
+                content: ContentFrame {
+                    x: 72.0,
+                    y: 72.0,
+                    width: 468.0,
+                    height: 648.0,
+                },
+            });
+
+        layouts.push(SectionHeaderFooterLayout {
+            headers: section
+                .headers
+                .iter()
+                .map(|reference| HeaderFooterPlacement {
+                    kind: reference.kind.clone(),
+                    target: reference.target.clone(),
+                    x: page_box.content.x,
+                    y: ((page_box.margins.top - 24.0).max(0.0)) / 2.0,
+                    width: page_box.content.width,
+                    height: 24.0,
+                })
+                .collect(),
+            footers: section
+                .footers
+                .iter()
+                .map(|reference| HeaderFooterPlacement {
+                    kind: reference.kind.clone(),
+                    target: reference.target.clone(),
+                    x: page_box.content.x,
+                    y: page_box.height - page_box.margins.bottom
+                        + ((page_box.margins.bottom - 24.0).max(0.0) / 2.0),
+                    width: page_box.content.width,
+                    height: 24.0,
+                })
+                .collect(),
+            page_box,
+        });
+    }
+
+    Ok(layouts)
 }
 
 fn parse_document_relationships(

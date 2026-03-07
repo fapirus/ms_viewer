@@ -6,8 +6,8 @@ use zip::write::SimpleFileOptions;
 use zip::ZipWriter;
 
 use format_docx::{
-    layout_document, parse_docx, parse_page_boxes, parse_paragraph_blocks, parse_section_layouts,
-    parse_style_catalog,
+    layout_document, layout_header_footers, parse_docx, parse_page_boxes,
+    parse_paragraph_blocks, parse_section_layouts, parse_style_catalog,
 };
 use viewer_core::model::{Block, TableCellMerge};
 
@@ -1071,6 +1071,62 @@ fn explicit_page_break_starts_new_page() {
         }
         other => panic!("expected paragraph layout, got {other:?}"),
     }
+}
+
+#[test]
+fn lays_out_header_footer_inside_margin_regions() {
+    let file = create_docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+              <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+            </Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+              <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+            </Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+              <w:body>
+                <w:sectPr>
+                  <w:headerReference w:type="default" r:id="rHeader"/>
+                  <w:footerReference w:type="default" r:id="rFooter"/>
+                  <w:pgSz w:w="12240" w:h="15840"/>
+                  <w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"/>
+                </w:sectPr>
+              </w:body>
+            </w:document>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+              <Relationship Id="rHeader" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header.xml"/>
+              <Relationship Id="rFooter" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer.xml"/>
+            </Relationships>"#,
+        ),
+        ("word/header.xml", "<w:hdr xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"/>"),
+        ("word/footer.xml", "<w:ftr xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"/>"),
+    ]);
+    let archive = OoxmlArchive::open_path(file.path()).expect("docx archive should open");
+    let package = parse_docx(&archive).expect("docx package should parse");
+    let layouts = layout_header_footers(&archive, &package).expect("header/footer layout should parse");
+
+    assert_eq!(layouts.len(), 1);
+    let layout = &layouts[0];
+    assert_eq!(layout.headers[0].target, "word/header.xml");
+    assert_eq!(layout.footers[0].target, "word/footer.xml");
+    assert!(layout.headers[0].y < layout.page_box.content.y);
+    assert!(layout.footers[0].y > layout.page_box.content.y + layout.page_box.content.height);
+    assert_eq!(layout.headers[0].width, layout.page_box.content.width);
+    assert_eq!(layout.footers[0].width, layout.page_box.content.width);
 }
 
 fn create_docx_fixture(entries: &[(&str, &str)]) -> NamedTempFile {
