@@ -114,69 +114,82 @@
 
 ## Phase 1: DOCX MVP
 ### DOCX parse layer
-- [ ] DOCX package entry points 구현
+- [x] DOCX package entry points 구현
+  - Done: main document, styles, numbering, header/footer, media relationship entry points
   - Rust scope: main document, styles, numbering, media, header/footer lookup
   - Tests:
     - minimal docx fixture
     - missing optional parts fixture
-- [ ] paragraph and run parser 구현
+- [x] paragraph and run parser 구현
+  - Done: paragraph block parsing, direct run formatting, inline line break handling
   - Rust scope: paragraphs, runs, line breaks, basic inline formatting
   - Tests:
     - styled paragraph fixture
     - mixed formatting fixture
-- [ ] style resolution 구현
+- [x] style resolution 구현
+  - Done: docDefaults, character style basedOn chain, direct formatting override merge
   - Rust scope: default style, named style, direct formatting merge
   - Tests:
     - base style inheritance fixture
     - direct formatting override fixture
-- [ ] numbering/list parser 구현
+- [x] numbering/list parser 구현
+  - Done: numbering.xml abstractNum/num mapping, paragraph list marker extraction, nested list levels
   - Rust scope: bullet and decimal list model
   - Tests:
     - nested list fixture
     - numbering override fixture
-- [ ] table parser 구현
+- [x] table parser 구현
+  - Done: table row/cell model, cell paragraph parsing, gridSpan/vMerge fallback metadata
   - Rust scope: rows, cells, cell text
   - Tests:
     - basic table fixture
     - merged cell fallback handling fixture
-- [ ] image reference parser 구현
+- [x] image reference parser 구현
+  - Done: drawing blip relationship resolution, image block emission, missing media relationship validation
   - Rust scope: drawing/image relationship resolution
   - Tests:
     - inline image fixture
     - missing media relationship fixture
-- [ ] header/footer parser 구현
+- [x] header/footer parser 구현
+  - Done: sectPr section parsing, header/footer relationship resolution, section break handling
   - Rust scope: section linked headers and footers
   - Tests:
     - different first page fixture
     - section break fixture
 
 ### DOCX layout layer
-- [ ] page box model 구현
+- [x] page box model 구현
+  - Done: sectPr page size/margin parsing and content frame calculation
   - Rust scope: page size, margins, content frame
   - Tests:
     - page metrics fixture
-- [ ] block layout MVP 구현
+- [x] block layout MVP 구현
+  - Done: simple paragraph flow, estimated line breaking, explicit page break handling
   - Rust scope: paragraph flow, line breaking, page breaking
   - Tests:
     - multi page paragraph fixture
     - explicit page break fixture
-- [ ] header/footer layout 구현
+- [x] header/footer layout 구현
+  - Done: header/footer margin region placement and section-aware overlay positioning
   - Tests:
     - header/footer position fixture
-- [ ] image and table block placement 구현
+- [x] image and table block placement 구현
+  - Done: image flow placement, table row/cell layout metadata, row-aware page splitting
   - Tests:
     - image flow fixture
     - table page split behavior fixture
 
 ### DOCX interaction layer
-- [ ] DOCX text extraction and search index 구현
+- [x] DOCX text extraction and search index 구현
+  - Done: page text extraction, case-insensitive search matches, Flutter search result state and list shell
   - Rust tests:
     - simple query match fixture
     - case-insensitive match fixture
   - Flutter tests:
     - search result list widget test
     - next/previous navigation state test
-- [ ] DOCX text selection metadata 구현
+- [x] DOCX text selection metadata 구현
+  - Done: page text nodes, per-line bounds, selection anchors, Flutter highlight and drag state shell
   - Rust tests:
     - text box bounds generation test
     - cross-line selection anchors test
@@ -185,11 +198,13 @@
     - drag selection state test
 
 ### DOCX integration
-- [ ] DOCX render model to Flutter painting 연결
+- [x] DOCX render model to Flutter painting 연결
+  - Done: page render widget, custom painter, MsDocumentView preview page consumption
   - Flutter tests:
     - page widget smoke test
     - placeholder paint test from mock render model
-- [ ] DOCX demo fixture review set 구성
+- [x] DOCX demo fixture review set 구성
+  - Done: review fixture corpus and encrypted stub added under fixtures/docx and fixtures/encrypted
   - Fixture set:
     - plain text
     - styles
@@ -198,7 +213,8 @@
     - images
     - multi-section
     - encrypted
-- [ ] DOCX MVP acceptance pass
+- [x] DOCX MVP acceptance pass
+  - Done: fixture-backed acceptance tests and fixture runner coverage added
   - Acceptance checks:
     - document opens
     - page rendering works

@@ -1,11 +1,18 @@
 import 'package:flutter/material.dart';
+import 'package:ms_viewer_platform_interface/ms_viewer_platform_interface.dart';
 
 import '../controller/ms_viewer_controller.dart';
+import 'document_page_view.dart';
 
 class MsDocumentView extends StatefulWidget {
-  const MsDocumentView({super.key, required this.controller});
+  const MsDocumentView({
+    super.key,
+    required this.controller,
+    this.previewPages = const [],
+  });
 
   final MsViewerController controller;
+  final List<PageRenderModel> previewPages;
 
   @override
   State<MsDocumentView> createState() => _MsDocumentViewState();
@@ -49,24 +56,48 @@ class _MsDocumentViewState extends State<MsDocumentView> {
         if (document == null) {
           return const Center(child: Text('No document attached'));
         }
-        return Center(
-          child: Text(
-            'Viewer placeholder for ${document.title} (${document.pageCount} pages)',
-            textAlign: TextAlign.center,
-          ),
-        );
+        return _buildReadyState(document.title, document.pageCount);
       case ViewerShellStatus.idle:
         final document = widget.controller.document;
         if (document == null) {
           return const Center(child: Text('No document attached'));
         }
-        return Center(
-          child: Text(
-            'Viewer placeholder for ${document.title} (${document.pageCount} pages)',
-            textAlign: TextAlign.center,
-          ),
-        );
+        return _buildReadyState(document.title, document.pageCount);
     }
+  }
+
+  Widget _buildReadyState(String title, int pageCount) {
+    final page = widget.previewPages.isEmpty ? null : widget.previewPages.first;
+    return Padding(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            title,
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const SizedBox(height: 8),
+          Text('$pageCount pages'),
+          const SizedBox(height: 16),
+          Expanded(
+            child: page == null
+                ? const Center(
+                    child: Text(
+                      'Viewer placeholder: render model not loaded',
+                      textAlign: TextAlign.center,
+                    ),
+                  )
+                : Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 640),
+                      child: DocumentPageView(page: page),
+                    ),
+                  ),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildPasswordPrompt(BuildContext context) {

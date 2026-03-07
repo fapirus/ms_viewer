@@ -6,6 +6,8 @@ void main() {
     await tester.pumpWidget(const DemoApp());
 
     expect(find.text('MS Viewer Demo'), findsOneWidget);
-    expect(find.textContaining('Viewer placeholder for Demo DOCX'), findsOneWidget);
+    expect(find.text('Demo DOCX'), findsOneWidget);
+    expect(find.text('12 pages'), findsOneWidget);
+    expect(find.textContaining('render model not loaded'), findsOneWidget);
   });
 }

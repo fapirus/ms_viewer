@@ -21,3 +21,12 @@
 - 새 기능을 구현하면 최소 1개의 fixture를 추가한다.
 - 버그를 고치면 해당 버그를 재현하는 regression fixture를 추가한다.
 - fixture는 가능한 작고 단순하게 유지한다.
+
+## Current review sets
+- DOCX Phase 1 review set:
+  - `docx/docx_plain_text.docx`
+  - `docx/docx_styles_lists.docx`
+  - `docx/docx_tables_images.docx`
+  - `docx/docx_multi_section.docx`
+  - `encrypted/docx_password_stub.docx`
+  - `regression/docx_acceptance_plain_text.docx`
