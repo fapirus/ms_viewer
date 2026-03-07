@@ -173,7 +173,8 @@
   - Done: header/footer margin region placement and section-aware overlay positioning
   - Tests:
     - header/footer position fixture
-- [ ] image and table block placement 구현
+- [x] image and table block placement 구현
+  - Done: image flow placement, table row/cell layout metadata, row-aware page splitting
   - Tests:
     - image flow fixture
     - table page split behavior fixture

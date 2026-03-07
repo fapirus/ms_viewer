@@ -1129,6 +1129,170 @@ fn lays_out_header_footer_inside_margin_regions() {
     assert_eq!(layout.footers[0].width, layout.page_box.content.width);
 }
 
+#[test]
+fn lays_out_image_in_document_flow() {
+    let file = create_docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+              <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+            </Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+              <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+            </Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <w:document
+              xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+              xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"
+              xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"
+              xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+              xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing">
+              <w:body>
+                <w:p><w:r><w:t>Intro</w:t></w:r></w:p>
+                <w:p>
+                  <w:r>
+                    <w:drawing>
+                      <wp:inline>
+                        <wp:docPr id="1" name="Preview" descr="Flow image"/>
+                        <a:graphic>
+                          <a:graphicData>
+                            <pic:pic>
+                              <pic:blipFill>
+                                <a:blip r:embed="rImage1"/>
+                              </pic:blipFill>
+                            </pic:pic>
+                          </a:graphicData>
+                        </a:graphic>
+                      </wp:inline>
+                    </w:drawing>
+                  </w:r>
+                </w:p>
+                <w:p><w:r><w:t>Outro</w:t></w:r></w:p>
+                <w:sectPr>
+                  <w:pgSz w:w="2400" w:h="3000"/>
+                  <w:pgMar w:top="120" w:right="120" w:bottom="120" w:left="120"/>
+                </w:sectPr>
+              </w:body>
+            </w:document>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+              <Relationship Id="rImage1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image1.png"/>
+            </Relationships>"#,
+        ),
+        ("word/media/image1.png", "fakepng"),
+    ]);
+    let archive = OoxmlArchive::open_path(file.path()).expect("docx archive should open");
+    let package = parse_docx(&archive).expect("docx package should parse");
+    let pages = layout_document(&archive, &package).expect("layout should succeed");
+
+    assert_eq!(pages.len(), 2);
+    assert_eq!(pages[0].blocks.len(), 2);
+    match &pages[0].blocks[0] {
+        format_docx::LaidOutBlock::Paragraph { lines, .. } => {
+            assert!(lines[0].text.contains("Intro"));
+        }
+        other => panic!("expected paragraph layout, got {other:?}"),
+    }
+    let image_y = match &pages[0].blocks[1] {
+        format_docx::LaidOutBlock::Image {
+            resource_id,
+            x,
+            y,
+            width,
+            height,
+        } => {
+            assert_eq!(resource_id, "word/media/image1.png");
+            assert_eq!(*x, pages[0].page_box.content.x);
+            assert_eq!(*width, pages[0].page_box.content.width);
+            assert_eq!(*height, 96.0);
+            *y
+        }
+        other => panic!("expected image layout, got {other:?}"),
+    };
+    assert_eq!(pages[1].blocks.len(), 1);
+    match &pages[1].blocks[0] {
+        format_docx::LaidOutBlock::Paragraph { lines, .. } => {
+            assert!(lines[0].text.contains("Outro"));
+            assert!(pages[1].page_index > pages[0].page_index);
+            assert!(image_y >= pages[0].page_box.content.y);
+        }
+        other => panic!("expected paragraph layout, got {other:?}"),
+    }
+}
+
+#[test]
+fn splits_table_rows_across_pages_when_needed() {
+    let file = create_docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+              <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+            </Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+              <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+            </Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+              <w:body>
+                <w:tbl>
+                  <w:tr><w:tc><w:p><w:r><w:t>R1</w:t></w:r></w:p></w:tc></w:tr>
+                  <w:tr><w:tc><w:p><w:r><w:t>R2</w:t></w:r></w:p></w:tc></w:tr>
+                  <w:tr><w:tc><w:p><w:r><w:t>R3</w:t></w:r></w:p></w:tc></w:tr>
+                  <w:tr><w:tc><w:p><w:r><w:t>R4</w:t></w:r></w:p></w:tc></w:tr>
+                </w:tbl>
+                <w:sectPr>
+                  <w:pgSz w:w="2400" w:h="1440"/>
+                  <w:pgMar w:top="120" w:right="120" w:bottom="120" w:left="120"/>
+                </w:sectPr>
+              </w:body>
+            </w:document>"#,
+        ),
+    ]);
+    let archive = OoxmlArchive::open_path(file.path()).expect("docx archive should open");
+    let package = parse_docx(&archive).expect("docx package should parse");
+    let pages = layout_document(&archive, &package).expect("layout should succeed");
+
+    assert_eq!(pages.len(), 2);
+    match &pages[0].blocks[0] {
+        format_docx::LaidOutBlock::Table { rows, y, height, .. } => {
+            assert_eq!(rows.len(), 2);
+            assert_eq!(rows[0].cells.len(), 1);
+            assert_eq!(rows[1].cells.len(), 1);
+            assert_eq!(*y, pages[0].page_box.content.y);
+            assert_eq!(*height, 48.0);
+        }
+        other => panic!("expected table layout, got {other:?}"),
+    }
+    match &pages[1].blocks[0] {
+        format_docx::LaidOutBlock::Table { rows, y, height, .. } => {
+            assert_eq!(rows.len(), 2);
+            assert_eq!(*y, pages[1].page_box.content.y);
+            assert_eq!(*height, 48.0);
+            assert!(rows[0].y < rows[1].y);
+        }
+        other => panic!("expected table layout, got {other:?}"),
+    }
+}
+
 fn create_docx_fixture(entries: &[(&str, &str)]) -> NamedTempFile {
     let mut file = NamedTempFile::new().expect("temp zip");
     {

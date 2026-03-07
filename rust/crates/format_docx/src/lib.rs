@@ -116,6 +116,22 @@ pub struct LaidOutLine {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct LaidOutTableCell {
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+    pub column_span: u16,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct LaidOutTableRow {
+    pub y: f32,
+    pub height: f32,
+    pub cells: Vec<LaidOutTableCell>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum LaidOutBlock {
     Paragraph {
         list: Option<ListMarker>,
@@ -126,6 +142,7 @@ pub enum LaidOutBlock {
         y: f32,
         width: f32,
         height: f32,
+        rows: Vec<LaidOutTableRow>,
     },
     Image {
         resource_id: String,
@@ -418,6 +435,7 @@ pub fn layout_document(
         blocks: Vec::new(),
     }];
     let mut cursor_y = default_page_box.content.y;
+    let content_bottom = default_page_box.content.y + default_page_box.content.height;
 
     for block in blocks {
         match block {
@@ -443,8 +461,6 @@ pub fn layout_document(
 
                     let mut current_lines = Vec::new();
                     for text in lines {
-                        let content_bottom =
-                            default_page_box.content.y + default_page_box.content.height;
                         if cursor_y + line_height > content_bottom && !current_lines.is_empty() {
                             pages.last_mut().expect("page exists").blocks.push(
                                 LaidOutBlock::Paragraph {
@@ -484,28 +500,62 @@ pub fn layout_document(
                 }
             }
             Block::Table { rows } => {
-                let table_height = rows.len() as f32 * 24.0;
-                if cursor_y + table_height > default_page_box.content.y + default_page_box.content.height {
-                    start_new_page(&mut pages, &mut cursor_y, &default_page_box);
+                let mut table_start_y = cursor_y;
+                let mut laid_out_rows = Vec::new();
+
+                for row in rows {
+                    let row_height = estimate_table_row_height(&row, default_page_box.content.width);
+                    if cursor_y + row_height > content_bottom && !laid_out_rows.is_empty() {
+                        let table_height = cursor_y - table_start_y;
+                        pages.last_mut().expect("page exists").blocks.push(LaidOutBlock::Table {
+                            x: default_page_box.content.x,
+                            y: table_start_y,
+                            width: default_page_box.content.width,
+                            height: table_height,
+                            rows: laid_out_rows,
+                        });
+                        start_new_page(&mut pages, &mut cursor_y, &default_page_box);
+                        table_start_y = cursor_y;
+                        laid_out_rows = Vec::new();
+                    } else if cursor_y + row_height > content_bottom {
+                        start_new_page(&mut pages, &mut cursor_y, &default_page_box);
+                        table_start_y = cursor_y;
+                    }
+
+                    laid_out_rows.push(layout_table_row(
+                        &row,
+                        default_page_box.content.x,
+                        cursor_y,
+                        default_page_box.content.width,
+                        row_height,
+                    ));
+                    cursor_y += row_height;
                 }
-                pages.last_mut().expect("page exists").blocks.push(LaidOutBlock::Table {
-                    x: default_page_box.content.x,
-                    y: cursor_y,
-                    width: default_page_box.content.width,
-                    height: table_height,
-                });
-                cursor_y += table_height + 12.0;
+
+                if !laid_out_rows.is_empty() {
+                    let table_height = cursor_y - table_start_y;
+                    pages.last_mut().expect("page exists").blocks.push(LaidOutBlock::Table {
+                        x: default_page_box.content.x,
+                        y: table_start_y,
+                        width: default_page_box.content.width,
+                        height: table_height,
+                        rows: laid_out_rows,
+                    });
+                }
+
+                cursor_y += 12.0;
             }
             Block::Image { image } => {
-                let image_height = 96.0;
-                if cursor_y + image_height > default_page_box.content.y + default_page_box.content.height {
+                let image_width = default_page_box.content.width.min(192.0);
+                let image_height = (image_width * 0.75).max(96.0);
+                if cursor_y + image_height > content_bottom {
                     start_new_page(&mut pages, &mut cursor_y, &default_page_box);
                 }
                 pages.last_mut().expect("page exists").blocks.push(LaidOutBlock::Image {
                     resource_id: image.resource_id,
                     x: default_page_box.content.x,
                     y: cursor_y,
-                    width: default_page_box.content.width.min(144.0),
+                    width: image_width,
                     height: image_height,
                 });
                 cursor_y += image_height + 12.0;
@@ -780,6 +830,85 @@ fn start_new_page(pages: &mut Vec<DocxPageLayout>, cursor_y: &mut f32, page_box:
         blocks: Vec::new(),
     });
     *cursor_y = page_box.content.y;
+}
+
+fn layout_table_row(
+    row: &TableRow,
+    x: f32,
+    y: f32,
+    width: f32,
+    row_height: f32,
+) -> LaidOutTableRow {
+    let total_columns = table_column_count(std::slice::from_ref(row));
+    let column_width = width / total_columns as f32;
+    let mut cell_x = x;
+    let mut cells = Vec::new();
+
+    for cell in &row.cells {
+        let span = cell.column_span.max(1);
+        let cell_width = column_width * span as f32;
+        cells.push(LaidOutTableCell {
+            x: cell_x,
+            y,
+            width: cell_width,
+            height: row_height,
+            column_span: cell.column_span,
+        });
+        cell_x += cell_width;
+    }
+
+    LaidOutTableRow {
+        y,
+        height: row_height,
+        cells,
+    }
+}
+
+fn estimate_table_row_height(row: &TableRow, width: f32) -> f32 {
+    let total_columns = table_column_count(std::slice::from_ref(row));
+    let column_width = width / total_columns as f32;
+    let mut max_height: f32 = 24.0;
+
+    for cell in &row.cells {
+        let span = cell.column_span.max(1);
+        let cell_width = column_width * span as f32;
+        let text = flatten_cell_text(cell);
+        let line_count = break_text_lines(&text, (cell_width - 8.0).max(24.0), 12.0)
+            .len()
+            .max(1);
+        max_height = max_height.max(line_count as f32 * 14.0 + 10.0);
+    }
+
+    max_height
+}
+
+fn table_column_count(rows: &[TableRow]) -> u16 {
+    rows.iter()
+        .map(|row| {
+            row.cells
+                .iter()
+                .map(|cell| cell.column_span.max(1))
+                .sum::<u16>()
+        })
+        .max()
+        .unwrap_or(1)
+        .max(1)
+}
+
+fn flatten_cell_text(cell: &TableCell) -> String {
+    cell.blocks
+        .iter()
+        .filter_map(|block| match block {
+            Block::Paragraph { runs, .. } => Some(
+                runs.iter()
+                    .map(|run| run.text.as_str())
+                    .collect::<Vec<_>>()
+                    .join(""),
+            ),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn break_text_lines(text: &str, max_width: f32, font_size: f32) -> Vec<String> {
