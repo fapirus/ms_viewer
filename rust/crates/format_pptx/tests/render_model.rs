@@ -890,3 +890,236 @@ fn render_model_inherits_layout_bounds_recurses_groups_and_renders_tables_and_ba
     assert!(box_nodes.iter().any(|node| node.fill_color_hex.as_deref() == Some("#2F45A5")));
     assert!(box_nodes.iter().any(|node| node.stroke_color_hex.as_deref() == Some("#4BB0D8")));
 }
+
+#[test]
+fn render_model_applies_default_table_styles_to_fill_and_text() {
+    let dir = tempdir().expect("tempdir should exist");
+    let path = dir.path().join("render-model-table-style.pptx");
+    create_zip(
+        &path,
+        &[
+            (
+                "[Content_Types].xml",
+                br#"
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/>
+  <Override PartName="/ppt/slides/slide1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>
+  <Override PartName="/ppt/slideLayouts/slideLayout1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideLayout+xml"/>
+  <Override PartName="/ppt/slideMasters/slideMaster1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideMaster+xml"/>
+  <Override PartName="/ppt/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>
+  <Override PartName="/ppt/tableStyles.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.tableStyles+xml"/>
+</Types>
+"#,
+            ),
+            (
+                "_rels/.rels",
+                br#"
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="ppt/presentation.xml"/>
+</Relationships>
+"#,
+            ),
+            (
+                "ppt/presentation.xml",
+                br#"
+<p:presentation xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+                xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <p:sldMasterIdLst><p:sldMasterId id="2147483648" r:id="rIdMaster1"/></p:sldMasterIdLst>
+  <p:sldIdLst><p:sldId id="256" r:id="rIdSlide1"/></p:sldIdLst>
+  <p:sldSz cx="9144000" cy="6858000"/>
+</p:presentation>
+"#,
+            ),
+            (
+                "ppt/_rels/presentation.xml.rels",
+                br#"
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdMaster1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster" Target="slideMasters/slideMaster1.xml"/>
+  <Relationship Id="rIdSlide1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide1.xml"/>
+</Relationships>
+"#,
+            ),
+            (
+                "ppt/slides/slide1.xml",
+                br#"
+<p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+       xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <p:cSld>
+    <p:spTree>
+      <p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>
+      <p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr>
+      <p:graphicFrame>
+        <p:nvGraphicFramePr><p:cNvPr id="5" name="Table 1"/><p:cNvGraphicFramePr/><p:nvPr/></p:nvGraphicFramePr>
+        <p:xfrm><a:off x="1000000" y="1000000"/><a:ext cx="3000000" cy="1200000"/></p:xfrm>
+        <a:graphic>
+          <a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/table">
+            <a:tbl>
+              <a:tblPr firstRow="1" firstCol="1" bandRow="1">
+                <a:tableStyleId>{UNKNOWN-STYLE-ID}</a:tableStyleId>
+              </a:tblPr>
+              <a:tblGrid>
+                <a:gridCol w="1500000"/>
+                <a:gridCol w="1500000"/>
+              </a:tblGrid>
+              <a:tr h="600000">
+                <a:tc>
+                  <a:txBody><a:bodyPr/><a:lstStyle/><a:p><a:r><a:t>Header</a:t></a:r></a:p></a:txBody>
+                  <a:tcPr marL="63500" marR="63500" marT="31750" marB="31750"/>
+                </a:tc>
+                <a:tc>
+                  <a:txBody><a:bodyPr/><a:lstStyle/><a:p><a:r><a:t>Title</a:t></a:r></a:p></a:txBody>
+                  <a:tcPr marL="63500" marR="63500" marT="31750" marB="31750"/>
+                </a:tc>
+              </a:tr>
+              <a:tr h="600000">
+                <a:tc>
+                  <a:txBody><a:bodyPr/><a:lstStyle/><a:p><a:r><a:t>Label</a:t></a:r></a:p></a:txBody>
+                  <a:tcPr marL="63500" marR="63500" marT="31750" marB="31750"/>
+                </a:tc>
+                <a:tc>
+                  <a:txBody><a:bodyPr/><a:lstStyle/><a:p><a:r><a:t>Value</a:t></a:r></a:p></a:txBody>
+                  <a:tcPr marL="63500" marR="63500" marT="31750" marB="31750"/>
+                </a:tc>
+              </a:tr>
+            </a:tbl>
+          </a:graphicData>
+        </a:graphic>
+      </p:graphicFrame>
+    </p:spTree>
+  </p:cSld>
+</p:sld>
+"#,
+            ),
+            (
+                "ppt/slides/_rels/slide1.xml.rels",
+                br#"
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdLayout1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout1.xml"/>
+</Relationships>
+"#,
+            ),
+            (
+                "ppt/slideLayouts/slideLayout1.xml",
+                br#"
+<p:sldLayout xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+             xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"
+             xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <p:cSld><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr></p:spTree></p:cSld>
+</p:sldLayout>
+"#,
+            ),
+            (
+                "ppt/slideLayouts/_rels/slideLayout1.xml.rels",
+                br#"
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdMaster1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster" Target="../slideMasters/slideMaster1.xml"/>
+</Relationships>
+"#,
+            ),
+            (
+                "ppt/slideMasters/slideMaster1.xml",
+                br#"
+<p:sldMaster xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+             xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"
+             xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <p:cSld><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr></p:spTree></p:cSld>
+  <p:clrMap bg1="lt1" tx1="dk1" bg2="lt2" tx2="dk2" accent1="accent1" accent2="accent2" accent3="accent3" accent4="accent4" accent5="accent5" accent6="accent6" hlink="hlink" folHlink="folHlink"/>
+</p:sldMaster>
+"#,
+            ),
+            (
+                "ppt/slideMasters/_rels/slideMaster1.xml.rels",
+                br#"
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdLayout1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout1.xml"/>
+  <Relationship Id="rIdTheme1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="../theme/theme1.xml"/>
+</Relationships>
+"#,
+            ),
+            (
+                "ppt/theme/theme1.xml",
+                br#"
+<a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" name="Fixture Theme">
+  <a:themeElements>
+    <a:clrScheme name="Fixture">
+      <a:dk1><a:srgbClr val="111111"/></a:dk1>
+      <a:lt1><a:srgbClr val="FFFFFF"/></a:lt1>
+      <a:dk2><a:srgbClr val="222222"/></a:dk2>
+      <a:lt2><a:srgbClr val="EEEEEE"/></a:lt2>
+      <a:accent1><a:srgbClr val="2F45A5"/></a:accent1>
+      <a:accent2><a:srgbClr val="4BB0D8"/></a:accent2>
+      <a:accent3><a:srgbClr val="70AD47"/></a:accent3>
+      <a:accent4><a:srgbClr val="FFC000"/></a:accent4>
+      <a:accent5><a:srgbClr val="5B9BD5"/></a:accent5>
+      <a:accent6><a:srgbClr val="7030A0"/></a:accent6>
+      <a:hlink><a:srgbClr val="0563C1"/></a:hlink>
+      <a:folHlink><a:srgbClr val="954F72"/></a:folHlink>
+    </a:clrScheme>
+    <a:fontScheme name="Fixture Fonts">
+      <a:majorFont><a:latin typeface="Aptos"/></a:majorFont>
+      <a:minorFont><a:latin typeface="Aptos"/></a:minorFont>
+    </a:fontScheme>
+  </a:themeElements>
+</a:theme>
+"#,
+            ),
+            (
+                "ppt/tableStyles.xml",
+                br#"
+<a:tblStyleLst xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" def="{DEFAULT-TABLE-STYLE}">
+  <a:tblStyle styleId="{DEFAULT-TABLE-STYLE}" styleName="Fixture Table Style">
+    <a:wholeTbl>
+      <a:tcTxStyle><a:fontRef idx="minor"><a:prstClr val="black"/></a:fontRef><a:schemeClr val="dk1"/></a:tcTxStyle>
+      <a:tcStyle><a:fill><a:solidFill><a:schemeClr val="accent1"><a:tint val="20000"/></a:schemeClr></a:solidFill></a:fill></a:tcStyle>
+    </a:wholeTbl>
+    <a:firstRow>
+      <a:tcTxStyle b="on"><a:fontRef idx="minor"><a:prstClr val="black"/></a:fontRef><a:schemeClr val="lt1"/></a:tcTxStyle>
+      <a:tcStyle><a:fill><a:solidFill><a:schemeClr val="accent1"/></a:solidFill></a:fill></a:tcStyle>
+    </a:firstRow>
+    <a:firstCol>
+      <a:tcTxStyle b="on"><a:fontRef idx="minor"><a:prstClr val="black"/></a:fontRef><a:schemeClr val="lt1"/></a:tcTxStyle>
+      <a:tcStyle><a:fill><a:solidFill><a:schemeClr val="accent1"/></a:solidFill></a:fill></a:tcStyle>
+    </a:firstCol>
+    <a:band1H>
+      <a:tcStyle><a:fill><a:solidFill><a:schemeClr val="accent1"><a:tint val="40000"/></a:schemeClr></a:solidFill></a:fill></a:tcStyle>
+    </a:band1H>
+  </a:tblStyle>
+</a:tblStyleLst>
+"#,
+            ),
+        ],
+    );
+
+    let archive = OoxmlArchive::open_path(&path).expect("archive should open");
+    let slide_tree = parse_pptx(&archive).expect("slide tree");
+    let page = build_slide_render_model(&archive, &slide_tree, 0).expect("render model");
+
+    let box_nodes: Vec<_> = page
+        .nodes
+        .iter()
+        .filter_map(|node| match node {
+            RenderNode::Box(node) => Some(node),
+            _ => None,
+        })
+        .collect();
+    let text_nodes: Vec<_> = page
+        .nodes
+        .iter()
+        .filter_map(|node| match node {
+            RenderNode::Text(node) => Some(node),
+            _ => None,
+        })
+        .collect();
+
+    assert!(box_nodes.iter().any(|node| node.fill_color_hex.as_deref() == Some("#2F45A5")));
+    assert!(text_nodes
+        .iter()
+        .find(|node| node.text == "Header")
+        .is_some_and(|node| node.style.color_hex == "#FFFFFF" && node.style.bold));
+    assert!(text_nodes
+        .iter()
+        .find(|node| node.text == "Value")
+        .is_some_and(|node| node.style.color_hex == "#111111"));
+}

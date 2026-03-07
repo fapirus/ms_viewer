@@ -627,13 +627,14 @@
     - `grpSp` recursive image render regression
     - `graphicFrame/a:tbl` render regression
     - master background regression
-- [ ] PPTX 표 셀 배경색과 표 내부 텍스트 스타일 보정
+- [x] PPTX 표 셀 배경색과 표 내부 텍스트 스타일 보정
   - Notes:
     - `fixday` slide 1 우하단 표에서 cell fill, border, text run style 일부가 누락된다
     - 표가 읽히는 수준은 넘었지만, 현재는 acceptance를 닫기 어려운 오차다
   - Tests:
     - table cell fill regression fixture
     - table rich-text run style regression fixture
+    - default table style fallback regression fixture
 - [ ] PPTX repaint flicker 완화
   - Notes:
     - `gaplessPlayback` 1차 적용

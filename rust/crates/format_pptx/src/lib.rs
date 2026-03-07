@@ -242,6 +242,7 @@ pub struct SlideTextBox {
 pub struct SlideTableCell {
     pub column_span: u32,
     pub paragraphs: Vec<SlideTextParagraph>,
+    style_sheet: SlideTextStyleSheet,
     pub fill: Option<String>,
     pub stroke: Option<ShapeStroke>,
     pub margins: SlideTextInsets,
@@ -259,7 +260,19 @@ pub struct SlideTable {
     pub name: String,
     pub bounds: EmuRectangle,
     pub column_widths_emu: Vec<i64>,
+    style_id: Option<String>,
+    flags: SlideTableStyleFlags,
     pub rows: Vec<SlideTableRow>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+struct SlideTableStyleFlags {
+    first_row: bool,
+    first_col: bool,
+    last_row: bool,
+    last_col: bool,
+    band_row: bool,
+    band_col: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -302,6 +315,32 @@ struct MasterTextStyles {
     title: SlideTextStyleSheet,
     body: SlideTextStyleSheet,
     other: SlideTextStyleSheet,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+struct TableStyleCatalog {
+    default_style_id: Option<String>,
+    styles: HashMap<String, TableStyleDefinition>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+struct TableStyleDefinition {
+    whole_table: TableCellStyleDefinition,
+    band1_horizontal: TableCellStyleDefinition,
+    band2_horizontal: TableCellStyleDefinition,
+    band1_vertical: TableCellStyleDefinition,
+    band2_vertical: TableCellStyleDefinition,
+    first_row: TableCellStyleDefinition,
+    last_row: TableCellStyleDefinition,
+    first_col: TableCellStyleDefinition,
+    last_col: TableCellStyleDefinition,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+struct TableCellStyleDefinition {
+    fill: Option<String>,
+    stroke: Option<ShapeStroke>,
+    text_style: SlideTextRunStyle,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -387,6 +426,54 @@ impl SlideTextRunStyle {
         if self.fill.is_none() {
             self.fill = fallback.fill.clone();
         }
+    }
+
+    fn apply_overrides_from(&mut self, overrides: &Self) {
+        if overrides.bold.is_some() {
+            self.bold = overrides.bold;
+        }
+        if overrides.italic.is_some() {
+            self.italic = overrides.italic;
+        }
+        if overrides.font_size_centipoints.is_some() {
+            self.font_size_centipoints = overrides.font_size_centipoints;
+        }
+        if overrides.font_face.is_some() {
+            self.font_face = overrides.font_face.clone();
+        }
+        if overrides.east_asia_font_face.is_some() {
+            self.east_asia_font_face = overrides.east_asia_font_face.clone();
+        }
+        if overrides.fill.is_some() {
+            self.fill = overrides.fill.clone();
+        }
+    }
+}
+
+impl TableCellStyleDefinition {
+    fn apply_overrides_from(&mut self, overrides: &Self) {
+        if overrides.fill.is_some() {
+            self.fill = overrides.fill.clone();
+        }
+        if overrides.stroke.is_some() {
+            self.stroke = overrides.stroke.clone();
+        }
+        self.text_style.apply_overrides_from(&overrides.text_style);
+    }
+}
+
+impl TableStyleCatalog {
+    fn resolve(&self, style_id: Option<&str>) -> Option<&TableStyleDefinition> {
+        if let Some(style_id) = style_id {
+            if let Some(style) = self.styles.get(style_id) {
+                return Some(style);
+            }
+        }
+
+        self.default_style_id
+            .as_ref()
+            .and_then(|style_id| self.styles.get(style_id))
+            .or_else(|| self.styles.values().next())
     }
 }
 
@@ -494,6 +581,7 @@ pub fn build_slide_render_model(
         .unwrap_or(540.0);
 
     let theme = resolve_slide_theme_context(archive, slide_tree, slide);
+    let table_styles = resolve_table_style_catalog(archive);
     let render_content = collect_render_content(archive, slide_tree, slide, theme.as_ref())?;
     let mut nodes = Vec::new();
     let mut anchors = Vec::new();
@@ -544,7 +632,14 @@ pub fn build_slide_render_model(
     }
 
     for table in &render_content.tables {
-        build_table_nodes(table, theme.as_ref(), &mut nodes, &mut anchors, &mut text_offset);
+        build_table_nodes(
+            table,
+            theme.as_ref(),
+            table_styles.as_ref(),
+            &mut nodes,
+            &mut anchors,
+            &mut text_offset,
+        );
     }
 
     for text_box in render_content.text_boxes.iter().cloned() {
@@ -1064,6 +1159,134 @@ fn parse_master_text_styles(master_root: &XmlElement) -> MasterTextStyles {
             .flatten()
             .unwrap_or_default(),
     }
+}
+
+fn resolve_table_style_catalog(archive: &OoxmlArchive) -> Option<TableStyleCatalog> {
+    let table_styles_root = read_part_root(archive, "ppt/tableStyles.xml").ok()?;
+    if table_styles_root.local_name() != "tblStyleLst" {
+        return None;
+    }
+
+    let mut catalog = TableStyleCatalog {
+        default_style_id: table_styles_root.attribute("def").map(ToOwned::to_owned),
+        styles: HashMap::new(),
+    };
+
+    for child in &table_styles_root.children {
+        if child.local_name() != "tblStyle" {
+            continue;
+        }
+
+        let style_id = child.required_attribute("styleId").ok()?.to_string();
+        let style_definition = parse_table_style_definition(child).ok()?;
+        catalog.styles.insert(style_id, style_definition);
+    }
+
+    Some(catalog)
+}
+
+fn parse_table_style_definition(style: &XmlElement) -> Result<TableStyleDefinition, ViewerError> {
+    Ok(TableStyleDefinition {
+        whole_table: parse_table_cell_style_definition(style.child("wholeTbl"))?,
+        band1_horizontal: parse_table_cell_style_definition(style.child("band1H"))?,
+        band2_horizontal: parse_table_cell_style_definition(style.child("band2H"))?,
+        band1_vertical: parse_table_cell_style_definition(style.child("band1V"))?,
+        band2_vertical: parse_table_cell_style_definition(style.child("band2V"))?,
+        first_row: parse_table_cell_style_definition(style.child("firstRow"))?,
+        last_row: parse_table_cell_style_definition(style.child("lastRow"))?,
+        first_col: parse_table_cell_style_definition(style.child("firstCol"))?,
+        last_col: parse_table_cell_style_definition(style.child("lastCol"))?,
+    })
+}
+
+fn parse_table_cell_style_definition(
+    style: Option<&XmlElement>,
+) -> Result<TableCellStyleDefinition, ViewerError> {
+    let Some(style) = style else {
+        return Ok(TableCellStyleDefinition::default());
+    };
+
+    let text_style = style
+        .child("tcTxStyle")
+        .map(parse_table_text_style)
+        .transpose()?
+        .unwrap_or_default();
+    let fill = style
+        .child("tcStyle")
+        .and_then(|cell_style| cell_style.child("fill"))
+        .and_then(|fill| {
+            fill.child("solidFill")
+                .or_else(|| fill.child("schemeClr"))
+                .or_else(|| fill.child("srgbClr"))
+                .or_else(|| fill.child("sysClr"))
+                .or_else(|| fill.child("prstClr"))
+        })
+        .map(parse_color_value)
+        .transpose()?;
+    let stroke = style
+        .child("tcStyle")
+        .map(parse_table_border_stroke)
+        .transpose()?
+        .flatten();
+
+    Ok(TableCellStyleDefinition {
+        fill,
+        stroke,
+        text_style,
+    })
+}
+
+fn parse_table_text_style(style: &XmlElement) -> Result<SlideTextRunStyle, ViewerError> {
+    let mut text_style = SlideTextRunStyle::default();
+
+    if let Some(bold) = style.attribute("b") {
+        text_style.bold = Some(parse_on_off_attribute_value(bold));
+    }
+    if let Some(italic) = style.attribute("i") {
+        text_style.italic = Some(parse_on_off_attribute_value(italic));
+    }
+    if let Some(font_ref) = style.child("fontRef") {
+        match font_ref.attribute("idx") {
+            Some("major") => {
+                text_style.font_face = Some("+mj-lt".to_string());
+                text_style.east_asia_font_face = Some("+mj-ea".to_string());
+            }
+            Some("minor") => {
+                text_style.font_face = Some("+mn-lt".to_string());
+                text_style.east_asia_font_face = Some("+mn-ea".to_string());
+            }
+            _ => {}
+        }
+    }
+    if style.child("schemeClr").is_some()
+        || style.child("srgbClr").is_some()
+        || style.child("sysClr").is_some()
+        || style.child("prstClr").is_some()
+    {
+        text_style.fill = Some(ShapeFill::Solid(parse_color_value(style)?));
+    }
+
+    Ok(text_style)
+}
+
+fn parse_table_border_stroke(style: &XmlElement) -> Result<Option<ShapeStroke>, ViewerError> {
+    let Some(border) = style.child("tcBdr") else {
+        return Ok(None);
+    };
+
+    for side_name in ["left", "right", "top", "bottom", "insideH", "insideV"] {
+        let Some(side) = border.child(side_name) else {
+            continue;
+        };
+        let Some(line) = side.child("ln") else {
+            continue;
+        };
+        if let Some(stroke) = parse_line_stroke(line)? {
+            return Ok(Some(stroke));
+        }
+    }
+
+    Ok(None)
 }
 
 pub fn parse_part_relationships(
@@ -1862,6 +2085,7 @@ fn parse_graphic_frame_table(
     let Some(table) = graphic_data.child("tbl") else {
         return Ok(None);
     };
+    let table_properties = table.child("tblPr");
 
     let transform = graphic_frame
         .child("xfrm")
@@ -1917,15 +2141,25 @@ fn parse_graphic_frame_table(
                 .map(parse_table_cell_margins)
                 .transpose()?
                 .unwrap_or_default();
-            let paragraphs = cell
+            let (paragraphs, style_sheet) = cell
                 .child("txBody")
-                .map(parse_text_paragraphs)
+                .map(|text_body| {
+                    Ok((
+                        parse_text_paragraphs(text_body)?,
+                        text_body
+                            .child("lstStyle")
+                            .map(parse_text_style_sheet)
+                            .transpose()?
+                            .unwrap_or_default(),
+                    ))
+                })
                 .transpose()?
                 .unwrap_or_default();
 
             cells.push(SlideTableCell {
                 column_span,
                 paragraphs,
+                style_sheet,
                 fill,
                 stroke,
                 margins,
@@ -1940,6 +2174,14 @@ fn parse_graphic_frame_table(
         name: properties.required_attribute("name")?.to_string(),
         bounds: transform.bounds,
         column_widths_emu,
+        style_id: table_properties
+            .and_then(|properties| properties.child("tableStyleId"))
+            .map(|style_id| style_id.text.trim().to_string())
+            .filter(|style_id| !style_id.is_empty()),
+        flags: table_properties
+            .map(parse_table_style_flags)
+            .transpose()?
+            .unwrap_or_default(),
         rows,
     }))
 }
@@ -1950,6 +2192,17 @@ fn parse_table_cell_margins(properties: &XmlElement) -> Result<SlideTextInsets, 
         top: parse_i64_optional_attribute(properties, "marT")?.unwrap_or(0),
         right: parse_i64_optional_attribute(properties, "marR")?.unwrap_or(0),
         bottom: parse_i64_optional_attribute(properties, "marB")?.unwrap_or(0),
+    })
+}
+
+fn parse_table_style_flags(properties: &XmlElement) -> Result<SlideTableStyleFlags, ViewerError> {
+    Ok(SlideTableStyleFlags {
+        first_row: parse_bool_optional_attribute(properties, "firstRow")?.unwrap_or(false),
+        first_col: parse_bool_optional_attribute(properties, "firstCol")?.unwrap_or(false),
+        last_row: parse_bool_optional_attribute(properties, "lastRow")?.unwrap_or(false),
+        last_col: parse_bool_optional_attribute(properties, "lastCol")?.unwrap_or(false),
+        band_row: parse_bool_optional_attribute(properties, "bandRow")?.unwrap_or(false),
+        band_col: parse_bool_optional_attribute(properties, "bandCol")?.unwrap_or(false),
     })
 }
 
@@ -1971,6 +2224,24 @@ fn parse_i64_optional_attribute(
         .attribute(name)
         .map(|value| value.parse::<i64>().map_err(|_| ViewerError::InvalidDocument))
         .transpose()
+}
+
+fn parse_bool_optional_attribute(
+    element: &XmlElement,
+    name: &str,
+) -> Result<Option<bool>, ViewerError> {
+    element
+        .attribute(name)
+        .map(|value| match value {
+            "1" | "true" | "on" => Ok(true),
+            "0" | "false" | "off" => Ok(false),
+            _ => Err(ViewerError::InvalidDocument),
+        })
+        .transpose()
+}
+
+fn parse_on_off_attribute_value(value: &str) -> bool {
+    matches!(value, "1" | "true" | "on")
 }
 
 fn infer_image_content_type(path: &str) -> Option<String> {
@@ -2166,6 +2437,7 @@ fn parse_rgb_hex(color_hex: &str) -> Option<(u8, u8, u8)> {
 fn build_table_nodes(
     table: &SlideTable,
     theme_context: Option<&ThemeContext>,
+    table_styles: Option<&TableStyleCatalog>,
     nodes: &mut Vec<RenderNode>,
     anchors: &mut Vec<SelectionAnchor>,
     text_offset: &mut u32,
@@ -2178,8 +2450,9 @@ fn build_table_nodes(
         .max(1);
     let total_height = table.rows.iter().map(|row| row.height_emu).sum::<i64>().max(1);
     let mut cursor_y = table.bounds.y;
+    let total_columns = table.column_widths_emu.len();
 
-    for row in &table.rows {
+    for (row_index, row) in table.rows.iter().enumerate() {
         let row_height = if row.height_emu > 0 {
             row.height_emu
         } else {
@@ -2208,14 +2481,23 @@ fn build_table_nodes(
                 width: cell_width.max(1),
                 height: cell_height.max(1),
             };
+            let table_style = resolve_table_cell_style(
+                table,
+                table_styles,
+                row_index,
+                column_index,
+                span,
+                total_columns,
+            );
 
             let fill_color = cell
                 .fill
                 .as_deref()
+                .or(table_style.fill.as_deref())
                 .and_then(|fill| resolve_render_color(fill, theme_context));
-            let stroke_color = normalize_render_stroke_color(cell.stroke.as_ref(), theme_context);
-            let stroke_width = cell
-                .stroke
+            let effective_stroke = cell.stroke.as_ref().or(table_style.stroke.as_ref());
+            let stroke_color = normalize_render_stroke_color(effective_stroke, theme_context);
+            let stroke_width = effective_stroke
                 .as_ref()
                 .and_then(|stroke| stroke.width_emu)
                 .map(emu_to_points)
@@ -2231,6 +2513,21 @@ fn build_table_nodes(
                 stroke_width,
             }));
 
+            let mut style_sheet = cell.style_sheet.clone();
+            style_sheet
+                .levels
+                .entry(0)
+                .and_modify(|paragraph_style| {
+                    paragraph_style
+                        .default_run_style
+                        .merge_missing_from(&table_style.text_style);
+                })
+                .or_insert_with(|| {
+                    let mut paragraph_style = SlideParagraphStyle::default();
+                    paragraph_style.default_run_style = table_style.text_style.clone();
+                    paragraph_style
+                });
+
             build_text_nodes(
                 &SlideTextBox {
                     shape_id: table.shape_id,
@@ -2238,7 +2535,7 @@ fn build_table_nodes(
                     bounds: Some(cell_bounds),
                     insets: cell.margins.clone(),
                     placeholder: None,
-                    style_sheet: SlideTextStyleSheet::default(),
+                    style_sheet,
                     paragraphs: cell.paragraphs.clone(),
                 },
                 theme_context,
@@ -2253,6 +2550,58 @@ fn build_table_nodes(
 
         cursor_y += row_height;
     }
+}
+
+fn resolve_table_cell_style<'a>(
+    table: &SlideTable,
+    table_styles: Option<&'a TableStyleCatalog>,
+    row_index: usize,
+    column_index: usize,
+    span: usize,
+    total_columns: usize,
+) -> TableCellStyleDefinition {
+    let Some(table_style_catalog) = table_styles else {
+        return TableCellStyleDefinition::default();
+    };
+    let Some(style_definition) = table_style_catalog.resolve(table.style_id.as_deref()) else {
+        return TableCellStyleDefinition::default();
+    };
+
+    let mut resolved = TableCellStyleDefinition::default();
+    resolved.apply_overrides_from(&style_definition.whole_table);
+
+    if table.flags.band_row {
+        let band_style = if row_index % 2 == 0 {
+            &style_definition.band1_horizontal
+        } else {
+            &style_definition.band2_horizontal
+        };
+        resolved.apply_overrides_from(band_style);
+    }
+
+    if table.flags.band_col {
+        let band_style = if column_index % 2 == 0 {
+            &style_definition.band1_vertical
+        } else {
+            &style_definition.band2_vertical
+        };
+        resolved.apply_overrides_from(band_style);
+    }
+
+    if table.flags.first_row && row_index == 0 {
+        resolved.apply_overrides_from(&style_definition.first_row);
+    }
+    if table.flags.last_row && row_index + 1 == table.rows.len() {
+        resolved.apply_overrides_from(&style_definition.last_row);
+    }
+    if table.flags.first_col && column_index == 0 {
+        resolved.apply_overrides_from(&style_definition.first_col);
+    }
+    if table.flags.last_col && column_index + span >= total_columns {
+        resolved.apply_overrides_from(&style_definition.last_col);
+    }
+
+    resolved
 }
 
 fn build_text_nodes(
