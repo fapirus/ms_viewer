@@ -531,7 +531,13 @@
     - fixture presence smoke test
     - review fixture open/render/search/selection test
     - review fixture theme/layout/image link test
-- [ ] Flutter slide rendering widget tests
+- [x] Flutter slide rendering widget tests
+  - Done:
+    - `DocumentPageView`에서 PPTX slide의 shape/text/image layer 조합 위젯 테스트 추가
+    - `MsDocumentView`에서 PPTX 첫 페이지 로드와 navigation shell 위젯 테스트 추가
+  - Tests:
+    - embedded image layer widget test
+    - PPTX page preview and next-page navigation widget test
 - [ ] PPTX MVP acceptance pass
   - Acceptance checks:
     - slide render

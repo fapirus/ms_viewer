@@ -126,4 +126,73 @@ void main() {
     expect(find.byType(Image), findsOneWidget);
     expect(tester.getSize(find.byType(Image)), const Size(40, 40));
   });
+
+  testWidgets('renders pptx slide nodes with shapes text and image layers', (
+    tester,
+  ) async {
+    final page = PageRenderModel.fromJson({
+      'pageIndex': 1,
+      'width': 720.0,
+      'height': 540.0,
+      'nodes': [
+        {
+          'type': 'box',
+          'bounds': {'x': 40.0, 'y': 60.0, 'width': 180.0, 'height': 72.0},
+          'fillColorHex': '#FFAA00',
+          'strokeColorHex': '#333333',
+          'strokeWidth': 1.0,
+        },
+        {
+          'type': 'text',
+          'text': 'Quarterly Results',
+          'bounds': {'x': 66.0, 'y': 24.0, 'width': 220.0, 'height': 28.0},
+          'style': {
+            'fontFamily': 'Aptos',
+            'fontSize': 24.0,
+            'bold': true,
+            'italic': false,
+            'colorHex': '#000000',
+          },
+          'range': {'start': 0, 'end': 17},
+        },
+        {
+          'type': 'image',
+          'resourceId': 'ppt/media/image1.png',
+          'description': 'Fixture image',
+          'contentType': 'image/png',
+          'dataBase64':
+              'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+lm2cAAAAASUVORK5CYII=',
+          'bounds': {'x': 300.0, 'y': 120.0, 'width': 100.0, 'height': 75.0},
+        },
+      ],
+      'selectionAnchors': const [
+        {'nodeIndex': 1, 'charIndex': 0, 'x': 66.0, 'y': 24.0},
+        {'nodeIndex': 1, 'charIndex': 17, 'x': 286.0, 'y': 24.0},
+      ],
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: SizedBox(
+              width: 360,
+              height: 270,
+              child: DocumentPageView(
+                page: page,
+                highlights: const [Rect.fromLTWH(66, 24, 80, 28)],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byType(DocumentPageView), findsOneWidget);
+    expect(find.byType(CustomPaint), findsWidgets);
+    expect(find.byType(Image), findsOneWidget);
+    expect(find.byType(SelectionHighlightOverlay), findsOneWidget);
+    expect(tester.getSize(find.byType(Image)), const Size(50, 37.5));
+  });
 }
