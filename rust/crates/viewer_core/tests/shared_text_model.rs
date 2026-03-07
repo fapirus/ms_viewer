@@ -40,6 +40,7 @@ fn shared_text_model_can_be_constructed() {
             display_width: Some(120.0),
             display_height: Some(64.0),
         },
+        alignment: ParagraphAlignment::Center,
     };
     let table = Block::Table {
         rows: vec![TableRow {
@@ -93,8 +94,9 @@ fn shared_text_model_can_be_constructed() {
     }
 
     match image {
-        Block::Image { image } => {
+        Block::Image { image, alignment } => {
             assert_eq!(image.resource_id, "rId5");
+            assert_eq!(alignment, ParagraphAlignment::Center);
         }
         _ => panic!("expected image block"),
     }

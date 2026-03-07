@@ -1064,10 +1064,11 @@ fn parses_inline_image_reference_from_drawing_relationship() {
 
     assert_eq!(blocks.len(), 1);
     match &blocks[0] {
-        Block::Image { image } => {
+        Block::Image { image, alignment } => {
             assert_eq!(image.resource_id, "word/media/image1.png");
             assert_eq!(image.description.as_deref(), Some("System diagram"));
             assert_eq!(image.content_type.as_deref(), Some("image/png"));
+            assert_eq!(*alignment, ParagraphAlignment::Left);
         }
         other => panic!("expected image block, got {other:?}"),
     }
@@ -1129,6 +1130,86 @@ fn missing_media_relationship_for_drawing_fails() {
     let error = parse_paragraph_blocks(&archive, &package).expect_err("missing media should fail");
 
     assert!(matches!(error, viewer_core::ViewerError::InvalidDocument));
+}
+
+#[test]
+fn lays_out_centered_inline_image_using_paragraph_alignment() {
+    let file = create_docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+              <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+            </Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+              <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+            </Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">
+              <w:body>
+                <w:p>
+                  <w:pPr><w:jc w:val="center"/></w:pPr>
+                  <w:r>
+                    <w:drawing>
+                      <wp:inline>
+                        <wp:extent cx="3252470" cy="3252470"/>
+                        <wp:docPr id="1" name="Centered logo"/>
+                        <a:graphic>
+                          <a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">
+                            <pic:pic>
+                              <pic:blipFill><a:blip r:embed="rImage1"/></pic:blipFill>
+                            </pic:pic>
+                          </a:graphicData>
+                        </a:graphic>
+                      </wp:inline>
+                    </w:drawing>
+                  </w:r>
+                </w:p>
+                <w:sectPr>
+                  <w:pgSz w:w="11906" w:h="16838"/>
+                  <w:pgMar w:top="1701" w:right="1440" w:bottom="1440" w:left="1440"/>
+                </w:sectPr>
+              </w:body>
+            </w:document>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+              <Relationship Id="rImage1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/logo.png"/>
+            </Relationships>"#,
+        ),
+        ("word/media/logo.png", "fakepng"),
+    ]);
+    let archive = OoxmlArchive::open_path(file.path()).expect("docx archive should open");
+    let package = parse_docx(&archive).expect("docx package should parse");
+    let blocks = parse_paragraph_blocks(&archive, &package).expect("blocks should parse");
+
+    match &blocks[0] {
+        Block::Image { image, alignment } => {
+            assert_eq!(image.resource_id, "word/media/logo.png");
+            assert_eq!(*alignment, ParagraphAlignment::Center);
+        }
+        other => panic!("expected image block, got {other:?}"),
+    }
+
+    let pages = layout_document(&archive, &package).expect("layout should succeed");
+    match &pages[0].blocks[0] {
+        format_docx::LaidOutBlock::Image { x, width, .. } => {
+            assert!(*x > pages[0].page_box.content.x + 40.0);
+            let expected =
+                pages[0].page_box.content.x + ((pages[0].page_box.content.width - *width) / 2.0);
+            assert!((*x - expected).abs() < 0.5);
+        }
+        other => panic!("expected image layout, got {other:?}"),
+    }
 }
 
 #[test]
@@ -1721,6 +1802,88 @@ fn splits_table_rows_across_pages_when_needed() {
         .sum::<usize>();
 
     assert_eq!(total_rows, 4);
+}
+
+#[test]
+fn keeps_three_image_rows_on_single_page_with_compact_cell_padding() {
+    let file = create_docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+              <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+            </Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+              <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+            </Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">
+              <w:body>
+                <w:p><w:r><w:t>Gallery intro</w:t></w:r></w:p>
+                <w:tbl>
+                  <w:tblGrid>
+                    <w:gridCol w:w="2319"/>
+                    <w:gridCol w:w="2297"/>
+                    <w:gridCol w:w="2183"/>
+                  </w:tblGrid>
+                  <w:tr>
+                    <w:tc><w:p><w:r><w:drawing><wp:inline><wp:extent cx="1362714" cy="2800350"/><wp:docPr id="1" name="그림 1"/><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:blipFill><a:blip r:embed="rImage1"/></pic:blipFill></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p></w:tc>
+                    <w:tc><w:p><w:r><w:drawing><wp:inline><wp:extent cx="1376680" cy="2829050"/><wp:docPr id="2" name="그림 2"/><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:blipFill><a:blip r:embed="rImage2"/></pic:blipFill></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p></w:tc>
+                    <w:tc><w:p><w:r><w:drawing><wp:inline><wp:extent cx="1375587" cy="2829465"/><wp:docPr id="3" name="그림 3"/><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:blipFill><a:blip r:embed="rImage3"/></pic:blipFill></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p></w:tc>
+                  </w:tr>
+                  <w:tr>
+                    <w:tc><w:p><w:r><w:drawing><wp:inline><wp:extent cx="1362714" cy="2800350"/><wp:docPr id="4" name="그림 4"/><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:blipFill><a:blip r:embed="rImage4"/></pic:blipFill></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p></w:tc>
+                    <w:tc><w:p><w:r><w:drawing><wp:inline><wp:extent cx="1376680" cy="2829050"/><wp:docPr id="5" name="그림 5"/><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:blipFill><a:blip r:embed="rImage5"/></pic:blipFill></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p></w:tc>
+                    <w:tc><w:p><w:r><w:drawing><wp:inline><wp:extent cx="1375587" cy="2829465"/><wp:docPr id="6" name="그림 6"/><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:blipFill><a:blip r:embed="rImage6"/></pic:blipFill></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p></w:tc>
+                  </w:tr>
+                  <w:tr>
+                    <w:tc><w:p><w:r><w:drawing><wp:inline><wp:extent cx="1362714" cy="2800350"/><wp:docPr id="7" name="그림 7"/><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:blipFill><a:blip r:embed="rImage7"/></pic:blipFill></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p></w:tc>
+                    <w:tc><w:p><w:r><w:drawing><wp:inline><wp:extent cx="1376680" cy="2829050"/><wp:docPr id="8" name="그림 8"/><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:blipFill><a:blip r:embed="rImage8"/></pic:blipFill></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p></w:tc>
+                    <w:tc><w:p><w:r><w:drawing><wp:inline><wp:extent cx="1375587" cy="2829465"/><wp:docPr id="9" name="그림 9"/><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:blipFill><a:blip r:embed="rImage9"/></pic:blipFill></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p></w:tc>
+                  </w:tr>
+                </w:tbl>
+                <w:sectPr>
+                  <w:pgSz w:w="11906" w:h="16838"/>
+                  <w:pgMar w:top="1701" w:right="1440" w:bottom="1440" w:left="1440"/>
+                </w:sectPr>
+              </w:body>
+            </w:document>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+              <Relationship Id="rImage1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image.png"/>
+              <Relationship Id="rImage2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image.png"/>
+              <Relationship Id="rImage3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image.png"/>
+              <Relationship Id="rImage4" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image.png"/>
+              <Relationship Id="rImage5" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image.png"/>
+              <Relationship Id="rImage6" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image.png"/>
+              <Relationship Id="rImage7" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image.png"/>
+              <Relationship Id="rImage8" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image.png"/>
+              <Relationship Id="rImage9" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image.png"/>
+            </Relationships>"#,
+        ),
+        ("word/media/image.png", "fakepng"),
+    ]);
+    let archive = OoxmlArchive::open_path(file.path()).expect("docx archive should open");
+    let package = parse_docx(&archive).expect("docx package should parse");
+    let pages = build_selection_page_models(&archive, &package).expect("selection models");
+
+    assert_eq!(pages.len(), 1);
+    let image_count = pages[0]
+        .nodes
+        .iter()
+        .filter(|node| matches!(node, RenderNode::Image(_)))
+        .count();
+    assert_eq!(image_count, 9);
 }
 
 #[test]

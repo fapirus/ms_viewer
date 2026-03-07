@@ -369,6 +369,13 @@
   - Tests:
     - centered paragraph layout regression test
     - single-line render painter regression test
+- [x] DOCX inline image 정렬과 table image 페이지 수용량 보정
+  - Rust scope:
+    - image-only paragraph가 paragraph alignment를 유지하도록 image block에 정렬 정보 반영
+    - table cell vertical padding을 보정해서 near-boundary image row가 불필요하게 다음 페이지로 밀리지 않도록 조정
+  - Tests:
+    - centered inline image layout regression test
+    - 3x3 image table single-page regression test
 - [x] DOCX 폰트 메트릭과 fallback 정밀도 보정
   - Rust scope:
     - 문자폭 추정 개선 또는 실제 폰트 메트릭 연동 검토
@@ -507,6 +514,13 @@
     - wrong password retry
     - cancel handling
     - unsupported encryption handling
+- [ ] DOCX theme font 해석과 exact glyph metrics 보강
+  - Notes:
+    - Word theme/default font 해석과 실제 glyph metrics 기반 line break는 시각 충실도 후속 과제
+    - 현재는 fallback/font-family heuristic 기반으로 렌더링
+  - Tests:
+    - issue screenshot review set
+    - theme font fixture regression
 - [ ] FileHandle input support 구현
   - Tests:
     - handle-based open smoke test

@@ -703,12 +703,18 @@ pub fn layout_document(
                     cursor_y += 12.0;
                 }
             }
-            Block::Image { image } => {
+            Block::Image { image, alignment } => {
                 let (image_width, image_height) =
                     image_display_size(&image, default_page_box.content.width);
                 if cursor_y + image_height > content_bottom {
                     start_new_page(&mut pages, &mut cursor_y, &default_page_box);
                 }
+                let image_x = resolve_line_x(
+                    default_page_box.content.x,
+                    default_page_box.content.width,
+                    image_width,
+                    &alignment,
+                );
                 pages
                     .last_mut()
                     .expect("page exists")
@@ -717,7 +723,7 @@ pub fn layout_document(
                         resource_id: image.resource_id,
                         description: image.description,
                         content_type: image.content_type,
-                        x: default_page_box.content.x,
+                        x: image_x,
                         y: cursor_y,
                         width: image_width,
                         height: image_height,
@@ -1436,7 +1442,7 @@ fn layout_table_cell_content(
     width: f32,
 ) -> (Vec<LaidOutLine>, Vec<LaidOutTableCellImage>, f32) {
     const CELL_PADDING_X: f32 = 6.0;
-    const CELL_PADDING_Y: f32 = 6.0;
+    const CELL_PADDING_Y: f32 = 2.0;
     const IMAGE_GAP: f32 = 4.0;
 
     let mut lines = Vec::new();
@@ -1490,7 +1496,7 @@ fn layout_table_cell_content(
 
                 cursor_y += metrics.spacing_after;
             }
-            Block::Image { image } => {
+            Block::Image { image, alignment } => {
                 let (image_width, image_height) = image_display_size(image, available_width);
                 if has_content {
                     cursor_y += IMAGE_GAP;
@@ -1500,7 +1506,7 @@ fn layout_table_cell_content(
                     resource_id: image.resource_id.clone(),
                     description: image.description.clone(),
                     content_type: image.content_type.clone(),
-                    x: x + CELL_PADDING_X,
+                    x: resolve_line_x(x + CELL_PADDING_X, available_width, image_width, alignment),
                     y: cursor_y,
                     width: image_width,
                     height: image_height,
@@ -1608,6 +1614,7 @@ fn parse_paragraph_blocks_with_media(
         .map(|run| run.style.font_size)
         .unwrap_or_else(|| materialize_text_style(&paragraph_style).font_size);
     let metrics = resolve_paragraph_metrics(paragraph, styles, paragraph_font_size);
+    let paragraph_alignment = metrics.alignment.clone();
     let list = parse_paragraph_list(paragraph, numbering);
     let images = if let Some(package) = package {
         parse_paragraph_images(paragraph, package)?
@@ -1632,7 +1639,10 @@ fn parse_paragraph_blocks_with_media(
             metrics,
         });
     }
-    blocks.extend(images.into_iter().map(|image| Block::Image { image }));
+    blocks.extend(images.into_iter().map(|image| Block::Image {
+        image,
+        alignment: paragraph_alignment.clone(),
+    }));
 
     Ok(blocks)
 }

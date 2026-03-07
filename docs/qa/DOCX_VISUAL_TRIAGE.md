@@ -16,6 +16,7 @@
 | `infinity` page 1 | `issue/word/infinity/1.png`, viewer page 1 스크린샷 | 표 시작 위치, 표 크기, 표 하단 이후 문단 흐름이 Word와 다르다 | `w:tblpPr`가 있는 floating table을 inline table처럼 처리하고 있음. preferred width, table position, cell padding 반영 부족 | P0 | 높음 | `DOCX floating table positioning 보정` | `docx_floating_table_intro.docx` |
 | `infinity` page 4-5 | `issue/word/infinity/4.png`, `5.png`, viewer page 4-5 스크린샷 | 표 셀 내부 이미지가 빠지고 텍스트만 좁게 배치된다 | 표 셀 내부 `w:drawing`을 cell text flatten 과정에서 버리고 있음. row height도 이미지 크기를 반영하지 않음 | P0 | 높음 | `DOCX 표 내부 이미지 및 inline image 렌더 보정` | `docx_table_with_inline_images.docx` |
 | `hello`, `infinity` 최신 비교 | `issue/word/hello/Screenshot 2026-03-07 at 7.13.58 PM.png`, `issue/word/infinity/Screenshot 2026-03-07 at 7.12.52 PM.png` | centered title이 좌측 정렬되고, viewer에서 한 줄 text node가 다시 개행된다 | `w:jc`를 block model에 보존하지 못했고, Flutter painter가 engine line을 다시 `maxWidth`로 재배치함 | P0 | 중상 | `DOCX 문단 정렬과 화면 재개행 보정` | synthetic centered-title fixture |
+| `infinity` 최신 page 1/page 5 | `issue/word/infinity/Screenshot 2026-03-07 at 7.42.16 PM.png`, `7.42.35 PM.png` | page 1 로고가 좌측으로 치우치고, page 5 표 이미지 행이 다음 페이지로 밀린다 | image-only paragraph가 paragraph alignment를 잃고 있고, table cell vertical padding이 커서 near-boundary image row가 overflow된다 | P0 | 중상 | `DOCX inline image 정렬과 table image 페이지 수용량 보정` | synthetic centered-image/table-image fixture |
 | `infinity` 전체 | viewer page 2-8 스크린샷 | 문단 간격과 표/문단 사이 여백이 Word보다 빽빽하다 | `before/after`, line spacing, style paragraph metrics를 대부분 기본값으로 처리 | P1 | 중상 | `DOCX 문단 간격과 기본 스타일 메트릭 보정` | `docx_spacing_variants.docx` |
 | `hello`, `infinity` 공통 | viewer 스크린샷 전반 | 글자폭과 줄바꿈이 Word와 완전히 일치하지 않는다 | 추정 문자폭 기반 line breaking 한계. 실제 폰트 메트릭과 fallback 정밀도가 부족 | P2 | 매우 높음 | `DOCX 폰트 메트릭과 fallback 정밀도 보정` | `docx_cjk_width_mix.docx` |
 
@@ -34,8 +35,10 @@
   - 1페이지 표 위치와 크기 차이는 `floating table` 처리 추가로 크게 줄었다.
   - centered title은 `page model` 기준 `x=163.24`, `text="INFINITY TALK"`로 보정됐다.
   - viewer painter는 이제 engine이 만든 한 줄 text node를 다시 줄바꿈하지 않는다.
+  - inline logo는 `x=169.6`으로 centered되고, 실제 문서 page count는 `7`로 줄었다.
+  - page index 4 기준 image node 수가 `9`로 복구되어 Word의 3x3 screenshot grid와 맞는다.
   - 실제 page model 기준 table outer bounds는 `x=185.7`, `y=619.5`, `width=223.9`로 고정된다.
-  - 남은 차이는 주로 Word 기본 폰트/테마 폰트 해석과 미세한 행 높이 차이 쪽이다.
+  - 남은 차이는 주로 Word 기본 폰트/테마 폰트 해석과 exact glyph metrics 쪽이다.
 - 결론
   - 자동 테스트 기준으로는 `DOCX visual parity` 직전 상태다.
   - 실제 시각 수용 기준으로는 최신 데모 스크린샷을 다시 받아 `hello`와 `infinity`를 한 번 더 비교한 뒤 acceptance를 닫는 편이 맞다.

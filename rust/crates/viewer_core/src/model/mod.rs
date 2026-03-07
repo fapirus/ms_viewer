@@ -191,6 +191,7 @@ pub enum Block {
     },
     Image {
         image: ImageReference,
+        alignment: ParagraphAlignment,
     },
 }
 
