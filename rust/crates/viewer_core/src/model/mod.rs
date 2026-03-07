@@ -65,6 +65,8 @@ pub struct ImageReference {
     pub resource_id: String,
     pub description: Option<String>,
     pub content_type: Option<String>,
+    pub display_width: Option<f32>,
+    pub display_height: Option<f32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -112,6 +114,7 @@ pub enum Block {
     },
     Table {
         rows: Vec<TableRow>,
+        column_widths: Vec<f32>,
     },
     Image {
         image: ImageReference,
@@ -132,6 +135,8 @@ pub struct TextNode {
 pub struct ImageNode {
     pub resource_id: String,
     pub description: Option<String>,
+    pub content_type: Option<String>,
+    pub data_base64: Option<String>,
     pub bounds: Rect,
 }
 

@@ -51,4 +51,28 @@ void main() {
 
     expect(page.nodes.single, isA<BoxRenderNodeModel>());
   });
+
+  test('page render model decodes image node payload', () {
+    final page = PageRenderModel.fromJson({
+      'pageIndex': 2,
+      'width': 640.0,
+      'height': 480.0,
+      'nodes': [
+        {
+          'type': 'image',
+          'resourceId': 'word/media/image1.png',
+          'description': 'logo',
+          'contentType': 'image/png',
+          'dataBase64': 'aGVsbG8=',
+          'bounds': {'x': 10.0, 'y': 20.0, 'width': 100.0, 'height': 80.0},
+        },
+      ],
+      'selectionAnchors': [],
+    });
+
+    final node = page.nodes.single as ImageRenderNodeModel;
+    expect(node.resourceId, 'word/media/image1.png');
+    expect(node.contentType, 'image/png');
+    expect(node.dataBase64, 'aGVsbG8=');
+  });
 }

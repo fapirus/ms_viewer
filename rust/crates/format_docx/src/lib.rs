@@ -1,3 +1,4 @@
+use base64::Engine;
 use format_shared::{parse_package_relationships, resolve_relationship_target};
 use viewer_core::archive::OoxmlArchive;
 use viewer_core::model::{
@@ -44,7 +45,15 @@ pub struct DocxPackage {
 #[derive(Debug, Clone, PartialEq)]
 pub struct StyleCatalog {
     pub default_run_style: ResolvedTextStyle,
+    pub default_paragraph_metrics: ParagraphMetrics,
     pub run_styles: HashMap<String, RunStyleDefinition>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ParagraphMetrics {
+    pub line_height: Option<f32>,
+    pub spacing_before: f32,
+    pub spacing_after: f32,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -153,6 +162,8 @@ pub enum LaidOutBlock {
     },
     Image {
         resource_id: String,
+        description: Option<String>,
+        content_type: Option<String>,
         x: f32,
         y: f32,
         width: f32,
@@ -322,6 +333,11 @@ pub fn parse_style_catalog(
     let Some(styles_part) = &package.styles else {
         return Ok(StyleCatalog {
             default_run_style: ResolvedTextStyle::default(),
+            default_paragraph_metrics: ParagraphMetrics {
+                line_height: None,
+                spacing_before: 0.0,
+                spacing_after: 6.0,
+            },
             run_styles: HashMap::new(),
         });
     };
@@ -331,6 +347,11 @@ pub fn parse_style_catalog(
     let root = parse_document(&text)?;
 
     let mut default_run_style = ResolvedTextStyle::default();
+    let mut default_paragraph_metrics = ParagraphMetrics {
+        line_height: None,
+        spacing_before: 0.0,
+        spacing_after: 6.0,
+    };
     let mut run_styles = HashMap::new();
 
     for child in &root.children {
@@ -340,6 +361,11 @@ pub fn parse_style_catalog(
                     child.child("rPrDefault").and_then(|node| node.child("rPr"))
                 {
                     default_run_style = parse_resolved_style(Some(rpr_default));
+                }
+                if let Some(ppr_default) =
+                    child.child("pPrDefault").and_then(|node| node.child("pPr"))
+                {
+                    default_paragraph_metrics = parse_paragraph_metrics(Some(ppr_default));
                 }
             }
             "style" if child.attribute("type") == Some("character") => {
@@ -359,6 +385,7 @@ pub fn parse_style_catalog(
 
     Ok(StyleCatalog {
         default_run_style,
+        default_paragraph_metrics,
         run_styles,
     })
 }
@@ -417,6 +444,7 @@ pub fn layout_document(
     archive: &OoxmlArchive,
     package: &DocxPackage,
 ) -> Result<Vec<DocxPageLayout>, ViewerError> {
+    let styles = parse_style_catalog(archive, package)?;
     let blocks = parse_paragraph_blocks(archive, package)?;
     let mut page_boxes = parse_page_boxes(archive, package)?;
     if page_boxes.is_empty() {
@@ -451,7 +479,13 @@ pub fn layout_document(
         match block {
             Block::Paragraph { runs, list } => {
                 let font_size = runs.first().map(|run| run.style.font_size).unwrap_or(12.0);
-                let line_height = (font_size * 1.2).max(14.0);
+                let line_height = styles
+                    .default_paragraph_metrics
+                    .line_height
+                    .unwrap_or_else(|| (font_size * 1.2).max(14.0))
+                    .max(font_size);
+                let paragraph_spacing_before = styles.default_paragraph_metrics.spacing_before;
+                let paragraph_spacing_after = styles.default_paragraph_metrics.spacing_after;
                 let full_text = runs
                     .iter()
                     .map(|run| run.text.as_str())
@@ -463,6 +497,7 @@ pub fn layout_document(
                     if segment_index > 0 {
                         start_new_page(&mut pages, &mut cursor_y, &default_page_box);
                     }
+                    cursor_y += paragraph_spacing_before;
 
                     let lines =
                         break_text_lines(segment, default_page_box.content.width, font_size);
@@ -515,16 +550,22 @@ pub fn layout_document(
                         );
                     }
 
-                    cursor_y += font_size * 0.5;
+                    cursor_y += paragraph_spacing_after;
                 }
             }
-            Block::Table { rows } => {
+            Block::Table {
+                rows,
+                column_widths,
+            } => {
                 let mut table_start_y = cursor_y;
                 let mut laid_out_rows = Vec::new();
 
                 for row in rows {
-                    let row_height =
-                        estimate_table_row_height(&row, default_page_box.content.width);
+                    let row_height = estimate_table_row_height(
+                        &row,
+                        default_page_box.content.width,
+                        &column_widths,
+                    );
                     if cursor_y + row_height > content_bottom && !laid_out_rows.is_empty() {
                         let table_height = cursor_y - table_start_y;
                         pages
@@ -552,6 +593,7 @@ pub fn layout_document(
                         cursor_y,
                         default_page_box.content.width,
                         row_height,
+                        &column_widths,
                     ));
                     cursor_y += row_height;
                 }
@@ -574,8 +616,8 @@ pub fn layout_document(
                 cursor_y += 12.0;
             }
             Block::Image { image } => {
-                let image_width = default_page_box.content.width.min(192.0);
-                let image_height = (image_width * 0.75).max(96.0);
+                let (image_width, image_height) =
+                    image_display_size(&image, default_page_box.content.width);
                 if cursor_y + image_height > content_bottom {
                     start_new_page(&mut pages, &mut cursor_y, &default_page_box);
                 }
@@ -585,6 +627,8 @@ pub fn layout_document(
                     .blocks
                     .push(LaidOutBlock::Image {
                         resource_id: image.resource_id,
+                        description: image.description,
+                        content_type: image.content_type,
                         x: default_page_box.content.x,
                         y: cursor_y,
                         width: image_width,
@@ -786,32 +830,54 @@ pub fn build_selection_page_models(
                                 continue;
                             }
 
-                            push_text_node(
-                                &mut nodes,
-                                &mut anchors,
-                                &mut text_offset,
-                                cell_text.to_string(),
-                                Rect {
-                                    x: cell.x + 6.0,
-                                    y: cell.y + 6.0,
-                                    width: (cell.width - 12.0).max(0.0),
-                                    height: (cell.height - 12.0).max(0.0),
-                                },
-                                default_text_style(),
-                            );
+                            let cell_style = default_text_style();
+                            let line_height = (cell_style.font_size * 1.2).max(14.0);
+                            let line_width = (cell.width - 12.0).max(24.0);
+                            let mut line_y = cell.y + 6.0;
+                            for line in
+                                break_text_lines(cell_text, line_width, cell_style.font_size)
+                            {
+                                if line.is_empty() {
+                                    line_y += line_height;
+                                    continue;
+                                }
+
+                                push_text_node(
+                                    &mut nodes,
+                                    &mut anchors,
+                                    &mut text_offset,
+                                    line.clone(),
+                                    Rect {
+                                        x: cell.x + 6.0,
+                                        y: line_y,
+                                        width: estimate_text_width(&line, cell_style.font_size)
+                                            .min(line_width),
+                                        height: line_height,
+                                    },
+                                    cell_style.clone(),
+                                );
+                                line_y += line_height;
+                            }
                         }
                     }
                 }
                 LaidOutBlock::Image {
                     resource_id,
+                    description,
+                    content_type,
                     x,
                     y,
                     width,
                     height,
                 } => {
+                    let image_bytes = archive.read_part(&resource_id)?;
                     nodes.push(RenderNode::Image(ImageNode {
                         resource_id,
-                        description: Some("Embedded image".to_string()),
+                        description,
+                        content_type,
+                        data_base64: Some(
+                            base64::engine::general_purpose::STANDARD.encode(image_bytes),
+                        ),
                         bounds: Rect {
                             x,
                             y,
@@ -1063,15 +1129,22 @@ fn layout_table_row(
     y: f32,
     width: f32,
     row_height: f32,
+    column_widths: &[f32],
 ) -> LaidOutTableRow {
-    let total_columns = table_column_count(std::slice::from_ref(row));
-    let column_width = width / total_columns as f32;
+    let resolved_widths = resolve_column_widths(width, column_widths, row);
+    let fallback_width = width / row.cells.len().max(1) as f32;
     let mut cell_x = x;
     let mut cells = Vec::new();
+    let mut column_index = 0usize;
 
     for cell in &row.cells {
         let span = cell.column_span.max(1);
-        let cell_width = column_width * span as f32;
+        let cell_width = resolve_spanned_width(
+            &resolved_widths,
+            column_index,
+            span as usize,
+            fallback_width * span as f32,
+        );
         cells.push(LaidOutTableCell {
             x: cell_x,
             y,
@@ -1081,6 +1154,7 @@ fn layout_table_row(
             text: flatten_cell_text(cell),
         });
         cell_x += cell_width;
+        column_index += span as usize;
     }
 
     LaidOutTableRow {
@@ -1090,35 +1164,63 @@ fn layout_table_row(
     }
 }
 
-fn estimate_table_row_height(row: &TableRow, width: f32) -> f32 {
-    let total_columns = table_column_count(std::slice::from_ref(row));
-    let column_width = width / total_columns as f32;
+fn estimate_table_row_height(row: &TableRow, width: f32, column_widths: &[f32]) -> f32 {
+    let resolved_widths = resolve_column_widths(width, column_widths, row);
+    let fallback_width = width / row.cells.len().max(1) as f32;
     let mut max_height: f32 = 24.0;
+    let mut column_index = 0usize;
 
     for cell in &row.cells {
         let span = cell.column_span.max(1);
-        let cell_width = column_width * span as f32;
+        let cell_width = resolve_spanned_width(
+            &resolved_widths,
+            column_index,
+            span as usize,
+            fallback_width * span as f32,
+        );
         let text = flatten_cell_text(cell);
         let line_count = break_text_lines(&text, (cell_width - 8.0).max(24.0), 12.0)
             .len()
             .max(1);
         max_height = max_height.max(line_count as f32 * 14.0 + 10.0);
+        column_index += span as usize;
     }
 
     max_height
 }
 
-fn table_column_count(rows: &[TableRow]) -> u16 {
-    rows.iter()
-        .map(|row| {
-            row.cells
-                .iter()
-                .map(|cell| cell.column_span.max(1))
-                .sum::<u16>()
-        })
-        .max()
-        .unwrap_or(1)
-        .max(1)
+fn resolve_column_widths(width: f32, column_widths: &[f32], row: &TableRow) -> Vec<f32> {
+    if !column_widths.is_empty() {
+        let total = column_widths.iter().sum::<f32>().max(1.0);
+        let scale = width / total;
+        return column_widths.iter().map(|value| value * scale).collect();
+    }
+
+    let total_columns = row
+        .cells
+        .iter()
+        .map(|cell| cell.column_span.max(1))
+        .sum::<u16>()
+        .max(1);
+    vec![width / total_columns as f32; total_columns as usize]
+}
+
+fn resolve_spanned_width(
+    column_widths: &[f32],
+    column_index: usize,
+    span: usize,
+    fallback_width: f32,
+) -> f32 {
+    let resolved = column_widths
+        .iter()
+        .skip(column_index)
+        .take(span)
+        .sum::<f32>();
+    if resolved > 0.0 {
+        resolved
+    } else {
+        fallback_width
+    }
 }
 
 fn flatten_cell_text(cell: &TableCell) -> String {
@@ -1141,9 +1243,14 @@ fn break_text_lines(text: &str, max_width: f32, font_size: f32) -> Vec<String> {
     let mut lines = Vec::new();
 
     for paragraph_line in text.split('\n') {
+        if paragraph_line.is_empty() {
+            lines.push(String::new());
+            continue;
+        }
+
         let words = paragraph_line.split_whitespace().collect::<Vec<_>>();
         if words.is_empty() {
-            lines.push(String::new());
+            lines.extend(break_token_lines(paragraph_line, max_width, font_size));
             continue;
         }
 
@@ -1155,11 +1262,27 @@ fn break_text_lines(text: &str, max_width: f32, font_size: f32) -> Vec<String> {
                 format!("{current} {word}")
             };
 
-            if estimate_text_width(&candidate, font_size) <= max_width || current.is_empty() {
+            if estimate_text_width(&candidate, font_size) <= max_width {
                 current = candidate;
+            } else if current.is_empty() {
+                let mut broken = break_token_lines(word, max_width, font_size);
+                if let Some(last) = broken.pop() {
+                    lines.extend(broken);
+                    current = last;
+                }
             } else {
                 lines.push(current);
-                current = word.to_string();
+                if estimate_text_width(word, font_size) <= max_width {
+                    current = word.to_string();
+                } else {
+                    let mut broken = break_token_lines(word, max_width, font_size);
+                    if let Some(last) = broken.pop() {
+                        lines.extend(broken);
+                        current = last;
+                    } else {
+                        current = String::new();
+                    }
+                }
             }
         }
 
@@ -1172,7 +1295,9 @@ fn break_text_lines(text: &str, max_width: f32, font_size: f32) -> Vec<String> {
 }
 
 fn estimate_text_width(text: &str, font_size: f32) -> f32 {
-    text.chars().count() as f32 * (font_size * 0.5)
+    text.chars()
+        .map(|character| estimated_char_width(character, font_size))
+        .sum()
 }
 
 fn parse_paragraph_runs(
@@ -1241,6 +1366,16 @@ fn parse_table_block(
     styles: &StyleCatalog,
     numbering: &NumberingCatalog,
 ) -> Block {
+    let column_widths = table
+        .child("tblGrid")
+        .map(|grid| {
+            grid.children
+                .iter()
+                .filter(|child| child.local_name() == "gridCol")
+                .filter_map(|child| child.attribute("w").and_then(parse_twips_value))
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
     let mut rows = Vec::new();
 
     for child in &table.children {
@@ -1260,7 +1395,10 @@ fn parse_table_block(
         rows.push(TableRow { cells });
     }
 
-    Block::Table { rows }
+    Block::Table {
+        rows,
+        column_widths,
+    }
 }
 
 fn parse_table_cell(
@@ -1383,11 +1521,20 @@ fn parse_drawing_image(
     let description = doc_pr
         .and_then(|node| node.attribute("descr").or_else(|| node.attribute("name")))
         .map(ToString::to_string);
+    let extent = find_descendant(drawing, "extent");
+    let display_width = extent
+        .and_then(|node| node.attribute("cx"))
+        .and_then(parse_emu_value);
+    let display_height = extent
+        .and_then(|node| node.attribute("cy"))
+        .and_then(parse_emu_value);
 
     Ok(ImageReference {
         resource_id: media.resolved_target.clone(),
         description,
         content_type: infer_content_type(&media.resolved_target),
+        display_width,
+        display_height,
     })
 }
 
@@ -1420,6 +1567,92 @@ fn infer_content_type(path: &str) -> Option<String> {
     };
 
     Some(content_type.to_string())
+}
+
+fn parse_paragraph_metrics(
+    paragraph_properties: Option<&viewer_core::xml::XmlElement>,
+) -> ParagraphMetrics {
+    let spacing = paragraph_properties.and_then(|node| node.child("spacing"));
+    ParagraphMetrics {
+        line_height: spacing.and_then(|node| node.attribute("line").and_then(parse_twips_value)),
+        spacing_before: spacing
+            .and_then(|node| node.attribute("before").and_then(parse_twips_value))
+            .unwrap_or(0.0),
+        spacing_after: spacing
+            .and_then(|node| node.attribute("after").and_then(parse_twips_value))
+            .unwrap_or(6.0),
+    }
+}
+
+fn parse_emu_value(value: &str) -> Option<f32> {
+    value.parse::<f32>().ok().map(|emu| emu / 12_700.0)
+}
+
+fn image_display_size(image: &ImageReference, max_width: f32) -> (f32, f32) {
+    match (image.display_width, image.display_height) {
+        (Some(width), Some(height)) if width > 0.0 && height > 0.0 => {
+            if width <= max_width {
+                (width, height)
+            } else {
+                let scale = max_width / width;
+                (max_width, height * scale)
+            }
+        }
+        _ => {
+            let width = max_width.min(192.0);
+            (width, (width * 0.75).max(96.0))
+        }
+    }
+}
+
+fn break_token_lines(token: &str, max_width: f32, font_size: f32) -> Vec<String> {
+    let mut lines = Vec::new();
+    let mut current = String::new();
+    let mut current_width = 0.0;
+
+    for character in token.chars() {
+        let char_width = estimated_char_width(character, font_size);
+        if !current.is_empty() && current_width + char_width > max_width {
+            lines.push(current);
+            current = String::new();
+            current_width = 0.0;
+        }
+        current.push(character);
+        current_width += char_width;
+    }
+
+    if !current.is_empty() {
+        lines.push(current);
+    }
+
+    lines
+}
+
+fn estimated_char_width(character: char, font_size: f32) -> f32 {
+    if character.is_whitespace() {
+        return font_size * 0.35;
+    }
+    if is_wide_character(character) {
+        return font_size;
+    }
+    if character.is_ascii_punctuation() {
+        return font_size * 0.45;
+    }
+    font_size * 0.55
+}
+
+fn is_wide_character(character: char) -> bool {
+    matches!(
+        character as u32,
+        0x1100..=0x11FF
+            | 0x2E80..=0xA4CF
+            | 0xAC00..=0xD7AF
+            | 0xF900..=0xFAFF
+            | 0xFE10..=0xFE6F
+            | 0xFF01..=0xFF60
+            | 0xFFE0..=0xFFE6
+            | 0x1F300..=0x1FAFF
+    )
 }
 
 fn collect_paragraph_runs(

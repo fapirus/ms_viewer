@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:ms_viewer_platform_interface/ms_viewer_platform_interface.dart';
 
@@ -44,13 +46,13 @@ class DocumentPageView extends StatelessWidget {
             onPanStart: onSelectionStart == null
                 ? null
                 : (details) => onSelectionStart!(
-                      _toPageOffset(details.localPosition, scaleX, scaleY),
-                    ),
+                    _toPageOffset(details.localPosition, scaleX, scaleY),
+                  ),
             onPanUpdate: onSelectionUpdate == null
                 ? null
                 : (details) => onSelectionUpdate!(
-                      _toPageOffset(details.localPosition, scaleX, scaleY),
-                    ),
+                    _toPageOffset(details.localPosition, scaleX, scaleY),
+                  ),
             onPanEnd: onSelectionEnd == null ? null : (_) => onSelectionEnd!(),
             child: DecoratedBox(
               decoration: BoxDecoration(
@@ -70,6 +72,11 @@ class DocumentPageView extends StatelessWidget {
                     size: Size.infinite,
                     painter: _PageRenderPainter(page: page),
                   ),
+                  ..._buildImageLayers(
+                    page: page,
+                    scaleX: scaleX,
+                    scaleY: scaleY,
+                  ),
                   IgnorePointer(
                     child: SelectionHighlightOverlay(
                       highlights: transformedHighlights,
@@ -83,6 +90,46 @@ class DocumentPageView extends StatelessWidget {
       ),
     );
   }
+}
+
+List<Widget> _buildImageLayers({
+  required PageRenderModel page,
+  required double scaleX,
+  required double scaleY,
+}) {
+  final layers = <Widget>[];
+
+  for (final node in page.nodes) {
+    if (node is! ImageRenderNodeModel || node.dataBase64 == null) {
+      continue;
+    }
+
+    layers.add(
+      Positioned(
+        left: node.bounds.x * scaleX,
+        top: node.bounds.y * scaleY,
+        width: node.bounds.width * scaleX,
+        height: node.bounds.height * scaleY,
+        child: Image.memory(
+          base64Decode(node.dataBase64!),
+          fit: BoxFit.contain,
+          filterQuality: FilterQuality.medium,
+          errorBuilder: (context, error, stackTrace) => ColoredBox(
+            color: const Color(0xFFE9EEF7),
+            child: Center(
+              child: Text(
+                node.description ?? node.resourceId,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Color(0xFF42526B), fontSize: 10),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  return layers;
 }
 
 Offset _toPageOffset(Offset localPosition, double scaleX, double scaleY) {
@@ -108,14 +155,19 @@ class _PageRenderPainter extends CustomPainter {
               style: TextStyle(
                 fontSize: node.style.fontSize * scaleY,
                 fontWeight: node.style.bold ? FontWeight.w700 : FontWeight.w400,
-                fontStyle: node.style.italic ? FontStyle.italic : FontStyle.normal,
+                fontStyle: node.style.italic
+                    ? FontStyle.italic
+                    : FontStyle.normal,
                 color: _parseColor(node.style.colorHex),
               ),
             ),
             textDirection: TextDirection.ltr,
-            maxLines: 1,
+            maxLines: null,
           )..layout(maxWidth: node.bounds.width * scaleX);
-          painter.paint(canvas, Offset(node.bounds.x * scaleX, node.bounds.y * scaleY));
+          painter.paint(
+            canvas,
+            Offset(node.bounds.x * scaleX, node.bounds.y * scaleY),
+          );
         case BoxRenderNodeModel():
           final rect = Rect.fromLTWH(
             node.bounds.x * scaleX,
@@ -137,23 +189,20 @@ class _PageRenderPainter extends CustomPainter {
             );
           }
         case ImageRenderNodeModel():
+          if (node.dataBase64 != null) {
+            continue;
+          }
           final rect = Rect.fromLTWH(
             node.bounds.x * scaleX,
             node.bounds.y * scaleY,
             node.bounds.width * scaleX,
             node.bounds.height * scaleY,
           );
-          canvas.drawRect(
-            rect,
-            Paint()..color = const Color(0xFFE9EEF7),
-          );
+          canvas.drawRect(rect, Paint()..color = const Color(0xFFE9EEF7));
           final painter = TextPainter(
             text: TextSpan(
               text: node.description ?? node.resourceId,
-              style: const TextStyle(
-                color: Color(0xFF42526B),
-                fontSize: 10,
-              ),
+              style: const TextStyle(color: Color(0xFF42526B), fontSize: 10),
             ),
             textDirection: TextDirection.ltr,
             maxLines: 2,

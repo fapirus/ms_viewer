@@ -63,4 +63,41 @@ void main() {
     );
     expect(find.byType(SelectionHighlightOverlay), findsOneWidget);
   });
+
+  testWidgets('renders embedded image nodes as Image widgets', (tester) async {
+    final page = PageRenderModel.fromJson({
+      'pageIndex': 0,
+      'width': 200.0,
+      'height': 300.0,
+      'nodes': [
+        {
+          'type': 'image',
+          'resourceId': 'word/media/image1.png',
+          'description': 'logo',
+          'contentType': 'image/png',
+          'dataBase64':
+              'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+lm2cAAAAASUVORK5CYII=',
+          'bounds': {'x': 20.0, 'y': 30.0, 'width': 40.0, 'height': 40.0},
+        },
+      ],
+      'selectionAnchors': const [],
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: SizedBox(
+              width: 200,
+              height: 300,
+              child: DocumentPageView(page: page),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byType(Image), findsOneWidget);
+  });
 }

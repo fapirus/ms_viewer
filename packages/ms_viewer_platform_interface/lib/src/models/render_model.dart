@@ -28,10 +28,7 @@ class TextRangeModel {
   final int end;
 
   factory TextRangeModel.fromJson(Map<String, Object?> json) {
-    return TextRangeModel(
-      start: json['start'] as int,
-      end: json['end'] as int,
-    );
+    return TextRangeModel(start: json['start'] as int, end: json['end'] as int);
   }
 }
 
@@ -128,17 +125,23 @@ class ImageRenderNodeModel extends RenderNodeModel {
   const ImageRenderNodeModel({
     required this.resourceId,
     required this.description,
+    required this.contentType,
+    required this.dataBase64,
     required this.bounds,
   });
 
   final String resourceId;
   final String? description;
+  final String? contentType;
+  final String? dataBase64;
   final RectModel bounds;
 
   factory ImageRenderNodeModel.fromJson(Map<String, Object?> json) {
     return ImageRenderNodeModel(
       resourceId: json['resourceId'] as String,
       description: json['description'] as String?,
+      contentType: json['contentType'] as String?,
+      dataBase64: json['dataBase64'] as String?,
       bounds: RectModel.fromJson(json['bounds'] as Map<String, Object?>),
     );
   }

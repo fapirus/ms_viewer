@@ -617,10 +617,14 @@ fn parses_basic_table_rows_cells_and_text() {
 
     assert_eq!(blocks.len(), 1);
     match &blocks[0] {
-        Block::Table { rows } => {
+        Block::Table {
+            rows,
+            column_widths,
+        } => {
             assert_eq!(rows.len(), 2);
             assert_eq!(rows[0].cells.len(), 2);
             assert_eq!(rows[1].cells.len(), 1);
+            assert!(column_widths.is_empty());
             match &rows[0].cells[0].blocks[0] {
                 Block::Paragraph { runs, .. } => assert_eq!(runs[0].text, "A1"),
                 other => panic!("expected paragraph block, got {other:?}"),
@@ -678,7 +682,7 @@ fn parses_merged_cell_fallback_metadata() {
     let blocks = parse_paragraph_blocks(&archive, &package).expect("blocks should parse");
 
     match &blocks[0] {
-        Block::Table { rows } => {
+        Block::Table { rows, .. } => {
             assert_eq!(rows[0].cells[0].column_span, 2);
             assert_eq!(rows[0].cells[0].row_merge, Some(TableCellMerge::Restart));
             assert_eq!(rows[1].cells[0].row_merge, Some(TableCellMerge::Continue));
@@ -1240,6 +1244,7 @@ fn lays_out_image_in_document_flow() {
             y,
             width,
             height,
+            ..
         } => {
             assert_eq!(resource_id, "word/media/image1.png");
             assert_eq!(*x, pages[0].page_box.content.x);

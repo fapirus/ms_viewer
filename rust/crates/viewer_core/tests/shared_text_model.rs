@@ -30,6 +30,8 @@ fn shared_text_model_can_be_constructed() {
             resource_id: "rId5".to_string(),
             description: Some("logo".to_string()),
             content_type: Some("image/png".to_string()),
+            display_width: Some(120.0),
+            display_height: Some(64.0),
         },
     };
     let table = Block::Table {
@@ -46,6 +48,7 @@ fn shared_text_model_can_be_constructed() {
                 row_merge: Some(TableCellMerge::Restart),
             }],
         }],
+        column_widths: vec![120.0, 240.0],
     };
 
     match paragraph {
@@ -65,9 +68,13 @@ fn shared_text_model_can_be_constructed() {
     }
 
     match table {
-        Block::Table { rows } => {
+        Block::Table {
+            rows,
+            column_widths,
+        } => {
             assert_eq!(rows.len(), 1);
             assert_eq!(rows[0].cells[0].column_span, 2);
+            assert_eq!(column_widths, vec![120.0, 240.0]);
         }
         _ => panic!("expected table block"),
     }
