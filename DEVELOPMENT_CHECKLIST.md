@@ -462,7 +462,16 @@
     - preset geometry with fill/stroke fixture
     - rotation/flip transform fixture
     - invalid stroke color fixture
-- [ ] image parser 구현
+- [x] image parser 구현
+  - Done:
+    - `p:pic` 기반 embedded/external image relationship 파싱
+    - image transform과 display size 파싱
+    - `srcRect` crop subset 파싱
+    - description/name fallback과 content type 추론 추가
+  - Tests:
+    - embedded image relationship fixture
+    - external linked image fixture
+    - missing image relationship fixture
 - [ ] notes and animation exclusion handling 구현
 
 ### PPTX layout and interaction

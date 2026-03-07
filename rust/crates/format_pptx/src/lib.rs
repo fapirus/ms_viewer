@@ -1,5 +1,6 @@
 use format_shared::{parse_shared_package, resolve_relationship_target};
 use viewer_core::archive::OoxmlArchive;
+use viewer_core::model::ImageReference;
 use viewer_core::xml::{parse_document, XmlElement};
 use viewer_core::ViewerError;
 
@@ -13,6 +14,8 @@ const SLIDE_MASTER_RELATIONSHIP: &str =
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster";
 const THEME_RELATIONSHIP: &str =
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme";
+const IMAGE_RELATIONSHIP: &str =
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PresentationSize {
@@ -94,6 +97,25 @@ pub struct BasicShape {
     pub fill: Option<ShapeFill>,
     pub stroke: Option<ShapeStroke>,
     pub has_text_body: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ImageCrop {
+    pub left: u32,
+    pub top: u32,
+    pub right: u32,
+    pub bottom: u32,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SlideImage {
+    pub shape_id: u32,
+    pub name: String,
+    pub description: Option<String>,
+    pub image: ImageReference,
+    pub transform: Option<ShapeTransform>,
+    pub crop: Option<ImageCrop>,
+    pub is_external: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -224,6 +246,36 @@ pub fn parse_slide_basic_shapes(
     }
 
     Ok(shapes)
+}
+
+pub fn parse_slide_images(
+    archive: &OoxmlArchive,
+    slide_part_name: &str,
+) -> Result<Vec<SlideImage>, ViewerError> {
+    let slide_xml = archive.read_part(slide_part_name)?;
+    let slide_text = String::from_utf8(slide_xml).map_err(|_| ViewerError::InvalidDocument)?;
+    let slide_root = parse_document(&slide_text)?;
+
+    if slide_root.local_name() != "sld" {
+        return Err(ViewerError::InvalidDocument);
+    }
+
+    let relationships = parse_part_relationships(archive, slide_part_name)?;
+    let shape_tree = slide_root
+        .child("cSld")
+        .and_then(|common_slide| common_slide.child("spTree"))
+        .ok_or(ViewerError::InvalidDocument)?;
+
+    let mut images = Vec::new();
+    for child in &shape_tree.children {
+        if child.local_name() != "pic" {
+            continue;
+        }
+
+        images.push(parse_slide_image(child, &relationships)?);
+    }
+
+    Ok(images)
 }
 
 pub fn parse_slide_tree(archive: &OoxmlArchive) -> Result<PptxSlideTree, ViewerError> {
@@ -514,6 +566,59 @@ fn parse_basic_shape(shape: &XmlElement) -> Result<Option<BasicShape>, ViewerErr
     }))
 }
 
+fn parse_slide_image(
+    picture: &XmlElement,
+    relationships: &[SlideRelationship],
+) -> Result<SlideImage, ViewerError> {
+    let non_visual = picture.child("nvPicPr").ok_or(ViewerError::InvalidDocument)?;
+    let properties = non_visual.child("cNvPr").ok_or(ViewerError::InvalidDocument)?;
+    let blip_fill = picture.child("blipFill").ok_or(ViewerError::InvalidDocument)?;
+    let blip = blip_fill.child("blip").ok_or(ViewerError::InvalidDocument)?;
+    let reference_id = blip
+        .attribute("r:embed")
+        .or_else(|| blip.attribute("r:link"))
+        .ok_or(ViewerError::InvalidDocument)?
+        .to_string();
+    let relationship = relationships
+        .iter()
+        .find(|relationship| {
+            relationship.id == reference_id && relationship.relationship_type == IMAGE_RELATIONSHIP
+        })
+        .ok_or(ViewerError::InvalidDocument)?;
+    let is_external = relationship.target.starts_with("http://")
+        || relationship.target.starts_with("https://")
+        || relationship.resolved_target.starts_with("http://")
+        || relationship.resolved_target.starts_with("https://");
+    let resource_id = relationship.resolved_target.trim_start_matches('/').to_string();
+    let name = properties.required_attribute("name")?.to_string();
+    let description = properties
+        .attribute("descr")
+        .map(ToOwned::to_owned)
+        .or_else(|| Some(name.clone()));
+    let transform = picture
+        .child("spPr")
+        .and_then(|shape_properties| shape_properties.child("xfrm"))
+        .map(parse_shape_transform)
+        .transpose()?;
+    let crop = blip_fill.child("srcRect").map(parse_image_crop).transpose()?;
+
+    Ok(SlideImage {
+        shape_id: parse_u32_attribute(properties, "id")?,
+        name,
+        description: description.clone(),
+        image: ImageReference {
+            resource_id: resource_id.clone(),
+            description,
+            content_type: infer_image_content_type(&resource_id),
+            display_width: transform.as_ref().map(|transform| transform.bounds.width as f32),
+            display_height: transform.as_ref().map(|transform| transform.bounds.height as f32),
+        },
+        transform,
+        crop,
+        is_external,
+    })
+}
+
 fn parse_shape_transform(transform: &XmlElement) -> Result<ShapeTransform, ViewerError> {
     let offset = transform.child("off").ok_or(ViewerError::InvalidDocument)?;
     let extent = transform.child("ext").ok_or(ViewerError::InvalidDocument)?;
@@ -720,6 +825,41 @@ fn parse_color_value(fill: &XmlElement) -> Result<String, ViewerError> {
     }
 
     Err(ViewerError::InvalidDocument)
+}
+
+fn parse_image_crop(src_rect: &XmlElement) -> Result<ImageCrop, ViewerError> {
+    Ok(ImageCrop {
+        left: parse_u32_optional_attribute(src_rect, "l")?.unwrap_or(0),
+        top: parse_u32_optional_attribute(src_rect, "t")?.unwrap_or(0),
+        right: parse_u32_optional_attribute(src_rect, "r")?.unwrap_or(0),
+        bottom: parse_u32_optional_attribute(src_rect, "b")?.unwrap_or(0),
+    })
+}
+
+fn parse_u32_optional_attribute(
+    element: &XmlElement,
+    name: &str,
+) -> Result<Option<u32>, ViewerError> {
+    element
+        .attribute(name)
+        .map(|value| value.parse::<u32>().map_err(|_| ViewerError::InvalidDocument))
+        .transpose()
+}
+
+fn infer_image_content_type(path: &str) -> Option<String> {
+    let normalized = path.rsplit_once('.').map(|(_, ext)| ext.to_ascii_lowercase())?;
+    let content_type = match normalized.as_str() {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "bmp" => "image/bmp",
+        "tif" | "tiff" => "image/tiff",
+        "webp" => "image/webp",
+        "svg" => "image/svg+xml",
+        _ => return None,
+    };
+
+    Some(content_type.to_string())
 }
 
 fn parse_alignment(value: &str) -> Option<SlideTextAlignment> {
