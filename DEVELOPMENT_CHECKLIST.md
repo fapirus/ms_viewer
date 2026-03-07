@@ -442,7 +442,16 @@
     - slide to layout relationship fixture
     - master to layout/theme relationship fixture
     - missing master relationship fixture
-- [ ] text box parser 구현
+- [x] text box parser 구현
+  - Done:
+    - `p:sp -> p:txBody -> a:p/a:r/a:t` 경로 파싱
+    - text box bounds와 placeholder type 파싱
+    - paragraph alignment/level과 run style subset 파싱
+    - line break와 field text 파싱
+  - Tests:
+    - text box placeholder and bounds fixture
+    - run style parsing fixture
+    - invalid transform geometry fixture
 - [ ] basic shape parser 구현
 - [ ] image parser 구현
 - [ ] notes and animation exclusion handling 구현

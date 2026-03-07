@@ -1,6 +1,6 @@
 use format_shared::{parse_shared_package, resolve_relationship_target};
 use viewer_core::archive::OoxmlArchive;
-use viewer_core::xml::parse_document;
+use viewer_core::xml::{parse_document, XmlElement};
 use viewer_core::ViewerError;
 
 const OFFICE_DOCUMENT_RELATIONSHIP: &str =
@@ -52,6 +52,68 @@ pub struct SlideMasterReference {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EmuRectangle {
+    pub x: i64,
+    pub y: i64,
+    pub width: i64,
+    pub height: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SlidePlaceholderKind {
+    Title,
+    CenteredTitle,
+    Subtitle,
+    Body,
+    Object,
+    Date,
+    Footer,
+    Header,
+    SlideNumber,
+    Other(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SlideTextAlignment {
+    Left,
+    Center,
+    Right,
+    Justified,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct SlideTextRunStyle {
+    pub bold: bool,
+    pub italic: bool,
+    pub font_size_centipoints: Option<u32>,
+    pub font_face: Option<String>,
+    pub east_asia_font_face: Option<String>,
+    pub color: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SlideTextRun {
+    pub text: String,
+    pub style: SlideTextRunStyle,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SlideTextParagraph {
+    pub alignment: Option<SlideTextAlignment>,
+    pub level: Option<u32>,
+    pub runs: Vec<SlideTextRun>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SlideTextBox {
+    pub shape_id: u32,
+    pub name: String,
+    pub bounds: Option<EmuRectangle>,
+    pub placeholder: Option<SlidePlaceholderKind>,
+    pub paragraphs: Vec<SlideTextParagraph>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PptxSlideTree {
     pub presentation_part: String,
     pub presentation_size: Option<PresentationSize>,
@@ -61,6 +123,38 @@ pub struct PptxSlideTree {
 
 pub fn parse_pptx(archive: &OoxmlArchive) -> Result<PptxSlideTree, ViewerError> {
     parse_slide_tree(archive)
+}
+
+pub fn parse_slide_text_boxes(
+    archive: &OoxmlArchive,
+    slide_part_name: &str,
+) -> Result<Vec<SlideTextBox>, ViewerError> {
+    let slide_xml = archive.read_part(slide_part_name)?;
+    let slide_text = String::from_utf8(slide_xml).map_err(|_| ViewerError::InvalidDocument)?;
+    let slide_root = parse_document(&slide_text)?;
+
+    if slide_root.local_name() != "sld" {
+        return Err(ViewerError::InvalidDocument);
+    }
+
+    let shape_tree = slide_root
+        .child("cSld")
+        .and_then(|common_slide| common_slide.child("spTree"))
+        .ok_or(ViewerError::InvalidDocument)?;
+
+    let mut text_boxes = Vec::new();
+    for child in &shape_tree.children {
+        if child.local_name() != "sp" {
+            continue;
+        }
+
+        let Some(text_box) = parse_text_box_shape(child)? else {
+            continue;
+        };
+        text_boxes.push(text_box);
+    }
+
+    Ok(text_boxes)
 }
 
 pub fn parse_slide_tree(archive: &OoxmlArchive) -> Result<PptxSlideTree, ViewerError> {
@@ -270,11 +364,192 @@ fn relationship_part_name(part_name: &str) -> Result<String, ViewerError> {
 }
 
 fn parse_u32_attribute(
-    element: &viewer_core::xml::XmlElement,
+    element: &XmlElement,
     name: &str,
 ) -> Result<u32, ViewerError> {
     element
         .required_attribute(name)?
         .parse::<u32>()
         .map_err(|_| ViewerError::InvalidDocument)
+}
+
+fn parse_i64_attribute(element: &XmlElement, name: &str) -> Result<i64, ViewerError> {
+    element
+        .required_attribute(name)?
+        .parse::<i64>()
+        .map_err(|_| ViewerError::InvalidDocument)
+}
+
+fn parse_text_box_shape(shape: &XmlElement) -> Result<Option<SlideTextBox>, ViewerError> {
+    let Some(non_visual) = shape.child("nvSpPr") else {
+        return Ok(None);
+    };
+    let Some(properties) = non_visual.child("cNvPr") else {
+        return Ok(None);
+    };
+    let Some(text_body) = shape.child("txBody") else {
+        return Ok(None);
+    };
+
+    let shape_id = parse_u32_attribute(properties, "id")?;
+    let name = properties.required_attribute("name")?.to_string();
+    let bounds = shape
+        .child("spPr")
+        .and_then(|shape_properties| shape_properties.child("xfrm"))
+        .map(parse_transform_bounds)
+        .transpose()?;
+    let placeholder = parse_placeholder_kind(non_visual);
+    let paragraphs = parse_text_paragraphs(text_body)?;
+
+    Ok(Some(SlideTextBox {
+        shape_id,
+        name,
+        bounds,
+        placeholder,
+        paragraphs,
+    }))
+}
+
+fn parse_transform_bounds(transform: &XmlElement) -> Result<EmuRectangle, ViewerError> {
+    let offset = transform.child("off").ok_or(ViewerError::InvalidDocument)?;
+    let extent = transform.child("ext").ok_or(ViewerError::InvalidDocument)?;
+
+    Ok(EmuRectangle {
+        x: parse_i64_attribute(offset, "x")?,
+        y: parse_i64_attribute(offset, "y")?,
+        width: parse_i64_attribute(extent, "cx")?,
+        height: parse_i64_attribute(extent, "cy")?,
+    })
+}
+
+fn parse_placeholder_kind(non_visual: &XmlElement) -> Option<SlidePlaceholderKind> {
+    let placeholder = non_visual.child("nvPr")?.child("ph")?;
+    let placeholder_type = placeholder.attribute("type").unwrap_or("body");
+
+    Some(match placeholder_type {
+        "title" => SlidePlaceholderKind::Title,
+        "ctrTitle" => SlidePlaceholderKind::CenteredTitle,
+        "subTitle" => SlidePlaceholderKind::Subtitle,
+        "body" => SlidePlaceholderKind::Body,
+        "obj" => SlidePlaceholderKind::Object,
+        "dt" => SlidePlaceholderKind::Date,
+        "ftr" => SlidePlaceholderKind::Footer,
+        "hdr" => SlidePlaceholderKind::Header,
+        "sldNum" => SlidePlaceholderKind::SlideNumber,
+        other => SlidePlaceholderKind::Other(other.to_string()),
+    })
+}
+
+fn parse_text_paragraphs(text_body: &XmlElement) -> Result<Vec<SlideTextParagraph>, ViewerError> {
+    let mut paragraphs = Vec::new();
+    for child in &text_body.children {
+        if child.local_name() != "p" {
+            continue;
+        }
+
+        paragraphs.push(parse_text_paragraph(child)?);
+    }
+
+    Ok(paragraphs)
+}
+
+fn parse_text_paragraph(paragraph: &XmlElement) -> Result<SlideTextParagraph, ViewerError> {
+    let alignment = paragraph
+        .child("pPr")
+        .and_then(|properties| properties.attribute("algn"))
+        .and_then(parse_alignment);
+    let level = paragraph
+        .child("pPr")
+        .and_then(|properties| properties.attribute("lvl"))
+        .map(|level| level.parse::<u32>().map_err(|_| ViewerError::InvalidDocument))
+        .transpose()?;
+
+    let mut runs = Vec::new();
+    for child in &paragraph.children {
+        match child.local_name() {
+            "r" => runs.push(parse_text_run(child)?),
+            "br" => runs.push(SlideTextRun {
+                text: "\n".to_string(),
+                style: SlideTextRunStyle::default(),
+            }),
+            "fld" => {
+                if let Some(text) = field_text(child) {
+                    runs.push(SlideTextRun {
+                        text,
+                        style: child
+                            .child("rPr")
+                            .map(parse_text_run_style)
+                            .transpose()?
+                            .unwrap_or_default(),
+                    });
+                }
+            }
+            _ => {}
+        }
+    }
+
+    Ok(SlideTextParagraph {
+        alignment,
+        level,
+        runs,
+    })
+}
+
+fn parse_text_run(run: &XmlElement) -> Result<SlideTextRun, ViewerError> {
+    let text = run
+        .child("t")
+        .map(|text| text.text.clone())
+        .unwrap_or_default();
+    let style = run
+        .child("rPr")
+        .map(parse_text_run_style)
+        .transpose()?
+        .unwrap_or_default();
+
+    Ok(SlideTextRun { text, style })
+}
+
+fn parse_text_run_style(run_properties: &XmlElement) -> Result<SlideTextRunStyle, ViewerError> {
+    let font_size_centipoints = run_properties
+        .attribute("sz")
+        .map(|size| size.parse::<u32>().map_err(|_| ViewerError::InvalidDocument))
+        .transpose()?;
+    let bold = run_properties.attribute("b") == Some("1");
+    let italic = run_properties.attribute("i") == Some("1");
+    let font_face = run_properties
+        .child("latin")
+        .and_then(|latin| latin.attribute("typeface"))
+        .map(ToOwned::to_owned);
+    let east_asia_font_face = run_properties
+        .child("ea")
+        .and_then(|east_asia| east_asia.attribute("typeface"))
+        .map(ToOwned::to_owned);
+    let color = run_properties
+        .child("solidFill")
+        .and_then(|fill| fill.child("srgbClr"))
+        .and_then(|color| color.attribute("val"))
+        .map(|value| format!("#{value}"));
+
+    Ok(SlideTextRunStyle {
+        bold,
+        italic,
+        font_size_centipoints,
+        font_face,
+        east_asia_font_face,
+        color,
+    })
+}
+
+fn parse_alignment(value: &str) -> Option<SlideTextAlignment> {
+    match value {
+        "l" => Some(SlideTextAlignment::Left),
+        "ctr" => Some(SlideTextAlignment::Center),
+        "r" => Some(SlideTextAlignment::Right),
+        "just" => Some(SlideTextAlignment::Justified),
+        _ => None,
+    }
+}
+
+fn field_text(field: &XmlElement) -> Option<String> {
+    field.child("t").map(|text| text.text.clone())
 }
