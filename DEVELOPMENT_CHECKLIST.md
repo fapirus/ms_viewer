@@ -188,7 +188,8 @@
   - Flutter tests:
     - search result list widget test
     - next/previous navigation state test
-- [ ] DOCX text selection metadata 구현
+- [x] DOCX text selection metadata 구현
+  - Done: page text nodes, per-line bounds, selection anchors, Flutter highlight and drag state shell
   - Rust tests:
     - text box bounds generation test
     - cross-line selection anchors test

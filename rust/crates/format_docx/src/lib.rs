@@ -1,8 +1,8 @@
 use format_shared::{parse_package_relationships, resolve_relationship_target};
 use viewer_core::archive::OoxmlArchive;
 use viewer_core::model::{
-    Block, ImageReference, ListKind, ListMarker, TableCell, TableCellMerge, TableRow, TextRun,
-    TextStyle,
+    Block, ImageReference, ListKind, ListMarker, PageRenderModel, Rect, RenderNode,
+    SelectionAnchor, TableCell, TableCellMerge, TableRow, TextNode, TextRange, TextRun, TextStyle,
 };
 use viewer_core::search::{search_pages, SearchMatch, SearchPage};
 use viewer_core::xml::parse_document;
@@ -114,6 +114,7 @@ pub struct LaidOutLine {
     pub y: f32,
     pub width: f32,
     pub height: f32,
+    pub style: TextStyle,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -483,6 +484,16 @@ pub fn layout_document(
                             width: estimate_text_width(&text, font_size)
                                 .min(default_page_box.content.width),
                             height: line_height,
+                            style: runs
+                                .first()
+                                .map(|run| run.style.clone())
+                                .unwrap_or(TextStyle {
+                                    font_family: "Times New Roman".to_string(),
+                                    font_size,
+                                    bold: false,
+                                    italic: false,
+                                    color_hex: "#000000".to_string(),
+                                }),
                         });
                         cursor_y += line_height;
                     }
@@ -685,6 +696,73 @@ pub fn search_document(
 ) -> Result<Vec<SearchMatch>, ViewerError> {
     let pages = build_search_pages(archive, package)?;
     Ok(search_pages(&pages, query))
+}
+
+pub fn build_selection_page_models(
+    archive: &OoxmlArchive,
+    package: &DocxPackage,
+) -> Result<Vec<PageRenderModel>, ViewerError> {
+    let pages = layout_document(archive, package)?;
+    let mut models = Vec::new();
+
+    for page in pages {
+        let mut nodes = Vec::new();
+        let mut anchors = Vec::new();
+        let mut text_offset = 0u32;
+
+        for block in page.blocks {
+            if let LaidOutBlock::Paragraph { lines, .. } = block {
+                for line in lines {
+                    let node_index = nodes.len() as u32;
+                    let start = text_offset;
+                    let end = start + line.text.chars().count() as u32;
+                    let char_width = if line.text.is_empty() {
+                        0.0
+                    } else {
+                        line.width / line.text.chars().count() as f32
+                    };
+
+                    nodes.push(RenderNode::Text(TextNode {
+                        text: line.text.clone(),
+                        bounds: Rect {
+                            x: line.x,
+                            y: line.y,
+                            width: line.width,
+                            height: line.height,
+                        },
+                        style: line.style.clone(),
+                        range: TextRange { start, end },
+                    }));
+
+                    for (char_index, _) in line.text.chars().enumerate() {
+                        anchors.push(SelectionAnchor {
+                            node_index,
+                            char_index: char_index as u32,
+                            x: line.x + (char_width * char_index as f32),
+                            y: line.y,
+                        });
+                    }
+                    anchors.push(SelectionAnchor {
+                        node_index,
+                        char_index: line.text.chars().count() as u32,
+                        x: line.x + line.width,
+                        y: line.y,
+                    });
+                    text_offset = end;
+                }
+            }
+        }
+
+        models.push(PageRenderModel {
+            page_index: page.page_index,
+            width: page.page_box.width,
+            height: page.page_box.height,
+            nodes,
+            selection_anchors: anchors,
+        });
+    }
+
+    Ok(models)
 }
 
 fn parse_document_relationships(

@@ -6,8 +6,9 @@ use zip::write::SimpleFileOptions;
 use zip::ZipWriter;
 
 use format_docx::{
-    layout_document, layout_header_footers, parse_docx, parse_page_boxes,
-    parse_paragraph_blocks, parse_section_layouts, parse_style_catalog, search_document,
+    build_selection_page_models, layout_document, layout_header_footers, parse_docx,
+    parse_page_boxes, parse_paragraph_blocks, parse_section_layouts, parse_style_catalog,
+    search_document,
 };
 use viewer_core::model::{Block, TableCellMerge};
 
@@ -1374,6 +1375,113 @@ fn docx_search_is_case_insensitive() {
     assert_eq!(matches.len(), 1);
     assert_eq!(matches[0].page_index, 0);
     assert!(matches[0].preview.contains("MiXeDCaSe Needle"));
+}
+
+#[test]
+fn generates_text_box_bounds_for_selection_metadata() {
+    let file = create_docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+              <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+            </Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+              <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+            </Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+              <w:body>
+                <w:p><w:r><w:t>Select me</w:t></w:r></w:p>
+                <w:sectPr>
+                  <w:pgSz w:w="12240" w:h="15840"/>
+                  <w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"/>
+                </w:sectPr>
+              </w:body>
+            </w:document>"#,
+        ),
+    ]);
+    let archive = OoxmlArchive::open_path(file.path()).expect("docx archive should open");
+    let package = parse_docx(&archive).expect("docx package should parse");
+
+    let models = build_selection_page_models(&archive, &package).expect("selection models");
+
+    assert_eq!(models.len(), 1);
+    let page = &models[0];
+    assert_eq!(page.nodes.len(), 1);
+    match &page.nodes[0] {
+        viewer_core::model::RenderNode::Text(node) => {
+            assert_eq!(node.text, "Select me");
+            assert_eq!(node.range.start, 0);
+            assert_eq!(node.range.end, 9);
+            assert!(node.bounds.width > 0.0);
+            assert!(node.bounds.height > 0.0);
+        }
+        other => panic!("expected text node, got {other:?}"),
+    }
+    assert_eq!(page.selection_anchors.len(), 10);
+    assert_eq!(page.selection_anchors[0].char_index, 0);
+    assert_eq!(page.selection_anchors.last().expect("last").char_index, 9);
+}
+
+#[test]
+fn generates_cross_line_selection_anchors() {
+    let file = create_docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+              <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+            </Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+              <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+            </Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+              <w:body>
+                <w:p><w:r><w:t>alpha beta gamma delta epsilon</w:t></w:r></w:p>
+                <w:sectPr>
+                  <w:pgSz w:w="2400" w:h="3000"/>
+                  <w:pgMar w:top="120" w:right="120" w:bottom="120" w:left="120"/>
+                </w:sectPr>
+              </w:body>
+            </w:document>"#,
+        ),
+    ]);
+    let archive = OoxmlArchive::open_path(file.path()).expect("docx archive should open");
+    let package = parse_docx(&archive).expect("docx package should parse");
+
+    let models = build_selection_page_models(&archive, &package).expect("selection models");
+
+    let page = &models[0];
+    assert!(page.nodes.len() >= 2);
+    let first_anchor = page
+        .selection_anchors
+        .iter()
+        .find(|anchor| anchor.node_index == 0)
+        .expect("first line anchor");
+    let second_anchor = page
+        .selection_anchors
+        .iter()
+        .find(|anchor| anchor.node_index == 1)
+        .expect("second line anchor");
+    assert!(second_anchor.y > first_anchor.y);
+    assert_eq!(first_anchor.char_index, 0);
+    assert_eq!(second_anchor.char_index, 0);
 }
 
 fn create_docx_fixture(entries: &[(&str, &str)]) -> NamedTempFile {
