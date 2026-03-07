@@ -60,6 +60,43 @@ pub struct EmuRectangle {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ShapeTransform {
+    pub bounds: EmuRectangle,
+    pub rotation_units: Option<i32>,
+    pub flip_horizontal: bool,
+    pub flip_vertical: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BasicShapeGeometry {
+    Preset(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ShapeFill {
+    Solid(String),
+    None,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ShapeStroke {
+    pub width_emu: Option<i64>,
+    pub color: Option<String>,
+    pub is_none: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BasicShape {
+    pub shape_id: u32,
+    pub name: String,
+    pub geometry: BasicShapeGeometry,
+    pub transform: Option<ShapeTransform>,
+    pub fill: Option<ShapeFill>,
+    pub stroke: Option<ShapeStroke>,
+    pub has_text_body: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SlidePlaceholderKind {
     Title,
     CenteredTitle,
@@ -155,6 +192,38 @@ pub fn parse_slide_text_boxes(
     }
 
     Ok(text_boxes)
+}
+
+pub fn parse_slide_basic_shapes(
+    archive: &OoxmlArchive,
+    slide_part_name: &str,
+) -> Result<Vec<BasicShape>, ViewerError> {
+    let slide_xml = archive.read_part(slide_part_name)?;
+    let slide_text = String::from_utf8(slide_xml).map_err(|_| ViewerError::InvalidDocument)?;
+    let slide_root = parse_document(&slide_text)?;
+
+    if slide_root.local_name() != "sld" {
+        return Err(ViewerError::InvalidDocument);
+    }
+
+    let shape_tree = slide_root
+        .child("cSld")
+        .and_then(|common_slide| common_slide.child("spTree"))
+        .ok_or(ViewerError::InvalidDocument)?;
+
+    let mut shapes = Vec::new();
+    for child in &shape_tree.children {
+        if child.local_name() != "sp" {
+            continue;
+        }
+
+        let Some(shape) = parse_basic_shape(child)? else {
+            continue;
+        };
+        shapes.push(shape);
+    }
+
+    Ok(shapes)
 }
 
 pub fn parse_slide_tree(archive: &OoxmlArchive) -> Result<PptxSlideTree, ViewerError> {
@@ -396,8 +465,9 @@ fn parse_text_box_shape(shape: &XmlElement) -> Result<Option<SlideTextBox>, View
     let bounds = shape
         .child("spPr")
         .and_then(|shape_properties| shape_properties.child("xfrm"))
-        .map(parse_transform_bounds)
-        .transpose()?;
+        .map(parse_shape_transform)
+        .transpose()?
+        .map(|transform| transform.bounds);
     let placeholder = parse_placeholder_kind(non_visual);
     let paragraphs = parse_text_paragraphs(text_body)?;
 
@@ -410,16 +480,70 @@ fn parse_text_box_shape(shape: &XmlElement) -> Result<Option<SlideTextBox>, View
     }))
 }
 
-fn parse_transform_bounds(transform: &XmlElement) -> Result<EmuRectangle, ViewerError> {
+fn parse_basic_shape(shape: &XmlElement) -> Result<Option<BasicShape>, ViewerError> {
+    let Some(non_visual) = shape.child("nvSpPr") else {
+        return Ok(None);
+    };
+    let Some(properties) = non_visual.child("cNvPr") else {
+        return Ok(None);
+    };
+    let Some(shape_properties) = shape.child("spPr") else {
+        return Ok(None);
+    };
+    let Some(geometry) = parse_basic_shape_geometry(shape_properties)? else {
+        return Ok(None);
+    };
+
+    let shape_id = parse_u32_attribute(properties, "id")?;
+    let name = properties.required_attribute("name")?.to_string();
+    let transform = shape_properties
+        .child("xfrm")
+        .map(parse_shape_transform)
+        .transpose()?;
+    let fill = parse_shape_fill(shape_properties)?;
+    let stroke = parse_shape_stroke(shape_properties)?;
+
+    Ok(Some(BasicShape {
+        shape_id,
+        name,
+        geometry,
+        transform,
+        fill,
+        stroke,
+        has_text_body: shape.child("txBody").is_some(),
+    }))
+}
+
+fn parse_shape_transform(transform: &XmlElement) -> Result<ShapeTransform, ViewerError> {
     let offset = transform.child("off").ok_or(ViewerError::InvalidDocument)?;
     let extent = transform.child("ext").ok_or(ViewerError::InvalidDocument)?;
 
-    Ok(EmuRectangle {
-        x: parse_i64_attribute(offset, "x")?,
-        y: parse_i64_attribute(offset, "y")?,
-        width: parse_i64_attribute(extent, "cx")?,
-        height: parse_i64_attribute(extent, "cy")?,
+    Ok(ShapeTransform {
+        bounds: EmuRectangle {
+            x: parse_i64_attribute(offset, "x")?,
+            y: parse_i64_attribute(offset, "y")?,
+            width: parse_i64_attribute(extent, "cx")?,
+            height: parse_i64_attribute(extent, "cy")?,
+        },
+        rotation_units: transform
+            .attribute("rot")
+            .map(|rotation| rotation.parse::<i32>().map_err(|_| ViewerError::InvalidDocument))
+            .transpose()?,
+        flip_horizontal: transform.attribute("flipH") == Some("1"),
+        flip_vertical: transform.attribute("flipV") == Some("1"),
     })
+}
+
+fn parse_basic_shape_geometry(
+    shape_properties: &XmlElement,
+) -> Result<Option<BasicShapeGeometry>, ViewerError> {
+    let Some(geometry) = shape_properties.child("prstGeom") else {
+        return Ok(None);
+    };
+
+    Ok(Some(BasicShapeGeometry::Preset(
+        geometry.required_attribute("prst")?.to_string(),
+    )))
 }
 
 fn parse_placeholder_kind(non_visual: &XmlElement) -> Option<SlidePlaceholderKind> {
@@ -438,6 +562,48 @@ fn parse_placeholder_kind(non_visual: &XmlElement) -> Option<SlidePlaceholderKin
         "sldNum" => SlidePlaceholderKind::SlideNumber,
         other => SlidePlaceholderKind::Other(other.to_string()),
     })
+}
+
+fn parse_shape_fill(shape_properties: &XmlElement) -> Result<Option<ShapeFill>, ViewerError> {
+    if shape_properties.child("noFill").is_some() {
+        return Ok(Some(ShapeFill::None));
+    }
+
+    let Some(solid_fill) = shape_properties.child("solidFill") else {
+        return Ok(None);
+    };
+
+    Ok(Some(ShapeFill::Solid(parse_color_value(solid_fill)?)))
+}
+
+fn parse_shape_stroke(shape_properties: &XmlElement) -> Result<Option<ShapeStroke>, ViewerError> {
+    let Some(line) = shape_properties.child("ln") else {
+        return Ok(None);
+    };
+
+    let width_emu = line
+        .attribute("w")
+        .map(|width| width.parse::<i64>().map_err(|_| ViewerError::InvalidDocument))
+        .transpose()?;
+
+    if line.child("noFill").is_some() {
+        return Ok(Some(ShapeStroke {
+            width_emu,
+            color: None,
+            is_none: true,
+        }));
+    }
+
+    let color = line
+        .child("solidFill")
+        .map(parse_color_value)
+        .transpose()?;
+
+    Ok(Some(ShapeStroke {
+        width_emu,
+        color,
+        is_none: false,
+    }))
 }
 
 fn parse_text_paragraphs(text_body: &XmlElement) -> Result<Vec<SlideTextParagraph>, ViewerError> {
@@ -538,6 +704,22 @@ fn parse_text_run_style(run_properties: &XmlElement) -> Result<SlideTextRunStyle
         east_asia_font_face,
         color,
     })
+}
+
+fn parse_color_value(fill: &XmlElement) -> Result<String, ViewerError> {
+    if let Some(rgb) = fill.child("srgbClr").and_then(|color| color.attribute("val")) {
+        return Ok(format!("#{rgb}"));
+    }
+
+    if let Some(scheme) = fill.child("schemeClr").and_then(|color| color.attribute("val")) {
+        return Ok(format!("scheme:{scheme}"));
+    }
+
+    if let Some(preset) = fill.child("prstClr").and_then(|color| color.attribute("val")) {
+        return Ok(format!("preset:{preset}"));
+    }
+
+    Err(ViewerError::InvalidDocument)
 }
 
 fn parse_alignment(value: &str) -> Option<SlideTextAlignment> {

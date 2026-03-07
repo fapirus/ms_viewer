@@ -452,7 +452,16 @@
     - text box placeholder and bounds fixture
     - run style parsing fixture
     - invalid transform geometry fixture
-- [ ] basic shape parser 구현
+- [x] basic shape parser 구현
+  - Done:
+    - `p:sp/p:spPr` 기반 preset geometry 파싱
+    - shape transform의 bounds/rotation/flip 파싱
+    - solid fill, noFill, line stroke subset 파싱
+    - text-only placeholder shape는 visual shape 목록에서 제외
+  - Tests:
+    - preset geometry with fill/stroke fixture
+    - rotation/flip transform fixture
+    - invalid stroke color fixture
 - [ ] image parser 구현
 - [ ] notes and animation exclusion handling 구현
 
