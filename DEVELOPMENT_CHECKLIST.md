@@ -484,7 +484,15 @@
     - timing subtree exclusion fixture
 
 ### PPTX layout and interaction
-- [ ] slide render model 구현
+- [x] slide render model 구현
+  - Done:
+    - presentation size를 slide page size로 변환
+    - shape를 `BoxNode`로 변환
+    - embedded image를 `ImageNode`와 base64 payload로 변환
+    - text box paragraph를 line node로 배치하는 초기 render model 추가
+  - Tests:
+    - render model contains text, image, box nodes fixture
+    - non-hex scheme color normalization fixture
 - [ ] text layout in slide coordinates 구현
 - [ ] slide search index 구현
 - [ ] slide text selection metadata 구현

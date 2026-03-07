@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+base64 = "0.22.1"
 format_shared = { path = "../format_shared" }
 viewer_core = { path = "../viewer_core" }
 

@@ -1,6 +1,10 @@
+use base64::Engine;
 use format_shared::{parse_shared_package, resolve_relationship_target};
 use viewer_core::archive::OoxmlArchive;
-use viewer_core::model::ImageReference;
+use viewer_core::model::{
+    BoxNode, ImageNode, ImageReference, PageRenderModel, ParagraphAlignment, Rect, RenderNode,
+    TextNode, TextRange, TextStyle,
+};
 use viewer_core::xml::{parse_document, XmlElement};
 use viewer_core::ViewerError;
 
@@ -281,6 +285,82 @@ pub fn parse_slide_images(
     }
 
     Ok(images)
+}
+
+pub fn build_slide_render_model(
+    archive: &OoxmlArchive,
+    slide_tree: &PptxSlideTree,
+    slide_index: usize,
+) -> Result<PageRenderModel, ViewerError> {
+    let slide = slide_tree
+        .slides
+        .get(slide_index)
+        .ok_or(ViewerError::InvalidDocument)?;
+    let slide_width = slide_tree
+        .presentation_size
+        .as_ref()
+        .map(|size| emu_to_points(size.width_emu as i64))
+        .unwrap_or(960.0);
+    let slide_height = slide_tree
+        .presentation_size
+        .as_ref()
+        .map(|size| emu_to_points(size.height_emu as i64))
+        .unwrap_or(540.0);
+
+    let mut nodes = Vec::new();
+
+    for shape in parse_slide_basic_shapes(archive, &slide.part_name)? {
+        let Some(transform) = shape.transform else {
+            continue;
+        };
+
+        nodes.push(RenderNode::Box(BoxNode {
+            bounds: rect_from_emu_bounds(&transform.bounds),
+            fill_color_hex: normalize_render_color(shape.fill.as_ref()),
+            stroke_color_hex: normalize_render_stroke_color(shape.stroke.as_ref()),
+            stroke_width: shape
+                .stroke
+                .as_ref()
+                .and_then(|stroke| stroke.width_emu)
+                .map(emu_to_points)
+                .unwrap_or(0.0),
+        }));
+    }
+
+    for image in parse_slide_images(archive, &slide.part_name)? {
+        let Some(transform) = image.transform else {
+            continue;
+        };
+
+        let data_base64 = if image.is_external {
+            None
+        } else {
+            Some(
+                base64::engine::general_purpose::STANDARD
+                    .encode(archive.read_part(&image.image.resource_id)?),
+            )
+        };
+
+        nodes.push(RenderNode::Image(ImageNode {
+            resource_id: image.image.resource_id,
+            description: image.description,
+            content_type: image.image.content_type,
+            data_base64,
+            bounds: rect_from_emu_bounds(&transform.bounds),
+        }));
+    }
+
+    for text_box in parse_slide_text_boxes(archive, &slide.part_name)? {
+        nodes.extend(build_text_nodes(&text_box));
+    }
+
+    Ok(PageRenderModel {
+        page_index: slide_index as u32,
+        width: slide_width,
+        height: slide_height,
+        nodes,
+        selection_anchors: Vec::new(),
+    })
 }
 
 pub fn parse_slide_tree(archive: &OoxmlArchive) -> Result<PptxSlideTree, ViewerError> {
@@ -893,4 +973,225 @@ fn parse_alignment(value: &str) -> Option<SlideTextAlignment> {
 
 fn field_text(field: &XmlElement) -> Option<String> {
     field.child("t").map(|text| text.text.clone())
+}
+
+fn rect_from_emu_bounds(bounds: &EmuRectangle) -> Rect {
+    Rect {
+        x: emu_to_points(bounds.x),
+        y: emu_to_points(bounds.y),
+        width: emu_to_points(bounds.width),
+        height: emu_to_points(bounds.height),
+    }
+}
+
+fn emu_to_points(value: i64) -> f32 {
+    value as f32 / 12_700.0
+}
+
+fn normalize_render_color(fill: Option<&ShapeFill>) -> Option<String> {
+    match fill {
+        Some(ShapeFill::Solid(color)) if color.starts_with('#') => Some(color.clone()),
+        _ => None,
+    }
+}
+
+fn normalize_render_stroke_color(stroke: Option<&ShapeStroke>) -> Option<String> {
+    let Some(stroke) = stroke else {
+        return None;
+    };
+    if stroke.is_none {
+        return None;
+    }
+    stroke
+        .color
+        .as_ref()
+        .filter(|color| color.starts_with('#'))
+        .cloned()
+}
+
+fn build_text_nodes(text_box: &SlideTextBox) -> Vec<RenderNode> {
+    let Some(bounds) = &text_box.bounds else {
+        return Vec::new();
+    };
+
+    let available_width = emu_to_points(bounds.width).max(1.0);
+    let mut cursor_y = emu_to_points(bounds.y);
+    let base_x = emu_to_points(bounds.x);
+    let mut nodes = Vec::new();
+    let mut text_offset = 0u32;
+
+    for paragraph in &text_box.paragraphs {
+        let line_runs = paragraph_line_runs(paragraph);
+        let alignment = paragraph
+            .alignment
+            .as_ref()
+            .map(slide_alignment_to_paragraph_alignment)
+            .unwrap_or(ParagraphAlignment::Left);
+        let paragraph_font_size = paragraph
+            .runs
+            .iter()
+            .map(|run| slide_run_style_to_text_style(&run.style))
+            .map(|style| style.font_size)
+            .find(|size| *size > 0.0)
+            .unwrap_or(18.0);
+        let line_height = (paragraph_font_size * 1.2).max(18.0);
+
+        for line_runs in line_runs {
+            let line_width = line_runs
+                .iter()
+                .map(|run| {
+                    let style = slide_run_style_to_text_style(&run.style);
+                    estimate_text_width(&run.text, &style)
+                })
+                .sum::<f32>();
+            let mut cursor_x = resolve_line_x(base_x, available_width, line_width, &alignment);
+
+            for run in line_runs {
+                if run.text.is_empty() {
+                    continue;
+                }
+
+                let style = slide_run_style_to_text_style(&run.style);
+                let width = estimate_text_width(&run.text, &style).max(1.0);
+                let char_count = run.text.chars().count() as u32;
+                let bounds = Rect {
+                    x: cursor_x,
+                    y: cursor_y,
+                    width,
+                    height: line_height,
+                };
+
+                nodes.push(RenderNode::Text(TextNode {
+                    text: run.text.clone(),
+                    bounds,
+                    style,
+                    range: TextRange {
+                        start: text_offset,
+                        end: text_offset + char_count,
+                    },
+                }));
+
+                text_offset += char_count;
+                cursor_x += width;
+            }
+
+            cursor_y += line_height;
+        }
+
+        cursor_y += (line_height * 0.2).max(4.0);
+    }
+
+    nodes
+}
+
+fn paragraph_line_runs(paragraph: &SlideTextParagraph) -> Vec<Vec<SlideTextRun>> {
+    let mut lines = Vec::new();
+    let mut current = Vec::new();
+
+    for run in &paragraph.runs {
+        let parts: Vec<&str> = run.text.split('\n').collect();
+        for (index, part) in parts.iter().enumerate() {
+            if !part.is_empty() {
+                current.push(SlideTextRun {
+                    text: (*part).to_string(),
+                    style: run.style.clone(),
+                });
+            }
+
+            if index + 1 < parts.len() {
+                lines.push(current);
+                current = Vec::new();
+            }
+        }
+    }
+
+    if !current.is_empty() {
+        lines.push(current);
+    }
+
+    if lines.is_empty() {
+        lines.push(Vec::new());
+    }
+
+    lines
+}
+
+fn slide_alignment_to_paragraph_alignment(alignment: &SlideTextAlignment) -> ParagraphAlignment {
+    match alignment {
+        SlideTextAlignment::Left => ParagraphAlignment::Left,
+        SlideTextAlignment::Center => ParagraphAlignment::Center,
+        SlideTextAlignment::Right => ParagraphAlignment::Right,
+        SlideTextAlignment::Justified => ParagraphAlignment::Justified,
+    }
+}
+
+fn slide_run_style_to_text_style(style: &SlideTextRunStyle) -> TextStyle {
+    let font_family = style
+        .east_asia_font_face
+        .clone()
+        .or_else(|| style.font_face.clone())
+        .unwrap_or_else(|| "Calibri".to_string());
+    let font_size = style
+        .font_size_centipoints
+        .map(|size| size as f32 / 100.0)
+        .unwrap_or(18.0);
+
+    TextStyle {
+        font_family,
+        font_size,
+        bold: style.bold,
+        italic: style.italic,
+        color_hex: style
+            .color
+            .clone()
+            .unwrap_or_else(|| "#000000".to_string()),
+    }
+}
+
+fn resolve_line_x(
+    base_x: f32,
+    available_width: f32,
+    line_width: f32,
+    alignment: &ParagraphAlignment,
+) -> f32 {
+    match alignment {
+        ParagraphAlignment::Center => base_x + ((available_width - line_width).max(0.0) / 2.0),
+        ParagraphAlignment::Right => base_x + (available_width - line_width).max(0.0),
+        ParagraphAlignment::Left | ParagraphAlignment::Justified => base_x,
+    }
+}
+
+fn estimate_text_width(text: &str, style: &TextStyle) -> f32 {
+    text.chars()
+        .map(|character| estimated_char_width(character, style))
+        .sum::<f32>()
+}
+
+fn estimated_char_width(character: char, style: &TextStyle) -> f32 {
+    let base = if is_wide_character(character) {
+        style.font_size * 0.95
+    } else if character.is_ascii_whitespace() {
+        style.font_size * 0.33
+    } else if character.is_ascii_punctuation() {
+        style.font_size * 0.42
+    } else {
+        style.font_size * 0.56
+    };
+
+    let weight_scale = if style.bold { 1.06 } else { 1.0 };
+    base * weight_scale
+}
+
+fn is_wide_character(character: char) -> bool {
+    matches!(
+        character as u32,
+        0x1100..=0x11FF
+            | 0x2E80..=0xA4CF
+            | 0xAC00..=0xD7AF
+            | 0xF900..=0xFAFF
+            | 0xFE10..=0xFE6F
+            | 0xFF01..=0xFF60
+            | 0xFFE0..=0xFFE6
+            | 0x1F300..=0x1FAFF
+    )
 }
