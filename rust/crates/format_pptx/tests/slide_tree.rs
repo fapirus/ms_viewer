@@ -52,6 +52,9 @@ fn parses_presentation_slide_tree_in_document_order() {
 <p:presentation xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
                 xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
   <p:sldSz cx="9144000" cy="6858000" />
+  <p:sldMasterIdLst>
+    <p:sldMasterId id="2147483648" r:id="rId9" />
+  </p:sldMasterIdLst>
   <p:sldIdLst>
     <p:sldId id="256" r:id="rId2" />
     <p:sldId id="512" r:id="rId5" />
@@ -65,11 +68,45 @@ fn parses_presentation_slide_tree_in_document_order() {
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide1.xml" />
   <Relationship Id="rId5" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide2.xml" />
+  <Relationship Id="rId9" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster" Target="slideMasters/slideMaster1.xml" />
 </Relationships>
 "#,
             ),
             ("ppt/slides/slide1.xml", br#"<p:sld xmlns:p="urn:test" />"#),
             ("ppt/slides/slide2.xml", br#"<p:sld xmlns:p="urn:test" />"#),
+            (
+                "ppt/slides/_rels/slide1.xml.rels",
+                br#"
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout1.xml" />
+</Relationships>
+"#,
+            ),
+            (
+                "ppt/slides/_rels/slide2.xml.rels",
+                br#"
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout2.xml" />
+</Relationships>
+"#,
+            ),
+            ("ppt/slideLayouts/slideLayout1.xml", br#"<p:sldLayout xmlns:p="urn:test" />"#),
+            ("ppt/slideLayouts/slideLayout2.xml", br#"<p:sldLayout xmlns:p="urn:test" />"#),
+            (
+                "ppt/slideMasters/slideMaster1.xml",
+                br#"<p:sldMaster xmlns:p=\"urn:test\" />"#,
+            ),
+            (
+                "ppt/slideMasters/_rels/slideMaster1.xml.rels",
+                br#"
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout1.xml" />
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout2.xml" />
+  <Relationship Id="rId5" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="../theme/theme1.xml" />
+</Relationships>
+"#,
+            ),
+            ("ppt/theme/theme1.xml", br#"<a:theme xmlns:a=\"urn:test\" />"#),
         ],
     );
 
@@ -88,8 +125,23 @@ fn parses_presentation_slide_tree_in_document_order() {
     assert_eq!(slide_tree.slides[0].slide_id, 256);
     assert_eq!(slide_tree.slides[0].relationship_id, "rId2");
     assert_eq!(slide_tree.slides[0].part_name, "ppt/slides/slide1.xml");
+    assert_eq!(
+        slide_tree.slides[0].layout_part_name.as_deref(),
+        Some("ppt/slideLayouts/slideLayout1.xml")
+    );
     assert_eq!(slide_tree.slides[1].slide_id, 512);
     assert_eq!(slide_tree.slides[1].part_name, "ppt/slides/slide2.xml");
+    assert_eq!(slide_tree.slide_masters.len(), 1);
+    assert_eq!(slide_tree.slide_masters[0].master_id, 2_147_483_648);
+    assert_eq!(
+        slide_tree.slide_masters[0].theme_part_name.as_deref(),
+        Some("ppt/theme/theme1.xml")
+    );
+    assert_eq!(slide_tree.slide_masters[0].layouts.len(), 2);
+    assert_eq!(
+        slide_tree.slide_masters[0].layouts[0].part_name,
+        "ppt/slideLayouts/slideLayout1.xml"
+    );
 }
 
 #[test]
@@ -141,6 +193,61 @@ fn missing_slide_relationship_fails() {
 
     let archive = OoxmlArchive::open_path(&path).expect("archive should open");
     let error = parse_slide_tree(&archive).expect_err("missing slide rel should fail");
+
+    assert!(matches!(error, ViewerError::InvalidDocument));
+}
+
+#[test]
+fn missing_slide_master_relationship_fails() {
+    let dir = tempdir().expect("tempdir should exist");
+    let path = dir.path().join("missing-master-rel.pptx");
+    create_zip(
+        &path,
+        &[
+            (
+                "[Content_Types].xml",
+                br#"
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Override PartName="/ppt/presentation.xml" ContentType="application/test" />
+</Types>
+"#,
+            ),
+            (
+                "_rels/.rels",
+                br#"
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="ppt/presentation.xml" />
+</Relationships>
+"#,
+            ),
+            (
+                "ppt/presentation.xml",
+                br#"
+<p:presentation xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+                xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <p:sldMasterIdLst>
+    <p:sldMasterId id="2147483648" r:id="rId77" />
+  </p:sldMasterIdLst>
+</p:presentation>
+"#,
+            ),
+            (
+                "ppt/_rels/presentation.xml.rels",
+                br#"
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId9" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster" Target="slideMasters/slideMaster1.xml" />
+</Relationships>
+"#,
+            ),
+            (
+                "ppt/slideMasters/slideMaster1.xml",
+                br#"<p:sldMaster xmlns:p=\"urn:test\" />"#,
+            ),
+        ],
+    );
+
+    let archive = OoxmlArchive::open_path(&path).expect("archive should open");
+    let error = parse_slide_tree(&archive).expect_err("missing master rel should fail");
 
     assert!(matches!(error, ViewerError::InvalidDocument));
 }

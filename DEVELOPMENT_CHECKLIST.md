@@ -432,7 +432,16 @@
     - minimal slide tree fixture
     - missing slide relationship fixture
     - external relationship handling fixture
-- [ ] slide master/layout/theme link parser 구현
+- [x] slide master/layout/theme link parser 구현
+  - Done:
+    - `presentation.xml`의 `sldMasterIdLst` 파싱
+    - `presentation -> slideMaster`, `slideMaster -> slideLayout/theme` 관계 해석
+    - `slide -> slideLayout` 링크 해석
+    - missing master relationship validation 추가
+  - Tests:
+    - slide to layout relationship fixture
+    - master to layout/theme relationship fixture
+    - missing master relationship fixture
 - [ ] text box parser 구현
 - [ ] basic shape parser 구현
 - [ ] image parser 구현

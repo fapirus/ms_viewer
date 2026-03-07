@@ -7,6 +7,12 @@ const OFFICE_DOCUMENT_RELATIONSHIP: &str =
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument";
 const SLIDE_RELATIONSHIP: &str =
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide";
+const SLIDE_LAYOUT_RELATIONSHIP: &str =
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout";
+const SLIDE_MASTER_RELATIONSHIP: &str =
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster";
+const THEME_RELATIONSHIP: &str =
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PresentationSize {
@@ -27,6 +33,22 @@ pub struct SlideReference {
     pub slide_id: u32,
     pub relationship_id: String,
     pub part_name: String,
+    pub layout_part_name: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SlideLayoutReference {
+    pub relationship_id: String,
+    pub part_name: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SlideMasterReference {
+    pub master_id: u32,
+    pub relationship_id: String,
+    pub part_name: String,
+    pub theme_part_name: Option<String>,
+    pub layouts: Vec<SlideLayoutReference>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -34,6 +56,7 @@ pub struct PptxSlideTree {
     pub presentation_part: String,
     pub presentation_size: Option<PresentationSize>,
     pub slides: Vec<SlideReference>,
+    pub slide_masters: Vec<SlideMasterReference>,
 }
 
 pub fn parse_pptx(archive: &OoxmlArchive) -> Result<PptxSlideTree, ViewerError> {
@@ -60,12 +83,14 @@ pub fn parse_slide_tree(archive: &OoxmlArchive) -> Result<PptxSlideTree, ViewerE
 
     let relationships = parse_part_relationships(archive, &presentation_part)?;
     let presentation_size = parse_presentation_size(&presentation_root)?;
-    let slides = parse_slide_references(&presentation_root, &relationships)?;
+    let slides = parse_slide_references(archive, &presentation_root, &relationships)?;
+    let slide_masters = parse_slide_master_references(archive, &presentation_root, &relationships)?;
 
     Ok(PptxSlideTree {
         presentation_part,
         presentation_size,
         slides,
+        slide_masters,
     })
 }
 
@@ -125,6 +150,7 @@ fn parse_presentation_size(
 }
 
 fn parse_slide_references(
+    archive: &OoxmlArchive,
     presentation_root: &viewer_core::xml::XmlElement,
     relationships: &[SlideRelationship],
 ) -> Result<Vec<SlideReference>, ViewerError> {
@@ -151,14 +177,84 @@ fn parse_slide_references(
         slides.push(SlideReference {
             slide_id,
             relationship_id,
-            part_name: relationship
-                .resolved_target
-                .trim_start_matches('/')
-                .to_string(),
+            part_name: relationship.resolved_target.trim_start_matches('/').to_string(),
+            layout_part_name: find_single_related_part(
+                archive,
+                relationship.resolved_target.trim_start_matches('/'),
+                SLIDE_LAYOUT_RELATIONSHIP,
+            )?,
         });
     }
 
     Ok(slides)
+}
+
+fn parse_slide_master_references(
+    archive: &OoxmlArchive,
+    presentation_root: &viewer_core::xml::XmlElement,
+    relationships: &[SlideRelationship],
+) -> Result<Vec<SlideMasterReference>, ViewerError> {
+    let Some(master_list) = presentation_root.child("sldMasterIdLst") else {
+        return Ok(Vec::new());
+    };
+
+    let mut masters = Vec::new();
+    for child in &master_list.children {
+        if child.local_name() != "sldMasterId" {
+            continue;
+        }
+
+        let relationship_id = child.required_attribute("r:id")?.to_string();
+        let master_id = parse_u32_attribute(child, "id")?;
+        let relationship = relationships
+            .iter()
+            .find(|relationship| {
+                relationship.id == relationship_id
+                    && relationship.relationship_type == SLIDE_MASTER_RELATIONSHIP
+            })
+            .ok_or(ViewerError::InvalidDocument)?;
+        let master_part = relationship.resolved_target.trim_start_matches('/').to_string();
+        let master_relationships = parse_part_relationships(archive, &master_part)?;
+
+        let mut layouts = Vec::new();
+        for related in &master_relationships {
+            if related.relationship_type != SLIDE_LAYOUT_RELATIONSHIP {
+                continue;
+            }
+
+            layouts.push(SlideLayoutReference {
+                relationship_id: related.id.clone(),
+                part_name: related.resolved_target.trim_start_matches('/').to_string(),
+            });
+        }
+
+        let theme_part_name = master_relationships
+            .iter()
+            .find(|relationship| relationship.relationship_type == THEME_RELATIONSHIP)
+            .map(|relationship| relationship.resolved_target.trim_start_matches('/').to_string());
+
+        masters.push(SlideMasterReference {
+            master_id,
+            relationship_id,
+            part_name: master_part,
+            theme_part_name,
+            layouts,
+        });
+    }
+
+    Ok(masters)
+}
+
+fn find_single_related_part(
+    archive: &OoxmlArchive,
+    part_name: &str,
+    relationship_type: &str,
+) -> Result<Option<String>, ViewerError> {
+    let relationships = parse_part_relationships(archive, part_name)?;
+    Ok(relationships
+        .iter()
+        .find(|relationship| relationship.relationship_type == relationship_type)
+        .map(|relationship| relationship.resolved_target.trim_start_matches('/').to_string()))
 }
 
 fn relationship_part_name(part_name: &str) -> Result<String, ViewerError> {
