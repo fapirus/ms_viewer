@@ -8,41 +8,85 @@ class DocumentPageView extends StatelessWidget {
     super.key,
     required this.page,
     this.highlights = const [],
+    this.onSelectionStart,
+    this.onSelectionUpdate,
+    this.onSelectionEnd,
   });
 
   final PageRenderModel page;
   final List<Rect> highlights;
+  final ValueChanged<Offset>? onSelectionStart;
+  final ValueChanged<Offset>? onSelectionUpdate;
+  final VoidCallback? onSelectionEnd;
 
   @override
   Widget build(BuildContext context) {
     return AspectRatio(
       aspectRatio: page.width / page.height,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          border: Border.all(color: const Color(0xFFD7D7D7)),
-          boxShadow: const [
-            BoxShadow(
-              color: Color(0x12000000),
-              blurRadius: 12,
-              offset: Offset(0, 4),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final size = constraints.biggest;
+          final scaleX = size.width / page.width;
+          final scaleY = size.height / page.height;
+          final transformedHighlights = highlights
+              .map(
+                (rect) => Rect.fromLTWH(
+                  rect.left * scaleX,
+                  rect.top * scaleY,
+                  rect.width * scaleX,
+                  rect.height * scaleY,
+                ),
+              )
+              .toList(growable: false);
+
+          return GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onPanStart: onSelectionStart == null
+                ? null
+                : (details) => onSelectionStart!(
+                      _toPageOffset(details.localPosition, scaleX, scaleY),
+                    ),
+            onPanUpdate: onSelectionUpdate == null
+                ? null
+                : (details) => onSelectionUpdate!(
+                      _toPageOffset(details.localPosition, scaleX, scaleY),
+                    ),
+            onPanEnd: onSelectionEnd == null ? null : (_) => onSelectionEnd!(),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                border: Border.all(color: const Color(0xFFD7D7D7)),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x12000000),
+                    blurRadius: 12,
+                    offset: Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: Stack(
+                children: [
+                  CustomPaint(
+                    size: Size.infinite,
+                    painter: _PageRenderPainter(page: page),
+                  ),
+                  IgnorePointer(
+                    child: SelectionHighlightOverlay(
+                      highlights: transformedHighlights,
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ],
-        ),
-        child: Stack(
-          children: [
-            CustomPaint(
-              size: Size.infinite,
-              painter: _PageRenderPainter(page: page),
-            ),
-            IgnorePointer(
-              child: SelectionHighlightOverlay(highlights: highlights),
-            ),
-          ],
-        ),
+          );
+        },
       ),
     );
   }
+}
+
+Offset _toPageOffset(Offset localPosition, double scaleX, double scaleY) {
+  return Offset(localPosition.dx / scaleX, localPosition.dy / scaleY);
 }
 
 class _PageRenderPainter extends CustomPainter {

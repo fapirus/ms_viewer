@@ -252,7 +252,8 @@
   - Tests:
     - page fetch controller test
     - page fetch error state widget test
-- [ ] Flutter search/selection bridge 연결
+- [x] Flutter search/selection bridge 연결
+  - Done: search request/consume, selection page fetch on result jump, drag selection highlight overlay
   - Flutter scope:
     - search result request/consume
     - selection overlay consume

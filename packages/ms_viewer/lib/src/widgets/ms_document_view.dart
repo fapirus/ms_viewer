@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:ms_viewer_platform_interface/ms_viewer_platform_interface.dart';
 
 import '../controller/ms_viewer_controller.dart';
 import 'document_page_view.dart';
+import 'search_result_list.dart';
 
 class MsDocumentView extends StatefulWidget {
   const MsDocumentView({
@@ -20,16 +23,19 @@ class MsDocumentView extends StatefulWidget {
 
 class _MsDocumentViewState extends State<MsDocumentView> {
   late final TextEditingController _passwordController;
+  late final TextEditingController _searchController;
 
   @override
   void initState() {
     super.initState();
     _passwordController = TextEditingController();
+    _searchController = TextEditingController();
   }
 
   @override
   void dispose() {
     _passwordController.dispose();
+    _searchController.dispose();
     super.dispose();
   }
 
@@ -72,6 +78,7 @@ class _MsDocumentViewState extends State<MsDocumentView> {
         ? null
         : widget.previewPages.first;
     final page = fetchedPage ?? fallbackPreviewPage;
+    final searchResults = widget.controller.searchController.results;
     return Padding(
       padding: const EdgeInsets.all(24),
       child: Column(
@@ -83,6 +90,41 @@ class _MsDocumentViewState extends State<MsDocumentView> {
           ),
           const SizedBox(height: 8),
           Text('$pageCount pages'),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _searchController,
+                  textInputAction: TextInputAction.search,
+                  onSubmitted: _submitSearch,
+                  decoration: const InputDecoration(
+                    border: OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.search),
+                    hintText: 'Search in document',
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              FilledButton(
+                onPressed: () => _submitSearch(_searchController.text),
+                child: const Text('Search'),
+              ),
+            ],
+          ),
+          if (_searchController.text.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            SizedBox(
+              height: 120,
+              child: SearchResultList(
+                results: searchResults,
+                currentIndex: widget.controller.searchController.currentIndex,
+                onTap: (index) {
+                  unawaited(widget.controller.selectSearchResult(index));
+                },
+              ),
+            ),
+          ],
           const SizedBox(height: 16),
           Expanded(
             child: switch (widget.controller.pageStatus) {
@@ -99,13 +141,23 @@ class _MsDocumentViewState extends State<MsDocumentView> {
               ViewerPageStatus.ready when page != null => Center(
                   child: ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 640),
-                    child: DocumentPageView(page: page),
+                    child: DocumentPageView(
+                      page: page,
+                      highlights: widget.controller.pageHighlights,
+                      onSelectionStart: widget.controller.startSelectionAt,
+                      onSelectionUpdate: widget.controller.updateSelectionAt,
+                    ),
                   ),
                 ),
               _ when page != null => Center(
                   child: ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 640),
-                    child: DocumentPageView(page: page),
+                    child: DocumentPageView(
+                      page: page,
+                      highlights: widget.controller.pageHighlights,
+                      onSelectionStart: widget.controller.startSelectionAt,
+                      onSelectionUpdate: widget.controller.updateSelectionAt,
+                    ),
                   ),
                 ),
               _ => const Center(
@@ -119,6 +171,10 @@ class _MsDocumentViewState extends State<MsDocumentView> {
         ],
       ),
     );
+  }
+
+  void _submitSearch(String query) {
+    unawaited(widget.controller.search(query));
   }
 
   Widget _buildPasswordPrompt(BuildContext context) {

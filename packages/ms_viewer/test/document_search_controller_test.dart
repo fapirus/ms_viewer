@@ -8,9 +8,27 @@ void main() {
     controller.updateResults(
       query: 'alpha',
       results: const [
-        SearchResult(query: 'alpha', pageIndex: 0, preview: 'first'),
-        SearchResult(query: 'alpha', pageIndex: 1, preview: 'second'),
-        SearchResult(query: 'alpha', pageIndex: 2, preview: 'third'),
+        SearchResult(
+          query: 'alpha',
+          pageIndex: 0,
+          start: 0,
+          end: 5,
+          preview: 'first',
+        ),
+        SearchResult(
+          query: 'alpha',
+          pageIndex: 1,
+          start: 6,
+          end: 11,
+          preview: 'second',
+        ),
+        SearchResult(
+          query: 'alpha',
+          pageIndex: 2,
+          start: 12,
+          end: 17,
+          preview: 'third',
+        ),
       ],
     );
 
