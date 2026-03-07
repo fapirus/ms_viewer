@@ -579,7 +579,11 @@
   - Tests:
     - slide fetch controller test
     - slide fetch error state widget test
-- [ ] Flutter PPTX search/selection bridge 연결
+- [x] Flutter PPTX search/selection bridge 연결
+  - Done:
+    - 기존 포맷 중립 search/selection 흐름이 PPTX에서도 동작함을 widget test로 고정
+    - PPTX slide search result tap -> selection page fetch -> highlight 적용 흐름 검증
+    - PPTX slide drag selection highlight 흐름 검증
   - Tests:
     - slide search integration widget test
     - slide selection integration widget test
