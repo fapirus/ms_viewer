@@ -525,6 +525,55 @@ fn resolves_paragraph_style_metrics_and_applies_them_to_layout() {
 }
 
 #[test]
+fn prefers_east_asia_font_for_hangul_runs() {
+    let file = create_docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+              <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+            </Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+              <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+            </Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+              <w:body>
+                <w:p>
+                  <w:r>
+                    <w:rPr>
+                      <w:rFonts w:ascii="Calibri" w:eastAsia="Malgun Gothic"/>
+                      <w:sz w:val="28"/>
+                    </w:rPr>
+                    <w:t>안녕하세요</w:t>
+                  </w:r>
+                </w:p>
+              </w:body>
+            </w:document>"#,
+        ),
+    ]);
+    let archive = OoxmlArchive::open_path(file.path()).expect("docx archive should open");
+    let package = parse_docx(&archive).expect("docx package should parse");
+
+    let blocks = parse_paragraph_blocks(&archive, &package).expect("paragraphs should parse");
+
+    match &blocks[0] {
+        Block::Paragraph { runs, .. } => {
+            assert_eq!(runs[0].style.font_family, "Malgun Gothic");
+            assert_eq!(runs[0].style.font_size, 14.0);
+        }
+        other => panic!("expected paragraph block, got {other:?}"),
+    }
+}
+
+#[test]
 fn parses_nested_bullet_and_decimal_list_markers() {
     let file = create_docx_fixture(&[
         (

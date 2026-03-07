@@ -7,6 +7,7 @@ use viewer_core::model::{
     TextNode, TextRange, TextRun, TextStyle,
 };
 use viewer_core::search::{search_pages, SearchMatch, SearchPage};
+use viewer_core::text::Script;
 use viewer_core::xml::parse_document;
 use viewer_core::ViewerError;
 
@@ -81,6 +82,7 @@ pub struct ParagraphStyleDefinition {
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct ResolvedTextStyle {
     pub font_family: Option<String>,
+    pub east_asia_font_family: Option<String>,
     pub font_size: Option<f32>,
     pub bold: Option<bool>,
     pub italic: Option<bool>,
@@ -531,7 +533,11 @@ pub fn layout_document(
                 list,
                 metrics,
             } => {
-                let font_size = runs.first().map(|run| run.style.font_size).unwrap_or(12.0);
+                let style = runs
+                    .first()
+                    .map(|run| run.style.clone())
+                    .unwrap_or_else(default_text_style);
+                let font_size = style.font_size;
                 let line_height = metrics
                     .line_height
                     .unwrap_or_else(|| (font_size * 1.2).max(14.0))
@@ -551,8 +557,7 @@ pub fn layout_document(
                     }
                     cursor_y += paragraph_spacing_before;
 
-                    let lines =
-                        break_text_lines(segment, default_page_box.content.width, font_size);
+                    let lines = break_text_lines(segment, default_page_box.content.width, &style);
                     if lines.is_empty() {
                         continue;
                     }
@@ -576,19 +581,10 @@ pub fn layout_document(
                             text: text.clone(),
                             x: default_page_box.content.x,
                             y: cursor_y,
-                            width: estimate_text_width(&text, font_size)
+                            width: estimate_text_width(&text, &style)
                                 .min(default_page_box.content.width),
                             height: line_height,
-                            style: runs
-                                .first()
-                                .map(|run| run.style.clone())
-                                .unwrap_or(TextStyle {
-                                    font_family: "Times New Roman".to_string(),
-                                    font_size,
-                                    bold: false,
-                                    italic: false,
-                                    color_hex: "#000000".to_string(),
-                                }),
+                            style: style.clone(),
                         });
                         cursor_y += line_height;
                     }
@@ -1304,21 +1300,21 @@ fn layout_table_cell_content(
     for block in &cell.blocks {
         match block {
             Block::Paragraph { runs, metrics, .. } => {
-                let font_size = runs.first().map(|run| run.style.font_size).unwrap_or(12.0);
-                let line_height = metrics
-                    .line_height
-                    .unwrap_or_else(|| (font_size * 1.2).max(14.0))
-                    .max(font_size);
                 let style = runs
                     .first()
                     .map(|run| run.style.clone())
                     .unwrap_or_else(default_text_style);
+                let font_size = style.font_size;
+                let line_height = metrics
+                    .line_height
+                    .unwrap_or_else(|| (font_size * 1.2).max(14.0))
+                    .max(font_size);
                 let text = runs
                     .iter()
                     .map(|run| run.text.as_str())
                     .collect::<Vec<_>>()
                     .join("");
-                let paragraph_lines = break_text_lines(&text, available_width, font_size);
+                let paragraph_lines = break_text_lines(&text, available_width, &style);
 
                 cursor_y += metrics.spacing_before;
                 has_content = true;
@@ -1329,7 +1325,7 @@ fn layout_table_cell_content(
                             text: line.clone(),
                             x: x + CELL_PADDING_X,
                             y: cursor_y,
-                            width: estimate_text_width(&line, font_size).min(available_width),
+                            width: estimate_text_width(&line, &style).min(available_width),
                             height: line_height,
                             style: style.clone(),
                         });
@@ -1369,7 +1365,7 @@ fn layout_table_cell_content(
     (lines, images, content_height.max(24.0))
 }
 
-fn break_text_lines(text: &str, max_width: f32, font_size: f32) -> Vec<String> {
+fn break_text_lines(text: &str, max_width: f32, style: &TextStyle) -> Vec<String> {
     let mut lines = Vec::new();
 
     for paragraph_line in text.split('\n') {
@@ -1380,7 +1376,7 @@ fn break_text_lines(text: &str, max_width: f32, font_size: f32) -> Vec<String> {
 
         let words = paragraph_line.split_whitespace().collect::<Vec<_>>();
         if words.is_empty() {
-            lines.extend(break_token_lines(paragraph_line, max_width, font_size));
+            lines.extend(break_token_lines(paragraph_line, max_width, style));
             continue;
         }
 
@@ -1392,20 +1388,20 @@ fn break_text_lines(text: &str, max_width: f32, font_size: f32) -> Vec<String> {
                 format!("{current} {word}")
             };
 
-            if estimate_text_width(&candidate, font_size) <= max_width {
+            if estimate_text_width(&candidate, style) <= max_width {
                 current = candidate;
             } else if current.is_empty() {
-                let mut broken = break_token_lines(word, max_width, font_size);
+                let mut broken = break_token_lines(word, max_width, style);
                 if let Some(last) = broken.pop() {
                     lines.extend(broken);
                     current = last;
                 }
             } else {
                 lines.push(current);
-                if estimate_text_width(word, font_size) <= max_width {
+                if estimate_text_width(word, style) <= max_width {
                     current = word.to_string();
                 } else {
-                    let mut broken = break_token_lines(word, max_width, font_size);
+                    let mut broken = break_token_lines(word, max_width, style);
                     if let Some(last) = broken.pop() {
                         lines.extend(broken);
                         current = last;
@@ -1422,12 +1418,6 @@ fn break_text_lines(text: &str, max_width: f32, font_size: f32) -> Vec<String> {
     }
 
     lines
-}
-
-fn estimate_text_width(text: &str, font_size: f32) -> f32 {
-    text.chars()
-        .map(|character| estimated_char_width(character, font_size))
-        .sum()
 }
 
 fn parse_paragraph_runs(
@@ -1481,7 +1471,7 @@ fn parse_paragraph_blocks_with_media(
         blocks.push(Block::Paragraph {
             runs: vec![TextRun {
                 text: String::new(),
-                style: materialize_text_style(&paragraph_style),
+                style: materialize_text_style_for_script(&paragraph_style, Script::Latin),
             }],
             list,
             metrics,
@@ -1597,7 +1587,6 @@ fn parse_run(
     styles: &StyleCatalog,
     paragraph_style: &ResolvedTextStyle,
 ) -> TextRun {
-    let style = resolve_run_style(run, styles, paragraph_style);
     let mut text = String::new();
 
     for child in &run.children {
@@ -1616,6 +1605,9 @@ fn parse_run(
             _ => {}
         }
     }
+
+    let script = detect_script(&text);
+    let style = resolve_run_style(run, styles, paragraph_style, script);
 
     TextRun { text, style }
 }
@@ -1730,13 +1722,13 @@ fn image_display_size(image: &ImageReference, max_width: f32) -> (f32, f32) {
     }
 }
 
-fn break_token_lines(token: &str, max_width: f32, font_size: f32) -> Vec<String> {
+fn break_token_lines(token: &str, max_width: f32, style: &TextStyle) -> Vec<String> {
     let mut lines = Vec::new();
     let mut current = String::new();
     let mut current_width = 0.0;
 
     for character in token.chars() {
-        let char_width = estimated_char_width(character, font_size);
+        let char_width = estimated_char_width(character, style);
         if !current.is_empty() && current_width + char_width > max_width {
             lines.push(current);
             current = String::new();
@@ -1751,19 +1743,6 @@ fn break_token_lines(token: &str, max_width: f32, font_size: f32) -> Vec<String>
     }
 
     lines
-}
-
-fn estimated_char_width(character: char, font_size: f32) -> f32 {
-    if character.is_whitespace() {
-        return font_size * 0.35;
-    }
-    if is_wide_character(character) {
-        return font_size;
-    }
-    if character.is_ascii_punctuation() {
-        return font_size * 0.45;
-    }
-    font_size * 0.55
 }
 
 fn is_wide_character(character: char) -> bool {
@@ -1869,6 +1848,7 @@ fn resolve_run_style(
     run: &viewer_core::xml::XmlElement,
     styles: &StyleCatalog,
     paragraph_style: &ResolvedTextStyle,
+    script: Script,
 ) -> TextStyle {
     let mut resolved = paragraph_style.clone();
     let run_properties = run.child("rPr");
@@ -1884,7 +1864,7 @@ fn resolve_run_style(
     let direct_style = parse_resolved_style(run_properties);
     merge_resolved_style(&mut resolved, &direct_style);
 
-    materialize_text_style(&resolved)
+    materialize_text_style_for_script(&resolved, script)
 }
 
 fn resolve_named_style(styles: &StyleCatalog, style_id: &str) -> ResolvedTextStyle {
@@ -2069,14 +2049,15 @@ fn parse_resolved_style(
         return ResolvedTextStyle::default();
     };
 
-    let font_family = run_properties
+    let font_family = run_properties.child("rFonts").and_then(|fonts| {
+        fonts
+            .attribute("ascii")
+            .or_else(|| fonts.attribute("hAnsi"))
+            .or_else(|| fonts.attribute("cs"))
+    });
+    let east_asia_font_family = run_properties
         .child("rFonts")
-        .and_then(|fonts| {
-            fonts
-                .attribute("ascii")
-                .or_else(|| fonts.attribute("hAnsi"))
-        })
-        .map(ToString::to_string);
+        .and_then(|fonts| fonts.attribute("eastAsia"));
     let font_size = run_properties
         .child("sz")
         .and_then(|node| node.attribute("val"))
@@ -2089,7 +2070,8 @@ fn parse_resolved_style(
         .map(|value| format!("#{value}"));
 
     ResolvedTextStyle {
-        font_family,
+        font_family: font_family.map(ToString::to_string),
+        east_asia_font_family: east_asia_font_family.map(ToString::to_string),
         font_size,
         bold: run_properties.child("b").map(|_| true),
         italic: run_properties.child("i").map(|_| true),
@@ -2100,6 +2082,9 @@ fn parse_resolved_style(
 fn merge_resolved_style(target: &mut ResolvedTextStyle, source: &ResolvedTextStyle) {
     if let Some(font_family) = &source.font_family {
         target.font_family = Some(font_family.clone());
+    }
+    if let Some(font_family) = &source.east_asia_font_family {
+        target.east_asia_font_family = Some(font_family.clone());
     }
     if let Some(font_size) = source.font_size {
         target.font_size = Some(font_size);
@@ -2115,14 +2100,160 @@ fn merge_resolved_style(target: &mut ResolvedTextStyle, source: &ResolvedTextSty
     }
 }
 
-fn materialize_text_style(style: &ResolvedTextStyle) -> TextStyle {
+fn materialize_text_style_for_script(style: &ResolvedTextStyle, script: Script) -> TextStyle {
     let fallback = default_text_style();
+    let font_family = match script {
+        Script::Cjk => style
+            .east_asia_font_family
+            .clone()
+            .or_else(|| style.font_family.clone())
+            .unwrap_or(fallback.font_family.clone()),
+        Script::Latin => style
+            .font_family
+            .clone()
+            .or_else(|| style.east_asia_font_family.clone())
+            .unwrap_or(fallback.font_family.clone()),
+    };
+
     TextStyle {
-        font_family: style.font_family.clone().unwrap_or(fallback.font_family),
+        font_family,
         font_size: style.font_size.unwrap_or(fallback.font_size),
         bold: style.bold.unwrap_or(fallback.bold),
         italic: style.italic.unwrap_or(fallback.italic),
         color_hex: style.color_hex.clone().unwrap_or(fallback.color_hex),
+    }
+}
+
+fn materialize_text_style(style: &ResolvedTextStyle) -> TextStyle {
+    materialize_text_style_for_script(style, Script::Latin)
+}
+
+fn detect_script(text: &str) -> Script {
+    if text.chars().any(is_wide_character) {
+        Script::Cjk
+    } else {
+        Script::Latin
+    }
+}
+
+fn estimate_text_width(text: &str, style: &TextStyle) -> f32 {
+    text.chars()
+        .map(|character| estimated_char_width(character, style))
+        .sum()
+}
+
+fn estimated_char_width(character: char, style: &TextStyle) -> f32 {
+    let font_size = style.font_size;
+    let weight_factor = if style.bold { 1.04 } else { 1.0 } * if style.italic { 1.02 } else { 1.0 };
+
+    if character.is_whitespace() {
+        return font_size * font_space_factor(&style.font_family) * weight_factor;
+    }
+    if is_wide_character(character) {
+        return font_size * font_cjk_factor(&style.font_family) * weight_factor;
+    }
+    if character.is_ascii_punctuation() {
+        return font_size * font_punctuation_factor(&style.font_family) * weight_factor;
+    }
+    if character.is_ascii_digit() {
+        return font_size * font_digit_factor(&style.font_family) * weight_factor;
+    }
+    font_size * font_latin_factor(&style.font_family) * weight_factor
+}
+
+fn font_space_factor(font_family: &str) -> f32 {
+    match classify_font_family(font_family) {
+        FontFamilyClass::SansNarrow => 0.32,
+        FontFamilyClass::Serif => 0.34,
+        FontFamilyClass::CjkSans => 0.36,
+        FontFamilyClass::CjkSerif => 0.38,
+        FontFamilyClass::Generic => 0.35,
+    }
+}
+
+fn font_punctuation_factor(font_family: &str) -> f32 {
+    match classify_font_family(font_family) {
+        FontFamilyClass::SansNarrow => 0.42,
+        FontFamilyClass::Serif => 0.47,
+        FontFamilyClass::CjkSans => 0.5,
+        FontFamilyClass::CjkSerif => 0.52,
+        FontFamilyClass::Generic => 0.45,
+    }
+}
+
+fn font_digit_factor(font_family: &str) -> f32 {
+    match classify_font_family(font_family) {
+        FontFamilyClass::SansNarrow => 0.53,
+        FontFamilyClass::Serif => 0.57,
+        FontFamilyClass::CjkSans => 0.6,
+        FontFamilyClass::CjkSerif => 0.62,
+        FontFamilyClass::Generic => 0.55,
+    }
+}
+
+fn font_latin_factor(font_family: &str) -> f32 {
+    match classify_font_family(font_family) {
+        FontFamilyClass::SansNarrow => 0.52,
+        FontFamilyClass::Serif => 0.57,
+        FontFamilyClass::CjkSans => 0.58,
+        FontFamilyClass::CjkSerif => 0.6,
+        FontFamilyClass::Generic => 0.55,
+    }
+}
+
+fn font_cjk_factor(font_family: &str) -> f32 {
+    match classify_font_family(font_family) {
+        FontFamilyClass::SansNarrow => 0.96,
+        FontFamilyClass::Serif => 0.98,
+        FontFamilyClass::CjkSans => 1.0,
+        FontFamilyClass::CjkSerif => 1.02,
+        FontFamilyClass::Generic => 1.0,
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FontFamilyClass {
+    SansNarrow,
+    Serif,
+    CjkSans,
+    CjkSerif,
+    Generic,
+}
+
+fn classify_font_family(font_family: &str) -> FontFamilyClass {
+    let normalized = font_family.to_ascii_lowercase();
+    if normalized.contains("calibri")
+        || normalized.contains("aptos")
+        || normalized.contains("arial")
+        || normalized.contains("helvetica")
+        || normalized.contains("roboto")
+    {
+        FontFamilyClass::SansNarrow
+    } else if normalized.contains("cambria")
+        || normalized.contains("times")
+        || normalized.contains("georgia")
+    {
+        FontFamilyClass::Serif
+    } else if normalized.contains("malgun gothic")
+        || normalized.contains("맑은 고딕")
+        || normalized.contains("apple sd gothic neo")
+        || normalized.contains("noto sans cjk")
+        || normalized.contains("nanum gothic")
+        || normalized.contains("dotum")
+        || normalized.contains("돋움")
+        || normalized.contains("gulim")
+        || normalized.contains("굴림")
+    {
+        FontFamilyClass::CjkSans
+    } else if normalized.contains("batang")
+        || normalized.contains("바탕")
+        || normalized.contains("noto serif cjk")
+        || normalized.contains("nanum myeongjo")
+        || normalized.contains("명조")
+    {
+        FontFamilyClass::CjkSerif
+    } else {
+        FontFamilyClass::Generic
     }
 }
 

@@ -1,8 +1,10 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart' show TargetPlatform, defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:ms_viewer_platform_interface/ms_viewer_platform_interface.dart';
 
+import '../painting/font_fallback_policy.dart';
 import 'selection_highlight_overlay.dart';
 
 class DocumentPageView extends StatelessWidget {
@@ -70,7 +72,12 @@ class DocumentPageView extends StatelessWidget {
                 children: [
                   CustomPaint(
                     size: Size.infinite,
-                    painter: _PageRenderPainter(page: page),
+                    painter: _PageRenderPainter(
+                      page: page,
+                      platform: _viewerPlatformForTargetPlatform(
+                        defaultTargetPlatform,
+                      ),
+                    ),
                   ),
                   ..._buildImageLayers(
                     page: page,
@@ -137,9 +144,13 @@ Offset _toPageOffset(Offset localPosition, double scaleX, double scaleY) {
 }
 
 class _PageRenderPainter extends CustomPainter {
-  _PageRenderPainter({required this.page});
+  _PageRenderPainter({
+    required this.page,
+    required this.platform,
+  });
 
   final PageRenderModel page;
+  final ViewerPlatform platform;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -149,10 +160,22 @@ class _PageRenderPainter extends CustomPainter {
     for (final node in page.nodes) {
       switch (node) {
         case TextRenderNodeModel():
+          final script = scriptKindForText(node.text);
+          final fontFamily = resolveRenderableFontFamily(
+            platform: platform,
+            requested: node.style.fontFamily,
+            script: script,
+          );
           final painter = TextPainter(
             text: TextSpan(
               text: node.text,
               style: TextStyle(
+                fontFamily: fontFamily,
+                fontFamilyFallback: resolveFontFamilyFallbacks(
+                  platform: platform,
+                  requested: node.style.fontFamily,
+                  script: script,
+                ),
                 fontSize: node.style.fontSize * scaleY,
                 fontWeight: node.style.bold ? FontWeight.w700 : FontWeight.w400,
                 fontStyle: node.style.italic
@@ -228,4 +251,21 @@ Color? _parseColor(String? hex) {
     return null;
   }
   return Color(int.parse('FF$normalized', radix: 16));
+}
+
+ViewerPlatform _viewerPlatformForTargetPlatform(TargetPlatform platform) {
+  switch (platform) {
+    case TargetPlatform.iOS:
+      return ViewerPlatform.ios;
+    case TargetPlatform.android:
+      return ViewerPlatform.android;
+    case TargetPlatform.macOS:
+      return ViewerPlatform.macOs;
+    case TargetPlatform.windows:
+      return ViewerPlatform.windows;
+    case TargetPlatform.linux:
+      return ViewerPlatform.android;
+    case TargetPlatform.fuchsia:
+      return ViewerPlatform.android;
+  }
 }

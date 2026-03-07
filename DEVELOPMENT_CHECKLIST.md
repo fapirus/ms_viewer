@@ -348,7 +348,7 @@
     - `before/after`, line spacing, default paragraph style, section defaults 반영
   - Tests:
     - paragraph spacing regression fixture
-- [ ] DOCX 폰트 메트릭과 fallback 정밀도 보정
+- [x] DOCX 폰트 메트릭과 fallback 정밀도 보정
   - Rust scope:
     - 문자폭 추정 개선 또는 실제 폰트 메트릭 연동 검토
     - CJK/Latin 혼합 문단 폭 계산 보정
