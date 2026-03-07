@@ -57,7 +57,8 @@ fn detects_unsupported_encryption_container() {
 
 #[test]
 fn invalid_bytes_return_invalid_document() {
-    let error = detect_package_kind_from_bytes(b"not-a-doc").expect_err("invalid bytes should fail");
+    let error =
+        detect_package_kind_from_bytes(b"not-a-doc").expect_err("invalid bytes should fail");
 
     assert!(matches!(error, ViewerError::InvalidDocument));
 }

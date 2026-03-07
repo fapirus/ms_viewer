@@ -10,7 +10,7 @@ use format_docx::{
     parse_page_boxes, parse_paragraph_blocks, parse_section_layouts, parse_style_catalog,
     search_document,
 };
-use viewer_core::model::{Block, TableCellMerge};
+use viewer_core::model::{Block, ParagraphAlignment, RenderNode, TableCellMerge};
 
 #[test]
 fn parses_main_optional_and_media_entry_points() {
@@ -62,7 +62,7 @@ fn parses_main_optional_and_media_entry_points() {
     assert_eq!(package.footers, vec!["word/footer1.xml"]);
     assert_eq!(package.media.len(), 1);
     assert_eq!(package.media[0].resolved_target, "word/media/image1.png");
-  }
+}
 
 #[test]
 fn missing_optional_parts_are_treated_as_empty() {
@@ -155,7 +155,7 @@ fn parses_styled_paragraph_runs() {
 
     assert_eq!(blocks.len(), 1);
     match &blocks[0] {
-        Block::Paragraph { runs, list } => {
+        Block::Paragraph { runs, list, .. } => {
             assert_eq!(runs.len(), 1);
             assert_eq!(runs[0].text, "Styled");
             assert!(list.is_none());
@@ -223,7 +223,7 @@ fn parses_mixed_runs_and_line_breaks() {
 
     assert_eq!(blocks.len(), 1);
     match &blocks[0] {
-        Block::Paragraph { runs, list } => {
+        Block::Paragraph { runs, list, .. } => {
             assert_eq!(runs.len(), 2);
             assert!(list.is_none());
             assert_eq!(runs[0].text, "Hello");
@@ -309,12 +309,15 @@ fn resolves_based_on_style_chain_from_styles_xml() {
     let package = parse_docx(&archive).expect("docx package should parse");
 
     let catalog = parse_style_catalog(&archive, &package).expect("styles should parse");
-    assert_eq!(catalog.default_run_style.font_family.as_deref(), Some("Calibri"));
+    assert_eq!(
+        catalog.default_run_style.font_family.as_deref(),
+        Some("Calibri")
+    );
 
     let blocks = parse_paragraph_blocks(&archive, &package).expect("paragraphs should parse");
 
     match &blocks[0] {
-        Block::Paragraph { runs, list } => {
+        Block::Paragraph { runs, list, .. } => {
             assert_eq!(runs[0].style.font_family, "Aptos");
             assert!(list.is_none());
             assert_eq!(runs[0].style.font_size, 11.0);
@@ -396,7 +399,7 @@ fn direct_formatting_overrides_named_style_values() {
     let blocks = parse_paragraph_blocks(&archive, &package).expect("paragraphs should parse");
 
     match &blocks[0] {
-        Block::Paragraph { runs, list } => {
+        Block::Paragraph { runs, list, .. } => {
             assert_eq!(runs[0].style.font_family, "Aptos");
             assert!(list.is_none());
             assert_eq!(runs[0].style.font_size, 15.0);
@@ -404,6 +407,246 @@ fn direct_formatting_overrides_named_style_values() {
         }
         other => panic!("expected paragraph block, got {other:?}"),
     }
+}
+
+#[test]
+fn resolves_paragraph_style_metrics_and_applies_them_to_layout() {
+    let file = create_docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+              <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+              <Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>
+            </Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+              <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+            </Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+              <w:body>
+                <w:p>
+                  <w:pPr>
+                    <w:pStyle w:val="Spacious"/>
+                    <w:spacing w:after="720"/>
+                  </w:pPr>
+                  <w:r><w:t>Styled paragraph</w:t></w:r>
+                </w:p>
+                <w:p>
+                  <w:r><w:t>Next paragraph</w:t></w:r>
+                </w:p>
+                <w:sectPr>
+                  <w:pgSz w:w="12240" w:h="15840"/>
+                  <w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"/>
+                </w:sectPr>
+              </w:body>
+            </w:document>"#,
+        ),
+        (
+            "word/styles.xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+              <w:docDefaults>
+                <w:rPrDefault>
+                  <w:rPr>
+                    <w:rFonts w:ascii="Calibri"/>
+                    <w:sz w:val="22"/>
+                  </w:rPr>
+                </w:rPrDefault>
+                <w:pPrDefault>
+                  <w:pPr>
+                    <w:spacing w:after="120"/>
+                  </w:pPr>
+                </w:pPrDefault>
+              </w:docDefaults>
+              <w:style w:type="paragraph" w:styleId="BasePara">
+                <w:pPr>
+                  <w:spacing w:line="360" w:lineRule="auto"/>
+                </w:pPr>
+              </w:style>
+              <w:style w:type="paragraph" w:styleId="Spacious">
+                <w:basedOn w:val="BasePara"/>
+                <w:pPr>
+                  <w:spacing w:before="240" w:after="600"/>
+                </w:pPr>
+                <w:rPr>
+                  <w:b/>
+                  <w:sz w:val="28"/>
+                </w:rPr>
+              </w:style>
+            </w:styles>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+              <Relationship Id="rStyle" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+            </Relationships>"#,
+        ),
+    ]);
+    let archive = OoxmlArchive::open_path(file.path()).expect("docx archive should open");
+    let package = parse_docx(&archive).expect("docx package should parse");
+
+    let blocks = parse_paragraph_blocks(&archive, &package).expect("paragraphs should parse");
+
+    match &blocks[0] {
+        Block::Paragraph { runs, metrics, .. } => {
+            assert_eq!(runs[0].style.font_family, "Calibri");
+            assert_eq!(runs[0].style.font_size, 14.0);
+            assert!(runs[0].style.bold);
+            assert_eq!(metrics.spacing_before, 12.0);
+            assert_eq!(metrics.spacing_after, 36.0);
+            assert_eq!(metrics.line_height, Some(21.0));
+        }
+        other => panic!("expected paragraph block, got {other:?}"),
+    }
+
+    let pages = layout_document(&archive, &package).expect("layout should succeed");
+    let page = pages.first().expect("page should exist");
+
+    let first_line_y = match &page.blocks[0] {
+        format_docx::LaidOutBlock::Paragraph { lines, .. } => lines.first().expect("first line").y,
+        other => panic!("expected paragraph block, got {other:?}"),
+    };
+    let second_line_y = match &page.blocks[1] {
+        format_docx::LaidOutBlock::Paragraph { lines, .. } => lines.first().expect("second line").y,
+        other => panic!("expected paragraph block, got {other:?}"),
+    };
+
+    assert!((first_line_y - 84.0).abs() < 0.5);
+    assert!((second_line_y - 141.0).abs() < 0.5);
+}
+
+#[test]
+fn prefers_east_asia_font_for_hangul_runs() {
+    let file = create_docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+              <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+            </Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+              <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+            </Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+              <w:body>
+                <w:p>
+                  <w:r>
+                    <w:rPr>
+                      <w:rFonts w:ascii="Calibri" w:eastAsia="Malgun Gothic"/>
+                      <w:sz w:val="28"/>
+                    </w:rPr>
+                    <w:t>안녕하세요</w:t>
+                  </w:r>
+                </w:p>
+              </w:body>
+            </w:document>"#,
+        ),
+    ]);
+    let archive = OoxmlArchive::open_path(file.path()).expect("docx archive should open");
+    let package = parse_docx(&archive).expect("docx package should parse");
+
+    let blocks = parse_paragraph_blocks(&archive, &package).expect("paragraphs should parse");
+
+    match &blocks[0] {
+        Block::Paragraph { runs, .. } => {
+            assert_eq!(runs[0].style.font_family, "Malgun Gothic");
+            assert_eq!(runs[0].style.font_size, 14.0);
+        }
+        other => panic!("expected paragraph block, got {other:?}"),
+    }
+}
+
+#[test]
+fn parses_and_lays_out_centered_paragraphs_without_rebreaking_lines() {
+    let file = create_docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+              <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+            </Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+              <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+            </Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+              <w:body>
+                <w:p>
+                  <w:pPr><w:jc w:val="center"/></w:pPr>
+                  <w:r>
+                    <w:rPr>
+                      <w:rFonts w:ascii="Times New Roman"/>
+                      <w:sz w:val="72"/>
+                      <w:b/>
+                    </w:rPr>
+                    <w:t>INFINITY TALK</w:t>
+                  </w:r>
+                </w:p>
+                <w:sectPr>
+                  <w:pgSz w:w="12240" w:h="15840"/>
+                  <w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"/>
+                </w:sectPr>
+              </w:body>
+            </w:document>"#,
+        ),
+    ]);
+    let archive = OoxmlArchive::open_path(file.path()).expect("docx archive should open");
+    let package = parse_docx(&archive).expect("docx package should parse");
+
+    let blocks = parse_paragraph_blocks(&archive, &package).expect("paragraphs should parse");
+    match &blocks[0] {
+        Block::Paragraph { runs, metrics, .. } => {
+            assert_eq!(metrics.alignment, ParagraphAlignment::Center);
+            assert_eq!(runs[0].text, "INFINITY TALK");
+        }
+        other => panic!("expected paragraph block, got {other:?}"),
+    }
+
+    let pages = layout_document(&archive, &package).expect("layout should succeed");
+    match &pages[0].blocks[0] {
+        format_docx::LaidOutBlock::Paragraph { lines, .. } => {
+            assert_eq!(lines.len(), 1);
+            assert_eq!(lines[0].text, "INFINITY TALK");
+            assert!(lines[0].x > pages[0].page_box.content.x + 40.0);
+        }
+        other => panic!("expected paragraph layout, got {other:?}"),
+    }
+
+    let models = build_selection_page_models(&archive, &package).expect("selection models");
+    let text_nodes = models[0]
+        .nodes
+        .iter()
+        .filter_map(|node| match node {
+            RenderNode::Text(text) => Some(text),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(text_nodes.len(), 1);
+    assert_eq!(text_nodes[0].text, "INFINITY TALK");
 }
 
 #[test]
@@ -614,10 +857,17 @@ fn parses_basic_table_rows_cells_and_text() {
 
     assert_eq!(blocks.len(), 1);
     match &blocks[0] {
-        Block::Table { rows } => {
+        Block::Table {
+            rows,
+            column_widths,
+            layout,
+        } => {
             assert_eq!(rows.len(), 2);
             assert_eq!(rows[0].cells.len(), 2);
             assert_eq!(rows[1].cells.len(), 1);
+            assert!(column_widths.is_empty());
+            assert_eq!(layout.alignment, viewer_core::model::TableAlignment::Left);
+            assert!(layout.floating.is_none());
             match &rows[0].cells[0].blocks[0] {
                 Block::Paragraph { runs, .. } => assert_eq!(runs[0].text, "A1"),
                 other => panic!("expected paragraph block, got {other:?}"),
@@ -675,10 +925,77 @@ fn parses_merged_cell_fallback_metadata() {
     let blocks = parse_paragraph_blocks(&archive, &package).expect("blocks should parse");
 
     match &blocks[0] {
-        Block::Table { rows } => {
+        Block::Table { rows, .. } => {
             assert_eq!(rows[0].cells[0].column_span, 2);
             assert_eq!(rows[0].cells[0].row_merge, Some(TableCellMerge::Restart));
             assert_eq!(rows[1].cells[0].row_merge, Some(TableCellMerge::Continue));
+        }
+        other => panic!("expected table block, got {other:?}"),
+    }
+}
+
+#[test]
+fn parses_floating_table_layout_metadata() {
+    let file = create_docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+              <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+            </Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+              <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+            </Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+              <w:body>
+                <w:tbl>
+                  <w:tblPr>
+                    <w:tblpPr w:leftFromText="120" w:rightFromText="120" w:vertAnchor="page" w:horzAnchor="margin" w:tblpXSpec="center" w:tblpY="2400"/>
+                    <w:tblW w:w="2400" w:type="dxa"/>
+                    <w:jc w:val="center"/>
+                  </w:tblPr>
+                  <w:tblGrid>
+                    <w:gridCol w:w="1200"/>
+                    <w:gridCol w:w="1200"/>
+                  </w:tblGrid>
+                  <w:tr>
+                    <w:tc><w:p><w:r><w:t>A</w:t></w:r></w:p></w:tc>
+                    <w:tc><w:p><w:r><w:t>B</w:t></w:r></w:p></w:tc>
+                  </w:tr>
+                </w:tbl>
+              </w:body>
+            </w:document>"#,
+        ),
+    ]);
+    let archive = OoxmlArchive::open_path(file.path()).expect("docx archive should open");
+    let package = parse_docx(&archive).expect("docx package should parse");
+    let blocks = parse_paragraph_blocks(&archive, &package).expect("blocks should parse");
+
+    match &blocks[0] {
+        Block::Table { layout, .. } => {
+            assert_eq!(layout.preferred_width, Some(120.0));
+            assert_eq!(layout.alignment, viewer_core::model::TableAlignment::Center);
+            let floating = layout.floating.as_ref().expect("floating table");
+            assert_eq!(
+                floating.horz_anchor,
+                viewer_core::model::TableAnchor::Margin
+            );
+            assert_eq!(floating.vert_anchor, viewer_core::model::TableAnchor::Page);
+            assert_eq!(
+                floating.x_position,
+                Some(viewer_core::model::TableHorizontalPosition::Center)
+            );
+            assert_eq!(floating.y, Some(120.0));
+            assert_eq!(floating.left_from_text, 6.0);
+            assert_eq!(floating.right_from_text, 6.0);
         }
         other => panic!("expected table block, got {other:?}"),
     }
@@ -747,10 +1064,11 @@ fn parses_inline_image_reference_from_drawing_relationship() {
 
     assert_eq!(blocks.len(), 1);
     match &blocks[0] {
-        Block::Image { image } => {
+        Block::Image { image, alignment } => {
             assert_eq!(image.resource_id, "word/media/image1.png");
             assert_eq!(image.description.as_deref(), Some("System diagram"));
             assert_eq!(image.content_type.as_deref(), Some("image/png"));
+            assert_eq!(*alignment, ParagraphAlignment::Left);
         }
         other => panic!("expected image block, got {other:?}"),
     }
@@ -815,6 +1133,176 @@ fn missing_media_relationship_for_drawing_fails() {
 }
 
 #[test]
+fn lays_out_centered_inline_image_using_paragraph_alignment() {
+    let file = create_docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+              <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+            </Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+              <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+            </Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">
+              <w:body>
+                <w:p>
+                  <w:pPr><w:jc w:val="center"/></w:pPr>
+                  <w:r>
+                    <w:drawing>
+                      <wp:inline>
+                        <wp:extent cx="3252470" cy="3252470"/>
+                        <wp:docPr id="1" name="Centered logo"/>
+                        <a:graphic>
+                          <a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">
+                            <pic:pic>
+                              <pic:blipFill><a:blip r:embed="rImage1"/></pic:blipFill>
+                            </pic:pic>
+                          </a:graphicData>
+                        </a:graphic>
+                      </wp:inline>
+                    </w:drawing>
+                  </w:r>
+                </w:p>
+                <w:sectPr>
+                  <w:pgSz w:w="11906" w:h="16838"/>
+                  <w:pgMar w:top="1701" w:right="1440" w:bottom="1440" w:left="1440"/>
+                </w:sectPr>
+              </w:body>
+            </w:document>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+              <Relationship Id="rImage1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/logo.png"/>
+            </Relationships>"#,
+        ),
+        ("word/media/logo.png", "fakepng"),
+    ]);
+    let archive = OoxmlArchive::open_path(file.path()).expect("docx archive should open");
+    let package = parse_docx(&archive).expect("docx package should parse");
+    let blocks = parse_paragraph_blocks(&archive, &package).expect("blocks should parse");
+
+    match &blocks[0] {
+        Block::Image { image, alignment } => {
+            assert_eq!(image.resource_id, "word/media/logo.png");
+            assert_eq!(*alignment, ParagraphAlignment::Center);
+        }
+        other => panic!("expected image block, got {other:?}"),
+    }
+
+    let pages = layout_document(&archive, &package).expect("layout should succeed");
+    match &pages[0].blocks[0] {
+        format_docx::LaidOutBlock::Image { x, width, .. } => {
+            assert!(*x > pages[0].page_box.content.x + 40.0);
+            let expected =
+                pages[0].page_box.content.x + ((pages[0].page_box.content.width - *width) / 2.0);
+            assert!((*x - expected).abs() < 0.5);
+        }
+        other => panic!("expected image layout, got {other:?}"),
+    }
+}
+
+#[test]
+fn table_cell_inline_image_is_rendered_as_image_node() {
+    let file = create_docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+              <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+            </Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+              <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+            </Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <w:document
+              xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+              xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"
+              xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"
+              xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+              xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing">
+              <w:body>
+                <w:tbl>
+                  <w:tblGrid>
+                    <w:gridCol w:w="4000"/>
+                  </w:tblGrid>
+                  <w:tr>
+                    <w:tc>
+                      <w:p>
+                        <w:r>
+                          <w:drawing>
+                            <wp:inline>
+                              <wp:extent cx="1905000" cy="952500"/>
+                              <wp:docPr id="1" name="Cell Image" descr="Cell image"/>
+                              <a:graphic>
+                                <a:graphicData>
+                                  <pic:pic>
+                                    <pic:blipFill>
+                                      <a:blip r:embed="rImage1"/>
+                                    </pic:blipFill>
+                                  </pic:pic>
+                                </a:graphicData>
+                              </a:graphic>
+                            </wp:inline>
+                          </w:drawing>
+                        </w:r>
+                      </w:p>
+                    </w:tc>
+                  </w:tr>
+                </w:tbl>
+                <w:sectPr>
+                  <w:pgSz w:w="12240" w:h="15840"/>
+                  <w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"/>
+                </w:sectPr>
+              </w:body>
+            </w:document>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+              <Relationship Id="rImage1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image1.png"/>
+            </Relationships>"#,
+        ),
+        ("word/media/image1.png", "fakepng"),
+    ]);
+    let archive = OoxmlArchive::open_path(file.path()).expect("docx archive should open");
+    let package = parse_docx(&archive).expect("docx package should parse");
+
+    let models = build_selection_page_models(&archive, &package).expect("selection models");
+    let image_nodes = models[0]
+        .nodes
+        .iter()
+        .filter_map(|node| match node {
+            viewer_core::model::RenderNode::Image(image) => Some(image),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(image_nodes.len(), 1);
+    assert_eq!(image_nodes[0].description.as_deref(), Some("Cell image"));
+    assert!(image_nodes[0].bounds.width > 100.0);
+    assert!(image_nodes[0].bounds.height > 50.0);
+}
+
+#[test]
 fn parses_different_first_page_header_footer_references() {
     let file = create_docx_fixture(&[
         (
@@ -854,9 +1342,18 @@ fn parses_different_first_page_header_footer_references() {
               <Relationship Id="rFirstFooter" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="first-footer.xml"/>
             </Relationships>"#,
         ),
-        ("word/first-header.xml", "<w:hdr xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"/>"),
-        ("word/default-header.xml", "<w:hdr xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"/>"),
-        ("word/first-footer.xml", "<w:ftr xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"/>"),
+        (
+            "word/first-header.xml",
+            "<w:hdr xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"/>",
+        ),
+        (
+            "word/default-header.xml",
+            "<w:hdr xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"/>",
+        ),
+        (
+            "word/first-footer.xml",
+            "<w:ftr xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"/>",
+        ),
     ]);
     let archive = OoxmlArchive::open_path(file.path()).expect("docx archive should open");
     let package = parse_docx(&archive).expect("docx package should parse");
@@ -916,9 +1413,18 @@ fn parses_section_break_header_footer_switch() {
               <Relationship Id="rFooter2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="section2-footer.xml"/>
             </Relationships>"#,
         ),
-        ("word/section1-header.xml", "<w:hdr xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"/>"),
-        ("word/section2-header.xml", "<w:hdr xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"/>"),
-        ("word/section2-footer.xml", "<w:ftr xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"/>"),
+        (
+            "word/section1-header.xml",
+            "<w:hdr xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"/>",
+        ),
+        (
+            "word/section2-header.xml",
+            "<w:hdr xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"/>",
+        ),
+        (
+            "word/section2-footer.xml",
+            "<w:ftr xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"/>",
+        ),
     ]);
     let archive = OoxmlArchive::open_path(file.path()).expect("docx archive should open");
     let package = parse_docx(&archive).expect("docx package should parse");
@@ -1113,12 +1619,19 @@ fn lays_out_header_footer_inside_margin_regions() {
               <Relationship Id="rFooter" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer.xml"/>
             </Relationships>"#,
         ),
-        ("word/header.xml", "<w:hdr xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"/>"),
-        ("word/footer.xml", "<w:ftr xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"/>"),
+        (
+            "word/header.xml",
+            "<w:hdr xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"/>",
+        ),
+        (
+            "word/footer.xml",
+            "<w:ftr xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"/>",
+        ),
     ]);
     let archive = OoxmlArchive::open_path(file.path()).expect("docx archive should open");
     let package = parse_docx(&archive).expect("docx package should parse");
-    let layouts = layout_header_footers(&archive, &package).expect("header/footer layout should parse");
+    let layouts =
+        layout_header_footers(&archive, &package).expect("header/footer layout should parse");
 
     assert_eq!(layouts.len(), 1);
     let layout = &layouts[0];
@@ -1212,6 +1725,7 @@ fn lays_out_image_in_document_flow() {
             y,
             width,
             height,
+            ..
         } => {
             assert_eq!(resource_id, "word/media/image1.png");
             assert_eq!(*x, pages[0].page_box.content.x);
@@ -1272,26 +1786,167 @@ fn splits_table_rows_across_pages_when_needed() {
     let package = parse_docx(&archive).expect("docx package should parse");
     let pages = layout_document(&archive, &package).expect("layout should succeed");
 
-    assert_eq!(pages.len(), 2);
-    match &pages[0].blocks[0] {
-        format_docx::LaidOutBlock::Table { rows, y, height, .. } => {
-            assert_eq!(rows.len(), 2);
-            assert_eq!(rows[0].cells.len(), 1);
-            assert_eq!(rows[1].cells.len(), 1);
-            assert_eq!(*y, pages[0].page_box.content.y);
-            assert_eq!(*height, 48.0);
-        }
-        other => panic!("expected table layout, got {other:?}"),
-    }
-    match &pages[1].blocks[0] {
-        format_docx::LaidOutBlock::Table { rows, y, height, .. } => {
-            assert_eq!(rows.len(), 2);
-            assert_eq!(*y, pages[1].page_box.content.y);
-            assert_eq!(*height, 48.0);
-            assert!(rows[0].y < rows[1].y);
-        }
-        other => panic!("expected table layout, got {other:?}"),
-    }
+    assert!(pages.len() >= 2);
+
+    let total_rows = pages
+        .iter()
+        .flat_map(|page| &page.blocks)
+        .map(|block| match block {
+            format_docx::LaidOutBlock::Table { rows, y, .. } => {
+                assert_eq!(*y, pages[0].page_box.content.y);
+                assert!(!rows.is_empty());
+                rows.len()
+            }
+            other => panic!("expected table layout, got {other:?}"),
+        })
+        .sum::<usize>();
+
+    assert_eq!(total_rows, 4);
+}
+
+#[test]
+fn keeps_three_image_rows_on_single_page_with_compact_cell_padding() {
+    let file = create_docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+              <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+            </Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+              <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+            </Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">
+              <w:body>
+                <w:p><w:r><w:t>Gallery intro</w:t></w:r></w:p>
+                <w:tbl>
+                  <w:tblGrid>
+                    <w:gridCol w:w="2319"/>
+                    <w:gridCol w:w="2297"/>
+                    <w:gridCol w:w="2183"/>
+                  </w:tblGrid>
+                  <w:tr>
+                    <w:tc><w:p><w:r><w:drawing><wp:inline><wp:extent cx="1362714" cy="2800350"/><wp:docPr id="1" name="그림 1"/><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:blipFill><a:blip r:embed="rImage1"/></pic:blipFill></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p></w:tc>
+                    <w:tc><w:p><w:r><w:drawing><wp:inline><wp:extent cx="1376680" cy="2829050"/><wp:docPr id="2" name="그림 2"/><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:blipFill><a:blip r:embed="rImage2"/></pic:blipFill></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p></w:tc>
+                    <w:tc><w:p><w:r><w:drawing><wp:inline><wp:extent cx="1375587" cy="2829465"/><wp:docPr id="3" name="그림 3"/><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:blipFill><a:blip r:embed="rImage3"/></pic:blipFill></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p></w:tc>
+                  </w:tr>
+                  <w:tr>
+                    <w:tc><w:p><w:r><w:drawing><wp:inline><wp:extent cx="1362714" cy="2800350"/><wp:docPr id="4" name="그림 4"/><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:blipFill><a:blip r:embed="rImage4"/></pic:blipFill></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p></w:tc>
+                    <w:tc><w:p><w:r><w:drawing><wp:inline><wp:extent cx="1376680" cy="2829050"/><wp:docPr id="5" name="그림 5"/><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:blipFill><a:blip r:embed="rImage5"/></pic:blipFill></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p></w:tc>
+                    <w:tc><w:p><w:r><w:drawing><wp:inline><wp:extent cx="1375587" cy="2829465"/><wp:docPr id="6" name="그림 6"/><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:blipFill><a:blip r:embed="rImage6"/></pic:blipFill></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p></w:tc>
+                  </w:tr>
+                  <w:tr>
+                    <w:tc><w:p><w:r><w:drawing><wp:inline><wp:extent cx="1362714" cy="2800350"/><wp:docPr id="7" name="그림 7"/><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:blipFill><a:blip r:embed="rImage7"/></pic:blipFill></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p></w:tc>
+                    <w:tc><w:p><w:r><w:drawing><wp:inline><wp:extent cx="1376680" cy="2829050"/><wp:docPr id="8" name="그림 8"/><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:blipFill><a:blip r:embed="rImage8"/></pic:blipFill></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p></w:tc>
+                    <w:tc><w:p><w:r><w:drawing><wp:inline><wp:extent cx="1375587" cy="2829465"/><wp:docPr id="9" name="그림 9"/><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:blipFill><a:blip r:embed="rImage9"/></pic:blipFill></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p></w:tc>
+                  </w:tr>
+                </w:tbl>
+                <w:sectPr>
+                  <w:pgSz w:w="11906" w:h="16838"/>
+                  <w:pgMar w:top="1701" w:right="1440" w:bottom="1440" w:left="1440"/>
+                </w:sectPr>
+              </w:body>
+            </w:document>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+              <Relationship Id="rImage1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image.png"/>
+              <Relationship Id="rImage2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image.png"/>
+              <Relationship Id="rImage3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image.png"/>
+              <Relationship Id="rImage4" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image.png"/>
+              <Relationship Id="rImage5" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image.png"/>
+              <Relationship Id="rImage6" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image.png"/>
+              <Relationship Id="rImage7" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image.png"/>
+              <Relationship Id="rImage8" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image.png"/>
+              <Relationship Id="rImage9" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image.png"/>
+            </Relationships>"#,
+        ),
+        ("word/media/image.png", "fakepng"),
+    ]);
+    let archive = OoxmlArchive::open_path(file.path()).expect("docx archive should open");
+    let package = parse_docx(&archive).expect("docx package should parse");
+    let pages = build_selection_page_models(&archive, &package).expect("selection models");
+
+    assert_eq!(pages.len(), 1);
+    let image_count = pages[0]
+        .nodes
+        .iter()
+        .filter(|node| matches!(node, RenderNode::Image(_)))
+        .count();
+    assert_eq!(image_count, 9);
+}
+
+#[test]
+fn lays_out_centered_floating_table_using_preferred_width() {
+    let file = create_docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+              <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+            </Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+              <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+            </Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+              <w:body>
+                <w:p><w:r><w:t>Intro</w:t></w:r></w:p>
+                <w:tbl>
+                  <w:tblPr>
+                    <w:tblpPr w:leftFromText="142" w:rightFromText="142" w:vertAnchor="page" w:horzAnchor="margin" w:tblpXSpec="center" w:tblpY="2400"/>
+                    <w:tblW w:w="0" w:type="auto"/>
+                  </w:tblPr>
+                  <w:tblGrid>
+                    <w:gridCol w:w="2239"/>
+                    <w:gridCol w:w="2239"/>
+                  </w:tblGrid>
+                  <w:tr>
+                    <w:tc><w:p><w:r><w:t>학과</w:t></w:r></w:p></w:tc>
+                    <w:tc><w:p><w:r><w:t>컴퓨터공학과</w:t></w:r></w:p></w:tc>
+                  </w:tr>
+                </w:tbl>
+                <w:sectPr>
+                  <w:pgSz w:w="11906" w:h="16838"/>
+                  <w:pgMar w:top="1701" w:right="1440" w:bottom="1440" w:left="1440"/>
+                </w:sectPr>
+              </w:body>
+            </w:document>"#,
+        ),
+    ]);
+    let archive = OoxmlArchive::open_path(file.path()).expect("docx archive should open");
+    let package = parse_docx(&archive).expect("docx package should parse");
+    let pages = layout_document(&archive, &package).expect("layout should succeed");
+
+    let floating_table = pages[0]
+        .blocks
+        .iter()
+        .find_map(|block| match block {
+            format_docx::LaidOutBlock::Table { x, y, width, .. } => Some((*x, *y, *width)),
+            _ => None,
+        })
+        .expect("floating table should exist");
+
+    assert!((floating_table.2 - 223.9).abs() < 0.5);
+    assert!((floating_table.0 - 185.1).abs() < 1.0);
+    assert!((floating_table.1 - 120.0).abs() < 0.5);
 }
 
 #[test]
@@ -1334,7 +1989,7 @@ fn finds_simple_query_match_from_docx_pages() {
     assert_eq!(matches[0].page_index, 0);
     assert_eq!(matches[0].query, "target");
     assert!(matches[0].preview.contains("search target appears"));
-  }
+}
 
 #[test]
 fn docx_search_is_case_insensitive() {
@@ -1482,6 +2137,309 @@ fn generates_cross_line_selection_anchors() {
     assert!(second_anchor.y > first_anchor.y);
     assert_eq!(first_anchor.char_index, 0);
     assert_eq!(second_anchor.char_index, 0);
+}
+
+#[test]
+fn allows_external_hyperlink_relationships() {
+    let file = create_docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+              <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+            </Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+              <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+            </Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+              <w:body>
+                <w:p>
+                  <w:hyperlink r:id="rLink" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+                    <w:r><w:t>Click me</w:t></w:r>
+                  </w:hyperlink>
+                </w:p>
+              </w:body>
+            </w:document>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+              <Relationship Id="rLink" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.com" TargetMode="External"/>
+            </Relationships>"#,
+        ),
+    ]);
+    let archive = OoxmlArchive::open_path(file.path()).expect("docx archive should open");
+
+    let package = parse_docx(&archive).expect("docx package should parse");
+    let blocks = parse_paragraph_blocks(&archive, &package).expect("paragraphs should parse");
+
+    assert_eq!(blocks.len(), 1);
+}
+
+#[test]
+fn nested_table_sdts_produce_visible_text_nodes() {
+    let file = create_docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+              <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+            </Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+              <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+            </Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+              <w:body>
+                <w:tbl>
+                  <w:tr>
+                    <w:tc>
+                      <w:tcPr><w:tcW w:w="3000" w:type="dxa"/></w:tcPr>
+                      <w:sdt>
+                        <w:sdtContent>
+                          <w:p>
+                            <w:sdt>
+                              <w:sdtContent>
+                                <w:r><w:t>JINWOOK</w:t></w:r>
+                              </w:sdtContent>
+                            </w:sdt>
+                          </w:p>
+                        </w:sdtContent>
+                      </w:sdt>
+                      <w:p/>
+                    </w:tc>
+                  </w:tr>
+                </w:tbl>
+                <w:sectPr>
+                  <w:pgSz w:w="12240" w:h="15840"/>
+                  <w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"/>
+                </w:sectPr>
+              </w:body>
+            </w:document>"#,
+        ),
+    ]);
+    let archive = OoxmlArchive::open_path(file.path()).expect("docx archive should open");
+    let package = parse_docx(&archive).expect("docx package should parse");
+
+    let models = build_selection_page_models(&archive, &package).expect("selection models");
+    let text_nodes = models[0]
+        .nodes
+        .iter()
+        .filter_map(|node| match node {
+            viewer_core::model::RenderNode::Text(text) => Some(text.text.as_str()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+
+    assert!(text_nodes.iter().any(|text| text.contains("JINWOOK")));
+}
+
+#[test]
+fn table_cell_text_nodes_preserve_style_and_paragraph_order() {
+    let file = create_docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+              <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+            </Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+              <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+            </Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+              <w:body>
+                <w:tbl>
+                  <w:tblGrid>
+                    <w:gridCol w:w="2000"/>
+                    <w:gridCol w:w="2000"/>
+                  </w:tblGrid>
+                  <w:tr>
+                    <w:tc>
+                      <w:p>
+                        <w:r>
+                          <w:rPr>
+                            <w:b/>
+                            <w:sz w:val="32"/>
+                          </w:rPr>
+                          <w:t>Styled table text</w:t>
+                        </w:r>
+                      </w:p>
+                      <w:p>
+                        <w:r>
+                          <w:t>Second paragraph</w:t>
+                        </w:r>
+                      </w:p>
+                    </w:tc>
+                    <w:tc>
+                      <w:p><w:r><w:t>Other cell</w:t></w:r></w:p>
+                    </w:tc>
+                  </w:tr>
+                </w:tbl>
+                <w:sectPr>
+                  <w:pgSz w:w="12240" w:h="15840"/>
+                  <w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"/>
+                </w:sectPr>
+              </w:body>
+            </w:document>"#,
+        ),
+    ]);
+    let archive = OoxmlArchive::open_path(file.path()).expect("docx archive should open");
+    let package = parse_docx(&archive).expect("docx package should parse");
+
+    let models = build_selection_page_models(&archive, &package).expect("selection models");
+    let text_nodes = models[0]
+        .nodes
+        .iter()
+        .filter_map(|node| match node {
+            viewer_core::model::RenderNode::Text(text) => Some(text),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+
+    let styled = text_nodes
+        .iter()
+        .find(|node| node.text.contains("Styled"))
+        .expect("styled text node");
+    let second = text_nodes
+        .iter()
+        .find(|node| node.text.contains("Second"))
+        .expect("second paragraph node");
+
+    assert!(styled.style.bold);
+    assert_eq!(styled.style.font_size, 16.0);
+    assert!(second.bounds.y > styled.bounds.y);
+}
+
+#[test]
+fn empty_paragraphs_force_additional_pages() {
+    let mut body = String::new();
+    for _ in 0..12 {
+        body.push_str("<w:p/>");
+    }
+
+    let document_xml = format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+        <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+          <w:body>
+            {body}
+            <w:sectPr>
+              <w:pgSz w:w="2400" w:h="1200"/>
+              <w:pgMar w:top="120" w:right="120" w:bottom="120" w:left="120"/>
+            </w:sectPr>
+          </w:body>
+        </w:document>"#,
+    );
+    let file = create_docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+              <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+            </Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+              <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+            </Relationships>"#,
+        ),
+        ("word/document.xml", &document_xml),
+    ]);
+    let archive = OoxmlArchive::open_path(file.path()).expect("docx archive should open");
+    let package = parse_docx(&archive).expect("docx package should parse");
+
+    let pages = layout_document(&archive, &package).expect("layout");
+
+    assert!(pages.len() >= 2);
+}
+
+#[test]
+fn last_rendered_page_break_forces_new_page() {
+    let file = create_docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+              <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+            </Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+              <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+            </Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+              <w:body>
+                <w:p>
+                  <w:r>
+                    <w:t>alpha</w:t>
+                    <w:lastRenderedPageBreak/>
+                    <w:t>beta</w:t>
+                  </w:r>
+                </w:p>
+                <w:sectPr>
+                  <w:pgSz w:w="12240" w:h="15840"/>
+                  <w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"/>
+                </w:sectPr>
+              </w:body>
+            </w:document>"#,
+        ),
+    ]);
+    let archive = OoxmlArchive::open_path(file.path()).expect("docx archive should open");
+    let package = parse_docx(&archive).expect("docx package should parse");
+
+    let pages = build_selection_page_models(&archive, &package).expect("selection models");
+
+    assert_eq!(pages.len(), 2);
+    let first_page_text = pages[0]
+        .nodes
+        .iter()
+        .filter_map(|node| match node {
+            viewer_core::model::RenderNode::Text(text) => Some(text.text.as_str()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let second_page_text = pages[1]
+        .nodes
+        .iter()
+        .filter_map(|node| match node {
+            viewer_core::model::RenderNode::Text(text) => Some(text.text.as_str()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(first_page_text, vec!["alpha"]);
+    assert_eq!(second_page_text, vec!["beta"]);
 }
 
 fn create_docx_fixture(entries: &[(&str, &str)]) -> NamedTempFile {

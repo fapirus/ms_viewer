@@ -9,8 +9,20 @@ void main() {
         home: Scaffold(
           body: SearchResultList(
             results: const [
-              SearchResult(query: 'alpha', pageIndex: 0, preview: 'alpha preview'),
-              SearchResult(query: 'alpha', pageIndex: 2, preview: 'second match'),
+              SearchResult(
+                query: 'alpha',
+                pageIndex: 0,
+                start: 0,
+                end: 5,
+                preview: 'alpha preview',
+              ),
+              SearchResult(
+                query: 'alpha',
+                pageIndex: 2,
+                start: 10,
+                end: 15,
+                preview: 'second match',
+              ),
             ],
             currentIndex: 1,
           ),

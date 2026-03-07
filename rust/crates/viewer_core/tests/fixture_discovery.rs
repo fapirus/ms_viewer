@@ -20,7 +20,11 @@ fn required_fixture_directories_exist() {
         fixtures.join("regression"),
     ] {
         assert!(path.exists(), "missing fixture path: {}", path.display());
-        assert!(path.is_dir(), "fixture path should be directory: {}", path.display());
+        assert!(
+            path.is_dir(),
+            "fixture path should be directory: {}",
+            path.display()
+        );
     }
 }
 

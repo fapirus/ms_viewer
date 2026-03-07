@@ -9,6 +9,7 @@ Flutter에서 사용할 수 있는 Microsoft Office 문서 뷰어를 만든다.
 - 1차 목표는 `editing`이 아니라 `viewing`이다.
 - 뷰어 품질을 먼저 확보하고, 편집 기능은 범위에서 제외한다.
 - 개발 순서는 `docx -> pptx -> xlsx`다.
+- 각 포맷은 `MVP 구현 -> demo 실연동 -> 다음 포맷` 순서로 진행한다.
 - 정확도와 안정성을 성능보다 조금 더 우선한다.
 
 ## Target platforms
@@ -233,6 +234,12 @@ OOXML은 ZIP 기반이라 완전한 스트리밍이 쉽지 않다.
 - 검색
 - 순수 텍스트 선택
 
+### Phase 1.5: DOCX demo real integration
+- Rust FFI로 실제 DOCX page render model fetch
+- Flutter bridge에서 실제 page fetch
+- demo app fixture/file picker/desktop drop 경로에서 실제 DOCX 열기
+- password-required demo flow 확인
+
 ### Phase 2: PPTX
 - 슬라이드
 - 슬라이드 크기와 배경
@@ -248,6 +255,11 @@ OOXML은 ZIP 기반이라 완전한 스트리밍이 쉽지 않다.
 - 전환 효과
 - 발표자 노트 고급 처리
 
+### Phase 2.5: PPTX demo real integration
+- Rust FFI로 실제 slide render model fetch
+- Flutter bridge에서 실제 slide fetch
+- demo app fixture/file picker/desktop drop 경로에서 실제 PPTX 열기
+
 ### Phase 3: XLSX
 - 시트 렌더링
 - 행/열 크기
@@ -258,6 +270,11 @@ OOXML은 ZIP 기반이라 완전한 스트리밍이 쉽지 않다.
 - 검색
 - 순수 텍스트 선택
 - 수식 셀은 cached value 우선 표시
+
+### Phase 3.5: XLSX demo real integration
+- Rust FFI로 실제 sheet window render model fetch
+- Flutter bridge에서 실제 sheet window fetch
+- demo app fixture/file picker/desktop drop 경로에서 실제 XLSX 열기
 
 초기 제약 권장:
 - 직접 수식 계산 미지원

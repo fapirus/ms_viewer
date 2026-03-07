@@ -1,0 +1,69 @@
+import 'demo_document.dart';
+import 'demo_page_models.dart';
+import 'package:ms_viewer/ms_viewer.dart';
+
+List<DemoDocumentEntry> buildFixtureEntries() {
+  return [
+    DemoDocumentEntry(
+      id: 'docx_plain_text',
+      title: 'docx_plain_text.docx',
+      kind: DocumentKind.docx,
+      origin: DemoDocumentOrigin.fixture,
+      previewPages: buildFixturePreviewPages('docx_plain_text'),
+      tags: const ['plain text', 'docx'],
+      sourceLabel: 'Bundled fixture',
+      statusLabel: 'Ready',
+      location: 'assets/fixtures/docx/docx_plain_text.docx',
+      note: 'Basic paragraph flow review fixture.',
+    ),
+    DemoDocumentEntry(
+      id: 'docx_styles_lists',
+      title: 'docx_styles_lists.docx',
+      kind: DocumentKind.docx,
+      origin: DemoDocumentOrigin.fixture,
+      previewPages: buildFixturePreviewPages('docx_styles_lists'),
+      tags: const ['styles', 'lists', 'docx'],
+      sourceLabel: 'Bundled fixture',
+      statusLabel: 'Ready',
+      location: 'assets/fixtures/docx/docx_styles_lists.docx',
+      note: 'Style resolution and numbering review fixture.',
+    ),
+    DemoDocumentEntry(
+      id: 'docx_tables_images',
+      title: 'docx_tables_images.docx',
+      kind: DocumentKind.docx,
+      origin: DemoDocumentOrigin.fixture,
+      previewPages: buildFixturePreviewPages('docx_tables_images'),
+      tags: const ['tables', 'images', 'docx'],
+      sourceLabel: 'Bundled fixture',
+      statusLabel: 'Ready',
+      location: 'assets/fixtures/docx/docx_tables_images.docx',
+      note: 'Table and image placement review fixture.',
+    ),
+    DemoDocumentEntry(
+      id: 'docx_multi_section',
+      title: 'docx_multi_section.docx',
+      kind: DocumentKind.docx,
+      origin: DemoDocumentOrigin.fixture,
+      previewPages: buildFixturePreviewPages('docx_multi_section'),
+      tags: const ['multi-section', 'header/footer', 'docx'],
+      sourceLabel: 'Bundled fixture',
+      statusLabel: 'Ready',
+      location: 'assets/fixtures/docx/docx_multi_section.docx',
+      note: 'Section header/footer review fixture.',
+    ),
+    DemoDocumentEntry(
+      id: 'docx_password_stub',
+      title: 'docx_password_stub.docx',
+      kind: DocumentKind.docx,
+      origin: DemoDocumentOrigin.fixture,
+      previewPages: const [],
+      tags: const ['encrypted', 'docx'],
+      sourceLabel: 'Bundled fixture',
+      statusLabel: 'Password required',
+      location: 'assets/fixtures/encrypted/docx_password_stub.docx',
+      requiresPassword: true,
+      note: 'Encrypted container detection stub for password flow checks.',
+    ),
+  ];
+}

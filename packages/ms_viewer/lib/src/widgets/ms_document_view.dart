@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:ms_viewer_platform_interface/ms_viewer_platform_interface.dart';
 
 import '../controller/ms_viewer_controller.dart';
 import 'document_page_view.dart';
+import 'search_result_list.dart';
 
 class MsDocumentView extends StatefulWidget {
   const MsDocumentView({
@@ -20,16 +23,19 @@ class MsDocumentView extends StatefulWidget {
 
 class _MsDocumentViewState extends State<MsDocumentView> {
   late final TextEditingController _passwordController;
+  late final TextEditingController _searchController;
 
   @override
   void initState() {
     super.initState();
     _passwordController = TextEditingController();
+    _searchController = TextEditingController();
   }
 
   @override
   void dispose() {
     _passwordController.dispose();
+    _searchController.dispose();
     super.dispose();
   }
 
@@ -67,37 +73,131 @@ class _MsDocumentViewState extends State<MsDocumentView> {
   }
 
   Widget _buildReadyState(String title, int pageCount) {
-    final page = widget.previewPages.isEmpty ? null : widget.previewPages.first;
+    final fetchedPage = widget.controller.currentPage;
+    final fallbackPreviewPage = widget.previewPages.isEmpty
+        ? null
+        : widget.previewPages.first;
+    final page = fetchedPage ?? fallbackPreviewPage;
+    final searchResults = widget.controller.searchController.results;
     return Padding(
       padding: const EdgeInsets.all(24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(
-            title,
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
+          Text(title, style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 8),
           Text('$pageCount pages'),
           const SizedBox(height: 16),
-          Expanded(
-            child: page == null
-                ? const Center(
-                    child: Text(
-                      'Viewer placeholder: render model not loaded',
-                      textAlign: TextAlign.center,
-                    ),
-                  )
-                : Center(
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 640),
-                      child: DocumentPageView(page: page),
-                    ),
+          Row(
+            children: [
+              OutlinedButton.icon(
+                onPressed: widget.controller.canGoToPreviousPage
+                    ? () => unawaited(widget.controller.goToPreviousPage())
+                    : null,
+                icon: const Icon(Icons.chevron_left),
+                label: const Text('Previous'),
+              ),
+              const SizedBox(width: 8),
+              OutlinedButton.icon(
+                onPressed: widget.controller.canGoToNextPage
+                    ? () => unawaited(widget.controller.goToNextPage())
+                    : null,
+                icon: const Icon(Icons.chevron_right),
+                label: const Text('Next'),
+              ),
+              const SizedBox(width: 12),
+              Text(
+                pageCount == 0
+                    ? 'Page 0 / 0'
+                    : 'Page ${(widget.controller.currentPageIndex ?? 0) + 1} / $pageCount',
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _searchController,
+                  textInputAction: TextInputAction.search,
+                  onSubmitted: _submitSearch,
+                  decoration: const InputDecoration(
+                    border: OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.search),
+                    hintText: 'Search in document',
                   ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              FilledButton(
+                onPressed: () => _submitSearch(_searchController.text),
+                child: const Text('Search'),
+              ),
+            ],
+          ),
+          if (_searchController.text.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            SizedBox(
+              height: 120,
+              child: SearchResultList(
+                results: searchResults,
+                currentIndex: widget.controller.searchController.currentIndex,
+                onTap: (index) {
+                  unawaited(widget.controller.selectSearchResult(index));
+                },
+              ),
+            ),
+          ],
+          const SizedBox(height: 16),
+          Expanded(
+            child: switch (widget.controller.pageStatus) {
+              ViewerPageStatus.loading => const Center(
+                child: CircularProgressIndicator(),
+              ),
+              ViewerPageStatus.error => Center(
+                child: Text(
+                  widget.controller.pageError?.message ??
+                      'Failed to load page preview.',
+                  textAlign: TextAlign.center,
+                ),
+              ),
+              ViewerPageStatus.ready when page != null => Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 640),
+                  child: DocumentPageView(
+                    page: page,
+                    highlights: widget.controller.pageHighlights,
+                    onSelectionStart: widget.controller.startSelectionAt,
+                    onSelectionUpdate: widget.controller.updateSelectionAt,
+                  ),
+                ),
+              ),
+              _ when page != null => Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 640),
+                  child: DocumentPageView(
+                    page: page,
+                    highlights: widget.controller.pageHighlights,
+                    onSelectionStart: widget.controller.startSelectionAt,
+                    onSelectionUpdate: widget.controller.updateSelectionAt,
+                  ),
+                ),
+              ),
+              _ => const Center(
+                child: Text(
+                  'Viewer placeholder: render model not loaded',
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            },
           ),
         ],
       ),
     );
+  }
+
+  void _submitSearch(String query) {
+    unawaited(widget.controller.search(query));
   }
 
   Widget _buildPasswordPrompt(BuildContext context) {
@@ -109,7 +209,8 @@ class _MsDocumentViewState extends State<MsDocumentView> {
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
-            passwordState.message ?? 'Password is required to open this document.',
+            passwordState.message ??
+                'Password is required to open this document.',
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 12),

@@ -61,10 +61,30 @@ pub struct TextRun {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
+pub struct ParagraphMetrics {
+    pub alignment: ParagraphAlignment,
+    pub line_height: Option<f32>,
+    pub spacing_before: f32,
+    pub spacing_after: f32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum ParagraphAlignment {
+    Left,
+    Center,
+    Right,
+    Justified,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct ImageReference {
     pub resource_id: String,
     pub description: Option<String>,
     pub content_type: Option<String>,
+    pub display_width: Option<f32>,
+    pub display_height: Option<f32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -103,17 +123,76 @@ pub struct TableRow {
     pub cells: Vec<TableCell>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum TableAlignment {
+    Left,
+    Center,
+    Right,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum TableAnchor {
+    Margin,
+    Page,
+    Text,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum TableHorizontalPosition {
+    Left,
+    Center,
+    Right,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum TableVerticalPosition {
+    Top,
+    Center,
+    Bottom,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct FloatingTablePosition {
+    pub horz_anchor: TableAnchor,
+    pub vert_anchor: TableAnchor,
+    pub x: Option<f32>,
+    pub y: Option<f32>,
+    pub x_position: Option<TableHorizontalPosition>,
+    pub y_position: Option<TableVerticalPosition>,
+    pub left_from_text: f32,
+    pub right_from_text: f32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct TableLayout {
+    pub preferred_width: Option<f32>,
+    pub alignment: TableAlignment,
+    pub floating: Option<FloatingTablePosition>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum Block {
     Paragraph {
         runs: Vec<TextRun>,
         list: Option<ListMarker>,
+        metrics: ParagraphMetrics,
     },
     Table {
         rows: Vec<TableRow>,
+        column_widths: Vec<f32>,
+        layout: TableLayout,
     },
-    Image { image: ImageReference },
+    Image {
+        image: ImageReference,
+        alignment: ParagraphAlignment,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -130,6 +209,8 @@ pub struct TextNode {
 pub struct ImageNode {
     pub resource_id: String,
     pub description: Option<String>,
+    pub content_type: Option<String>,
+    pub data_base64: Option<String>,
     pub bounds: Rect,
 }
 

@@ -1,37 +1,63 @@
+import 'dart:ui';
+
 import 'package:flutter/foundation.dart';
-import 'package:ms_viewer_platform_interface/ms_viewer_platform_interface.dart';
+import 'package:ms_viewer_platform_interface/ms_viewer_platform_interface.dart'
+    as viewer_platform;
 
 import '../errors/open_document_error_mapper.dart';
 import '../models/document_descriptor.dart';
+import '../models/search_result.dart';
 import '../password/password_prompt_state.dart';
+import '../search/document_search_controller.dart';
+import '../selection/selection_drag_controller.dart';
 
-enum ViewerShellStatus {
-  idle,
-  loading,
-  ready,
-  passwordPrompt,
-  error,
-}
+enum ViewerShellStatus { idle, loading, ready, passwordPrompt, error }
+
+enum ViewerPageStatus { idle, loading, ready, error }
 
 class MsViewerController extends ChangeNotifier {
   MsViewerController({
     this.document,
-    MsViewerPlatform? platform,
-  }) : _platform = platform ?? MsViewerPlatform.instance;
+    viewer_platform.MsViewerPlatform? platform,
+  }) : _platform = platform ?? viewer_platform.MsViewerPlatform.instance;
 
-  final MsViewerPlatform _platform;
+  final viewer_platform.MsViewerPlatform _platform;
 
   DocumentDescriptor? document;
   MsViewerException? error;
+  MsViewerException? pageError;
+  viewer_platform.PageRenderModel? currentPage;
+  int? currentPageIndex;
+  List<Rect> pageHighlights = const [];
+  final DocumentSearchController searchController = DocumentSearchController();
+  final SelectionDragController selectionController = SelectionDragController();
   PasswordPromptState passwordPromptState = const PasswordPromptState(
     status: PasswordPromptStatus.idle,
   );
   ViewerShellStatus status = ViewerShellStatus.idle;
-  OpenDocumentRequest? _lastRequest;
+  ViewerPageStatus pageStatus = ViewerPageStatus.idle;
+  viewer_platform.OpenDocumentRequest? _lastRequest;
+
+  int get pageCount => document?.pageCount ?? 0;
+
+  bool get canGoToPreviousPage =>
+      pageCount > 0 &&
+      (currentPageIndex ?? 0) > 0 &&
+      pageStatus != ViewerPageStatus.loading;
+
+  bool get canGoToNextPage =>
+      pageCount > 0 &&
+      (currentPageIndex ?? 0) < pageCount - 1 &&
+      pageStatus != ViewerPageStatus.loading;
 
   void attachDocument(DocumentDescriptor next) {
     document = next;
     error = null;
+    currentPage = null;
+    currentPageIndex = null;
+    pageError = null;
+    pageHighlights = const [];
+    pageStatus = ViewerPageStatus.idle;
     passwordPromptState = const PasswordPromptState(
       status: PasswordPromptStatus.idle,
     );
@@ -39,10 +65,17 @@ class MsViewerController extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> openDocument(OpenDocumentRequest request) async {
+  Future<void> openDocument(viewer_platform.OpenDocumentRequest request) async {
     _lastRequest = request;
     status = ViewerShellStatus.loading;
     error = null;
+    currentPage = null;
+    currentPageIndex = null;
+    pageError = null;
+    pageHighlights = const [];
+    pageStatus = ViewerPageStatus.idle;
+    searchController.clear();
+    selectionController.clear();
     passwordPromptState = const PasswordPromptState(
       status: PasswordPromptStatus.idle,
     );
@@ -50,15 +83,26 @@ class MsViewerController extends ChangeNotifier {
 
     final result = await _platform.openDocument(request);
     switch (result) {
-      case OpenDocumentOpened(document: final opened):
+      case viewer_platform.OpenDocumentOpened(document: final opened):
         document = DocumentDescriptor.fromOpenDocumentSuccess(opened);
         error = null;
         passwordPromptState = const PasswordPromptState(
           status: PasswordPromptStatus.success,
         );
         status = ViewerShellStatus.ready;
-      case OpenDocumentFailure(error: final openError):
+        if (opened.kind == viewer_platform.DocumentKind.docx &&
+            opened.pageCount > 0) {
+          await loadPage(0);
+        }
+      case viewer_platform.OpenDocumentFailure(error: final openError):
         document = null;
+        currentPage = null;
+        currentPageIndex = null;
+        pageError = null;
+        pageHighlights = const [];
+        pageStatus = ViewerPageStatus.idle;
+        searchController.clear();
+        selectionController.clear();
         final passwordState = openError.toPasswordPromptState(
           passwordPromptState,
         );
@@ -78,6 +122,248 @@ class MsViewerController extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> loadPage(int pageIndex) async {
+    final lastRequest = _lastRequest;
+    final descriptor = document;
+    if (lastRequest == null || descriptor == null) {
+      return;
+    }
+    if (pageIndex < 0 || pageIndex >= descriptor.pageCount) {
+      return;
+    }
+
+    pageStatus = ViewerPageStatus.loading;
+    currentPage = null;
+    currentPageIndex = pageIndex;
+    pageError = null;
+    notifyListeners();
+
+    final result = await _platform.getPageRenderModel(
+      viewer_platform.GetPageRenderModelRequest(
+        source: lastRequest.source,
+        documentId: descriptor.id,
+        pageIndex: pageIndex,
+        options: lastRequest.options,
+      ),
+    );
+
+    switch (result) {
+      case viewer_platform.GetPageRenderModelSuccess(page: final page):
+        currentPage = page;
+        currentPageIndex = page.pageIndex;
+        pageError = null;
+        pageHighlights = const [];
+        pageStatus = ViewerPageStatus.ready;
+      case viewer_platform.GetPageRenderModelFailure(
+        error: final pageFetchError,
+      ):
+        currentPage = null;
+        pageError = pageFetchError.toViewerException();
+        pageHighlights = const [];
+        pageStatus = ViewerPageStatus.error;
+    }
+
+    notifyListeners();
+  }
+
+  Future<void> goToPreviousPage() async {
+    final index = currentPageIndex ?? 0;
+    if (index <= 0) {
+      return;
+    }
+    await loadPage(index - 1);
+  }
+
+  Future<void> goToNextPage() async {
+    final descriptor = document;
+    final index = currentPageIndex ?? 0;
+    if (descriptor == null || index >= descriptor.pageCount - 1) {
+      return;
+    }
+    await loadPage(index + 1);
+  }
+
+  Future<void> search(String query) async {
+    final lastRequest = _lastRequest;
+    final descriptor = document;
+    if (lastRequest == null || descriptor == null) {
+      return;
+    }
+
+    final result = await _platform.searchDocument(
+      viewer_platform.SearchDocumentRequest(
+        source: lastRequest.source,
+        documentId: descriptor.id,
+        query: query,
+        options: lastRequest.options,
+      ),
+    );
+
+    switch (result) {
+      case viewer_platform.SearchDocumentSuccess(matches: final matches):
+        searchController.updateResults(
+          query: query,
+          results: matches
+              .map(
+                (match) => SearchResult(
+                  query: match.query,
+                  pageIndex: match.pageIndex,
+                  start: match.start,
+                  end: match.end,
+                  preview: match.preview,
+                ),
+              )
+              .toList(growable: false),
+        );
+        await _syncSearchHighlights();
+      case viewer_platform.SearchDocumentFailure(error: final searchError):
+        searchController.clear();
+        pageHighlights = const [];
+        pageError = searchError.toViewerException();
+    }
+
+    notifyListeners();
+  }
+
+  Future<void> selectSearchResult(int index) async {
+    searchController.select(index);
+    await _syncSearchHighlights();
+    notifyListeners();
+  }
+
+  Future<void> loadSelectionPage(int pageIndex) async {
+    final lastRequest = _lastRequest;
+    final descriptor = document;
+    if (lastRequest == null || descriptor == null) {
+      return;
+    }
+
+    pageStatus = ViewerPageStatus.loading;
+    currentPageIndex = pageIndex;
+    pageError = null;
+    pageHighlights = const [];
+    notifyListeners();
+
+    final result = await _platform.getSelectionPage(
+      viewer_platform.GetSelectionPageRequest(
+        source: lastRequest.source,
+        documentId: descriptor.id,
+        pageIndex: pageIndex,
+        options: lastRequest.options,
+      ),
+    );
+
+    switch (result) {
+      case viewer_platform.GetSelectionPageSuccess(page: final page):
+        currentPage = page;
+        currentPageIndex = page.pageIndex;
+        pageError = null;
+        pageStatus = ViewerPageStatus.ready;
+      case viewer_platform.GetSelectionPageFailure(error: final selectionError):
+        currentPage = null;
+        pageError = selectionError.toViewerException();
+        pageStatus = ViewerPageStatus.error;
+    }
+
+    notifyListeners();
+  }
+
+  void startSelectionAt(Offset pagePosition) {
+    selectionController.start(pagePosition);
+    _applySelectionHighlights();
+    notifyListeners();
+  }
+
+  void updateSelectionAt(Offset pagePosition) {
+    selectionController.update(pagePosition);
+    _applySelectionHighlights();
+    notifyListeners();
+  }
+
+  void clearSelection() {
+    selectionController.clear();
+    _applySearchHighlightOnly();
+    notifyListeners();
+  }
+
+  Future<void> _syncSearchHighlights() async {
+    final result = searchController.currentResult;
+    if (result == null) {
+      _applySearchHighlightOnly();
+      return;
+    }
+
+    if (currentPageIndex != result.pageIndex) {
+      await loadSelectionPage(result.pageIndex);
+    }
+    _applySearchHighlightOnly();
+  }
+
+  void _applySearchHighlightOnly() {
+    final page = currentPage;
+    final result = searchController.currentResult;
+    if (page == null ||
+        result == null ||
+        currentPageIndex != result.pageIndex) {
+      pageHighlights = const [];
+      return;
+    }
+
+    final highlights = <Rect>[];
+    for (final node in page.nodes) {
+      if (node is! viewer_platform.TextRenderNodeModel) {
+        continue;
+      }
+      if (_rangesOverlap(
+        node.range.start,
+        node.range.end,
+        result.start,
+        result.end,
+      )) {
+        highlights.add(
+          Rect.fromLTWH(
+            node.bounds.x,
+            node.bounds.y,
+            node.bounds.width,
+            node.bounds.height,
+          ),
+        );
+      }
+    }
+
+    pageHighlights = highlights;
+    _applySelectionHighlights();
+  }
+
+  void _applySelectionHighlights() {
+    final selectionRect = selectionController.selectionRect;
+    if (selectionRect == null || currentPage == null) {
+      return;
+    }
+
+    final selectionHighlights = <Rect>[];
+    for (final node in currentPage!.nodes) {
+      if (node is! viewer_platform.TextRenderNodeModel) {
+        continue;
+      }
+      final bounds = Rect.fromLTWH(
+        node.bounds.x,
+        node.bounds.y,
+        node.bounds.width,
+        node.bounds.height,
+      );
+      if (selectionRect.overlaps(bounds)) {
+        selectionHighlights.add(bounds);
+      }
+    }
+
+    final searchHighlights = pageHighlights
+        .where((highlight) => !selectionHighlights.contains(highlight))
+        .toList(growable: true);
+    searchHighlights.addAll(selectionHighlights);
+    pageHighlights = searchHighlights;
+  }
+
   Future<void> submitPassword(String password) async {
     final lastRequest = _lastRequest;
     if (lastRequest == null) {
@@ -85,13 +371,17 @@ class MsViewerController extends ChangeNotifier {
     }
 
     await openDocument(
-      OpenDocumentRequest(
+      viewer_platform.OpenDocumentRequest(
         source: lastRequest.source,
-        options: OpenOptions(
+        options: viewer_platform.OpenOptions(
           password: password,
           preferLazyLoading: lastRequest.options.preferLazyLoading,
         ),
       ),
     );
   }
+}
+
+bool _rangesOverlap(int aStart, int aEnd, int bStart, int bEnd) {
+  return aStart < bEnd && bStart < aEnd;
 }

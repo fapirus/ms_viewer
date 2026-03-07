@@ -32,7 +32,9 @@ pub fn parse_shared_package(archive: &OoxmlArchive) -> Result<SharedPackageModel
     })
 }
 
-pub fn parse_content_types(archive: &OoxmlArchive) -> Result<Vec<ContentTypeOverride>, ViewerError> {
+pub fn parse_content_types(
+    archive: &OoxmlArchive,
+) -> Result<Vec<ContentTypeOverride>, ViewerError> {
     let xml = archive.read_part("[Content_Types].xml")?;
     let text = String::from_utf8(xml).map_err(|_| ViewerError::InvalidDocument)?;
     let root = parse_document(&text)?;

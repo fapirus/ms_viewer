@@ -13,13 +13,22 @@ void main() {
             documentId: 'doc_001',
             kind: platform.DocumentKind.docx,
             title: 'sample.docx',
-            pageCount: 0,
+            pageCount: 1,
             capabilities: platform.DocumentCapabilities(
               search: false,
               textSelection: false,
               passwordProtected: false,
             ),
           ),
+        ),
+        onGetPage: (_) async => platform.GetPageRenderModelSuccess(
+          platform.PageRenderModel.fromJson({
+            'pageIndex': 0,
+            'width': 595.0,
+            'height': 842.0,
+            'nodes': const [],
+            'selectionAnchors': const [],
+          }),
         ),
       ),
     );
@@ -33,32 +42,37 @@ void main() {
     expect(controller.status, ViewerShellStatus.ready);
     expect(controller.document, isNotNull);
     expect(controller.document!.title, 'sample.docx');
+    expect(controller.pageStatus, ViewerPageStatus.ready);
+    expect(controller.currentPage, isNotNull);
   });
 
-  test('controller routes password required failure to password prompt', () async {
-    final controller = MsViewerController(
-      platform: _FakeMsViewerPlatform(
-        onOpen: (_) async => const platform.OpenDocumentFailure(
-          platform.OpenDocumentError(
-            code: platform.ViewerErrorCode.passwordRequired,
-            message: 'Password is required.',
+  test(
+    'controller routes password required failure to password prompt',
+    () async {
+      final controller = MsViewerController(
+        platform: _FakeMsViewerPlatform(
+          onOpen: (_) async => const platform.OpenDocumentFailure(
+            platform.OpenDocumentError(
+              code: platform.ViewerErrorCode.passwordRequired,
+              message: 'Password is required.',
+            ),
           ),
         ),
-      ),
-    );
+      );
 
-    await controller.openDocument(
-      const platform.OpenDocumentRequest(
-        source: platform.OpenDocumentSource.path('/tmp/locked.docx'),
-      ),
-    );
+      await controller.openDocument(
+        const platform.OpenDocumentRequest(
+          source: platform.OpenDocumentSource.path('/tmp/locked.docx'),
+        ),
+      );
 
-    expect(controller.status, ViewerShellStatus.passwordPrompt);
-    expect(
-      controller.passwordPromptState.status,
-      PasswordPromptStatus.awaitingPassword,
-    );
-  });
+      expect(controller.status, ViewerShellStatus.passwordPrompt);
+      expect(
+        controller.passwordPromptState.status,
+        PasswordPromptStatus.awaitingPassword,
+      );
+    },
+  );
 
   test('submitPassword replays last request with password', () async {
     platform.OpenDocumentRequest? capturedRetry;
@@ -81,7 +95,7 @@ void main() {
               documentId: 'doc_locked',
               kind: platform.DocumentKind.docx,
               title: 'locked.docx',
-              pageCount: 0,
+              pageCount: 1,
               capabilities: platform.DocumentCapabilities(
                 search: false,
                 textSelection: false,
@@ -90,6 +104,15 @@ void main() {
             ),
           );
         },
+        onGetPage: (_) async => platform.GetPageRenderModelSuccess(
+          platform.PageRenderModel.fromJson({
+            'pageIndex': 0,
+            'width': 595.0,
+            'height': 842.0,
+            'nodes': const [],
+            'selectionAnchors': const [],
+          }),
+        ),
       ),
     );
 
@@ -104,20 +127,133 @@ void main() {
     expect(capturedRetry!.options.password, 'secret');
     expect(controller.status, ViewerShellStatus.ready);
   });
+
+  test('controller fetches first page after opening docx', () async {
+    platform.GetPageRenderModelRequest? capturedPageRequest;
+    final controller = MsViewerController(
+      platform: _FakeMsViewerPlatform(
+        onOpen: (_) async => platform.OpenDocumentOpened(
+          const platform.OpenDocumentSuccess(
+            documentId: 'doc_001',
+            kind: platform.DocumentKind.docx,
+            title: 'sample.docx',
+            pageCount: 3,
+            capabilities: platform.DocumentCapabilities(
+              search: true,
+              textSelection: true,
+              passwordProtected: false,
+            ),
+          ),
+        ),
+        onGetPage: (request) async {
+          capturedPageRequest = request;
+          return platform.GetPageRenderModelSuccess(
+            platform.PageRenderModel.fromJson({
+              'pageIndex': 0,
+              'width': 595.0,
+              'height': 842.0,
+              'nodes': const [],
+              'selectionAnchors': const [],
+            }),
+          );
+        },
+      ),
+    );
+
+    await controller.openDocument(
+      const platform.OpenDocumentRequest(
+        source: platform.OpenDocumentSource.path('/tmp/sample.docx'),
+      ),
+    );
+
+    expect(capturedPageRequest, isNotNull);
+    expect(capturedPageRequest!.documentId, 'doc_001');
+    expect(capturedPageRequest!.pageIndex, 0);
+    expect(controller.pageStatus, ViewerPageStatus.ready);
+    expect(controller.currentPageIndex, 0);
+  });
+
+  test('controller navigates to next page when requested', () async {
+    final requests = <platform.GetPageRenderModelRequest>[];
+    final controller = MsViewerController(
+      platform: _FakeMsViewerPlatform(
+        onOpen: (_) async => platform.OpenDocumentOpened(
+          const platform.OpenDocumentSuccess(
+            documentId: 'doc_001',
+            kind: platform.DocumentKind.docx,
+            title: 'sample.docx',
+            pageCount: 3,
+            capabilities: platform.DocumentCapabilities(
+              search: true,
+              textSelection: true,
+              passwordProtected: false,
+            ),
+          ),
+        ),
+        onGetPage: (request) async {
+          requests.add(request);
+          return platform.GetPageRenderModelSuccess(
+            platform.PageRenderModel.fromJson({
+              'pageIndex': request.pageIndex,
+              'width': 595.0,
+              'height': 842.0,
+              'nodes': const [],
+              'selectionAnchors': const [],
+            }),
+          );
+        },
+      ),
+    );
+
+    await controller.openDocument(
+      const platform.OpenDocumentRequest(
+        source: platform.OpenDocumentSource.path('/tmp/sample.docx'),
+      ),
+    );
+    await controller.goToNextPage();
+
+    expect(requests.map((request) => request.pageIndex), [0, 1]);
+    expect(controller.currentPageIndex, 1);
+    expect(controller.canGoToPreviousPage, isTrue);
+    expect(controller.canGoToNextPage, isTrue);
+  });
 }
 
 class _FakeMsViewerPlatform extends platform.MsViewerPlatform
     with MockPlatformInterfaceMixin {
-  _FakeMsViewerPlatform({required this.onOpen});
+  _FakeMsViewerPlatform({required this.onOpen, this.onGetPage});
 
   final Future<platform.OpenDocumentResult> Function(
     platform.OpenDocumentRequest request,
-  ) onOpen;
+  )
+  onOpen;
+  final Future<platform.GetPageRenderModelResult> Function(
+    platform.GetPageRenderModelRequest request,
+  )?
+  onGetPage;
 
   @override
   Future<platform.OpenDocumentResult> openDocument(
     platform.OpenDocumentRequest request,
   ) {
     return onOpen(request);
+  }
+
+  @override
+  Future<platform.GetPageRenderModelResult> getPageRenderModel(
+    platform.GetPageRenderModelRequest request,
+  ) {
+    final onGetPage = this.onGetPage;
+    if (onGetPage == null) {
+      return Future.value(
+        const platform.GetPageRenderModelFailure(
+          platform.OpenDocumentError(
+            code: platform.ViewerErrorCode.notImplemented,
+            message: 'getPageRenderModel is not implemented.',
+          ),
+        ),
+      );
+    }
+    return onGetPage(request);
   }
 }

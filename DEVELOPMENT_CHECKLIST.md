@@ -5,9 +5,11 @@
 
 ## Working rules
 - 큰 기능은 `Rust 엔진 구현 -> 테스트 -> Flutter 연결 -> 테스트` 순서로 진행한다.
+- 각 포맷은 `MVP 구현 -> demo 실연동 -> acceptance` 순서로 닫는다.
 - 각 단계는 fixture 또는 자동 테스트가 있어야 완료로 본다.
 - 체크는 코드와 테스트가 모두 들어간 뒤에만 한다.
 - 새 범위가 생기면 이 문서에 먼저 체크박스로 추가한 뒤 작업한다.
+- 로컬 `issue/` 폴더는 실제 문서와 시각 비교 스크린샷 분석용으로 사용하고, 원인 고정 후에는 최소 재현 fixture를 `fixtures/regression/`에 추가한다.
 
 ## Definition of done
 하나의 체크박스를 완료로 표시하려면 아래 조건을 만족해야 한다.
@@ -222,6 +224,175 @@
     - text selection works
     - encrypted document asks for password
 
+## Phase 1.5: DOCX demo real integration
+### Rust and FFI
+- [x] DOCX page render model FFI endpoint 구현
+  - Done: viewer_ffi crate split, real docx page count, getPageRenderModel FFI request/response, first page fetch path
+  - Rust scope:
+    - document session open result에 실제 page count 반영
+    - `getPageRenderModel(documentId, pageIndex)` 또는 동등한 FFI 추가
+    - page render model 직렬화
+  - Tests:
+    - first page fetch fixture test
+    - invalid page index error mapping test
+- [x] DOCX search and selection FFI endpoint 구현
+  - Done: searchDocument/getSelectionPage FFI request-response, JSON entrypoint, Dart contract decode
+  - Rust scope:
+    - search result fetch
+    - selection metadata page fetch
+  - Tests:
+    - search query round-trip test
+    - selection metadata fetch smoke test
+
+### Flutter bridge
+- [x] Flutter platform bridge에서 DOCX page fetch 연결
+  - Done: controller first-page auto fetch, page loading/error/render state split, widget error rendering
+  - Flutter scope:
+    - document open 후 page fetch
+    - loading/error/page state 분리
+  - Tests:
+    - page fetch controller test
+    - page fetch error state widget test
+- [x] Flutter search/selection bridge 연결
+  - Done: search request/consume, selection page fetch on result jump, drag selection highlight overlay
+  - Flutter scope:
+    - search result request/consume
+    - selection overlay consume
+  - Tests:
+    - search action integration widget test
+    - selection overlay integration widget test
+
+### Demo app
+- [x] demo fixture 목록에서 실제 DOCX 열기 연결
+  - Done: fixture asset bytes -> viewer_cli -> viewer_ffi open/page fetch path, demo smoke now verifies actual open call
+  - Demo scope:
+    - bundled fixture를 실제 engine open path로 연결
+    - first page render 확인
+  - Tests:
+    - fixture open smoke test
+- [x] demo file picker DOCX 실연동
+  - Done: picked docx -> OpenDocumentSource.path real open path, widget-injected picker smoke covers engine path open
+  - Demo scope:
+    - picked `.docx`를 실제 engine으로 open
+    - password-required 오류 표시
+  - Tests:
+    - picked docx open smoke test
+- [x] demo desktop drop DOCX 실연동
+  - Done: dropped docx now uses same real path open flow as picked docx, smoke covers dropped path open
+  - Demo scope:
+    - dropped `.docx`를 실제 engine으로 open
+  - Tests:
+    - drop docx open smoke test
+- [x] DOCX demo real integration acceptance pass
+  - Acceptance checks:
+    - fixture docx opens through real engine path
+    - picked docx opens through real engine path
+    - dropped docx opens through real engine path
+    - first page render matches real model
+    - encrypted docx asks for password in demo flow
+
+## Phase 1.6: DOCX visual parity pass
+### Visual regression triage
+- [x] issue 기반 DOCX 시각 회귀 분류 규칙 정리
+  - Scope:
+    - `issue/word/*` 기준으로 페이지 분할, 표, 이미지, 간격, 폰트 차이를 분류
+    - 각 이슈는 원인 가설과 재현 조건을 남기고 최소 재현 fixture 후보를 뽑는다
+  - Done:
+    - 우선순위 테이블 작성
+    - 회귀 방지용 최소 fixture 후보 확정
+    - `docs/qa/DOCX_VISUAL_TRIAGE.md`에 현재 실문서 분류 결과 반영
+
+### Pagination correctness
+- [x] DOCX 페이지 단위 계산 보정
+  - Rust scope:
+    - paragraph spacing, explicit break, section transition, carry-over height 계산 보정
+    - 페이지 끝 줄/블록 누락 방지
+  - Tests:
+    - multi-page real-world regression fixture
+    - page boundary carry-over regression test
+  - Done:
+    - `w:lastRenderedPageBreak`를 hard page boundary로 해석
+    - `fixtures/regression/docx_rendered_page_break.docx` 추가
+    - path-based regression test와 synthetic page-break regression test 추가
+
+### Table layout and media
+- [x] DOCX 표 크기와 셀 내부 줄바꿈 보정
+  - Rust scope:
+    - tblGrid, preferred width, cell padding, row height, nested paragraph spacing 반영
+    - 셀 내부 이미지/텍스트의 폭 기준 줄바꿈과 높이 계산 보정
+  - Tests:
+    - real-world table regression fixture
+    - table cell wrap regression test
+  - Done:
+    - 셀 내부 문단을 line 단위로 배치하도록 테이블 레이아웃 경로 정리
+    - 셀 텍스트에 실제 run style/font size를 반영
+    - `fixtures/regression/docx_table_cell_layout.docx` 추가
+    - synthetic table wrap test와 path-based regression test 추가
+- [x] DOCX 표 내부 이미지 및 inline image 렌더 보정
+  - Rust scope:
+    - drawing extent, anchor/inline 차이, cell clipping, image fit 정책 보정
+  - Flutter scope:
+    - embedded image decode/render regression 방지
+  - Tests:
+    - image-in-table regression fixture
+    - inline image sizing widget test
+  - Done:
+    - 표 셀 내부 `w:drawing`을 media-aware path로 파싱
+    - table cell image node를 page render model에 포함
+    - `fixtures/regression/docx_table_inline_image.docx` 추가
+    - synthetic image-in-table test, path-based regression test, Flutter image sizing widget test 추가
+- [x] DOCX floating table positioning 보정
+  - Rust scope:
+    - `w:tblpPr`, `w:tblW`, `w:jc` 기반 float/center/preferred width 반영
+    - floating table이 inline flow 전체 폭을 점유하지 않도록 레이아웃 분리
+  - Tests:
+    - floating table metadata parser test
+    - centered floating table layout regression fixture
+  - Done:
+    - `TableLayout`/`FloatingTablePosition` 모델 추가
+    - centered floating table의 실제 bounds를 `page render model`에서 회귀 검증
+    - `fixtures/regression/docx_floating_table_intro.docx` 추가
+
+### Typography and spacing
+- [x] DOCX 문단 간격과 기본 스타일 메트릭 보정
+  - Rust scope:
+    - `before/after`, line spacing, default paragraph style, section defaults 반영
+  - Tests:
+    - paragraph spacing regression fixture
+- [x] DOCX 문단 정렬과 화면 재개행 보정
+  - Rust scope:
+    - `w:jc` 문단 정렬을 style/default/direct formatting 경로에서 해석
+    - centered/right aligned paragraph의 실제 line x 좌표 보정
+    - table cell 내부 문단 정렬도 동일 규칙 적용
+  - Flutter scope:
+    - engine이 이미 나눈 `TextNode`를 화면에서 다시 줄바꿈하지 않도록 painter 보정
+  - Tests:
+    - centered paragraph layout regression test
+    - single-line render painter regression test
+- [x] DOCX inline image 정렬과 table image 페이지 수용량 보정
+  - Rust scope:
+    - image-only paragraph가 paragraph alignment를 유지하도록 image block에 정렬 정보 반영
+    - table cell vertical padding을 보정해서 near-boundary image row가 불필요하게 다음 페이지로 밀리지 않도록 조정
+  - Tests:
+    - centered inline image layout regression test
+    - 3x3 image table single-page regression test
+- [x] DOCX 폰트 메트릭과 fallback 정밀도 보정
+  - Rust scope:
+    - 문자폭 추정 개선 또는 실제 폰트 메트릭 연동 검토
+    - CJK/Latin 혼합 문단 폭 계산 보정
+  - Tests:
+    - mixed script width regression fixture
+    - CJK line break regression fixture
+
+### Acceptance
+- [x] DOCX visual parity acceptance pass
+  - Acceptance checks:
+    - 주요 issue 문서가 빈 페이지 없이 렌더된다
+    - 실제 Word 대비 페이지 분할이 허용 범위 내에 있다
+    - 표 크기와 셀 내부 줄바꿈이 허용 범위 내에 있다
+    - 표 내부 이미지와 inline 이미지가 placeholder 없이 렌더된다
+    - 최소 재현 fixture 회귀 테스트가 추가되었다
+
 ## Phase 2: PPTX MVP
 ### PPTX parse layer
 - [ ] PPTX slide tree parser 구현
@@ -245,6 +416,38 @@
     - slide render
     - text search
     - text selection
+
+## Phase 2.5: PPTX demo real integration
+### Rust and FFI
+- [ ] PPTX slide render model FFI endpoint 연결
+  - Tests:
+    - first slide fetch fixture test
+    - invalid slide index error mapping test
+- [ ] PPTX search and selection FFI endpoint 연결
+  - Tests:
+    - slide search round-trip test
+    - slide selection metadata fetch smoke test
+
+### Flutter bridge
+- [ ] Flutter platform bridge에서 PPTX slide fetch 연결
+  - Tests:
+    - slide fetch controller test
+    - slide fetch error state widget test
+- [ ] Flutter PPTX search/selection bridge 연결
+  - Tests:
+    - slide search integration widget test
+    - slide selection integration widget test
+
+### Demo app
+- [ ] demo fixture 목록에서 실제 PPTX 열기 연결
+- [ ] demo file picker PPTX 실연동
+- [ ] demo desktop drop PPTX 실연동
+- [ ] PPTX demo real integration acceptance pass
+  - Acceptance checks:
+    - fixture pptx opens through real engine path
+    - picked pptx opens through real engine path
+    - dropped pptx opens through real engine path
+    - first slide render matches real model
 
 ## Phase 3: XLSX MVP
 ### XLSX parse layer
@@ -273,12 +476,51 @@
     - text-only selection
     - cached formula display
 
+## Phase 3.5: XLSX demo real integration
+### Rust and FFI
+- [ ] XLSX visible sheet window FFI endpoint 연결
+  - Tests:
+    - first sheet window fetch fixture test
+    - invalid sheet index error mapping test
+- [ ] XLSX search and selection FFI endpoint 연결
+  - Tests:
+    - sheet search round-trip test
+    - sheet selection metadata fetch smoke test
+
+### Flutter bridge
+- [ ] Flutter platform bridge에서 XLSX sheet window fetch 연결
+  - Tests:
+    - sheet window fetch controller test
+    - sheet fetch error state widget test
+- [ ] Flutter XLSX search/selection bridge 연결
+  - Tests:
+    - sheet search integration widget test
+    - sheet text selection integration widget test
+
+### Demo app
+- [ ] demo fixture 목록에서 실제 XLSX 열기 연결
+- [ ] demo file picker XLSX 실연동
+- [ ] demo desktop drop XLSX 실연동
+- [ ] XLSX demo real integration acceptance pass
+  - Acceptance checks:
+    - fixture xlsx opens through real engine path
+    - picked xlsx opens through real engine path
+    - dropped xlsx opens through real engine path
+    - visible sheet window render matches real model
+
 ## Phase 4: Hardening
 - [ ] password flow end-to-end polish
   - Tests:
     - wrong password retry
     - cancel handling
     - unsupported encryption handling
+- [ ] DOCX theme font 해석과 exact glyph metrics 보강
+  - Notes:
+    - Word theme/default font 해석과 실제 glyph metrics 기반 line break는 시각 충실도 후속 과제
+    - 현재는 fallback/font-family heuristic 기반으로 렌더링
+  - Tests:
+    - issue screenshot review set
+    - theme font fixture regression
 - [ ] FileHandle input support 구현
   - Tests:
     - handle-based open smoke test
@@ -305,7 +547,8 @@
    - `cd packages/ms_viewer_platform_interface && fvm flutter test`
 4. Demo smoke 확인
    - `cd examples/flutter_demo && fvm flutter test`
-5. 필요한 경우 수동 확인 결과를 체크박스 아래에 메모
+5. demo 실연동 phase라면 실제 fixture open 경로 수동 확인
+6. 필요한 경우 수동 확인 결과를 체크박스 아래에 메모
 
 ## Progress log rule
 체크박스를 완료 처리할 때는 아래 형식으로 커밋 또는 작업 로그에 남긴다.

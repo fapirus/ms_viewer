@@ -27,6 +27,39 @@ abstract class MsViewerPlatform extends PlatformInterface {
       ),
     );
   }
+
+  Future<GetPageRenderModelResult> getPageRenderModel(
+    GetPageRenderModelRequest request,
+  ) async {
+    return const GetPageRenderModelFailure(
+      OpenDocumentError(
+        code: ViewerErrorCode.notImplemented,
+        message: 'getPageRenderModel is not implemented.',
+      ),
+    );
+  }
+
+  Future<SearchDocumentResult> searchDocument(
+    SearchDocumentRequest request,
+  ) async {
+    return const SearchDocumentFailure(
+      OpenDocumentError(
+        code: ViewerErrorCode.notImplemented,
+        message: 'searchDocument is not implemented.',
+      ),
+    );
+  }
+
+  Future<GetSelectionPageResult> getSelectionPage(
+    GetSelectionPageRequest request,
+  ) async {
+    return const GetSelectionPageFailure(
+      OpenDocumentError(
+        code: ViewerErrorCode.notImplemented,
+        message: 'getSelectionPage is not implemented.',
+      ),
+    );
+  }
 }
 
 class _NoopMsViewerPlatform extends MsViewerPlatform {}

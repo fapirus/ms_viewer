@@ -38,5 +38,7 @@ pub fn detect_package_kind_from_bytes(bytes: &[u8]) -> Result<PackageKind, Viewe
 }
 
 fn contains_ascii(haystack: &[u8], needle: &[u8]) -> bool {
-    haystack.windows(needle.len()).any(|window| window == needle)
+    haystack
+        .windows(needle.len())
+        .any(|window| window == needle)
 }

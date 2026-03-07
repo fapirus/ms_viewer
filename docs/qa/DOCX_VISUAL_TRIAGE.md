@@ -1,0 +1,53 @@
+# DOCX Visual Triage
+
+이 문서는 `issue/word/*`에 저장한 실제 문서와 Word/Viewer 비교 스크린샷을 기준으로
+현재 DOCX 시각 회귀를 분류한 기록이다.
+
+## 분석 규칙
+- `issue/`는 로컬 분석용 원본과 스크린샷을 보관한다.
+- 원인이 고정되면 최소 재현 문서를 `fixtures/regression/`로 옮겨 자동 테스트에 편입한다.
+- 한 이슈는 `증상 -> 원인 가설 -> 최소 재현 fixture 후보 -> 체크리스트 항목` 순서로 관리한다.
+
+## 우선순위 표
+
+| Case | 기준 자료 | 현재 증상 | 원인 가설 | 우선순위 | 난이도 | 체크리스트 항목 | 최소 재현 fixture 후보 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `hello` | `issue/word/hello/1.png`, `2.png`, viewer 스크린샷 2장 | 페이지 1/2 경계가 Word와 다르고, 페이지 2 텍스트가 과소 렌더된다 | `w:lastRenderedPageBreak` 힌트를 무시하고 자체 줄배치만으로 페이지를 나눔. carry-over height와 빈 문단 spacing도 함께 영향 | P0 | 높음 | `DOCX 페이지 단위 계산 보정` | `docx_rendered_page_break.docx` |
+| `infinity` page 1 | `issue/word/infinity/1.png`, viewer page 1 스크린샷 | 표 시작 위치, 표 크기, 표 하단 이후 문단 흐름이 Word와 다르다 | `w:tblpPr`가 있는 floating table을 inline table처럼 처리하고 있음. preferred width, table position, cell padding 반영 부족 | P0 | 높음 | `DOCX floating table positioning 보정` | `docx_floating_table_intro.docx` |
+| `infinity` page 4-5 | `issue/word/infinity/4.png`, `5.png`, viewer page 4-5 스크린샷 | 표 셀 내부 이미지가 빠지고 텍스트만 좁게 배치된다 | 표 셀 내부 `w:drawing`을 cell text flatten 과정에서 버리고 있음. row height도 이미지 크기를 반영하지 않음 | P0 | 높음 | `DOCX 표 내부 이미지 및 inline image 렌더 보정` | `docx_table_with_inline_images.docx` |
+| `hello`, `infinity` 최신 비교 | `issue/word/hello/Screenshot 2026-03-07 at 7.13.58 PM.png`, `issue/word/infinity/Screenshot 2026-03-07 at 7.12.52 PM.png` | centered title이 좌측 정렬되고, viewer에서 한 줄 text node가 다시 개행된다 | `w:jc`를 block model에 보존하지 못했고, Flutter painter가 engine line을 다시 `maxWidth`로 재배치함 | P0 | 중상 | `DOCX 문단 정렬과 화면 재개행 보정` | synthetic centered-title fixture |
+| `infinity` 최신 page 1/page 5 | `issue/word/infinity/Screenshot 2026-03-07 at 7.42.16 PM.png`, `7.42.35 PM.png` | page 1 로고가 좌측으로 치우치고, page 5 표 이미지 행이 다음 페이지로 밀린다 | image-only paragraph가 paragraph alignment를 잃고 있고, table cell vertical padding이 커서 near-boundary image row가 overflow된다 | P0 | 중상 | `DOCX inline image 정렬과 table image 페이지 수용량 보정` | synthetic centered-image/table-image fixture |
+| `infinity` 전체 | viewer page 2-8 스크린샷 | 문단 간격과 표/문단 사이 여백이 Word보다 빽빽하다 | `before/after`, line spacing, style paragraph metrics를 대부분 기본값으로 처리 | P1 | 중상 | `DOCX 문단 간격과 기본 스타일 메트릭 보정` | `docx_spacing_variants.docx` |
+| `hello`, `infinity` 공통 | viewer 스크린샷 전반 | 글자폭과 줄바꿈이 Word와 완전히 일치하지 않는다 | 추정 문자폭 기반 line breaking 한계. 실제 폰트 메트릭과 fallback 정밀도가 부족 | P2 | 매우 높음 | `DOCX 폰트 메트릭과 fallback 정밀도 보정` | `docx_cjk_width_mix.docx` |
+
+## 현재 결론
+- `Phase 1.6`의 첫 번째 실제 수정 우선순위는 `hello` 케이스의 페이지 경계 보정이다.
+- 그 다음은 `infinity`의 floating table과 table-embedded image 처리다.
+- 간격과 폰트 정밀도는 앞의 구조적 문제를 닫은 뒤 다루는 편이 맞다.
+
+## 2026-03-07 재검토
+- `hello`
+  - 페이지 경계와 2페이지 비어 보이는 현상은 해소됐다.
+  - 남은 차이는 Word 대비 줄 간격과 글자 크기 체감이 아직 조금 다르다는 점이다.
+  - `acceptance pass`를 닫기 전에 실제 macOS 데모에서 최신 스크린샷을 한 번 더 비교하는 편이 맞다.
+- `infinity`
+  - 표 내부 이미지 누락은 해소됐다.
+  - 1페이지 표 위치와 크기 차이는 `floating table` 처리 추가로 크게 줄었다.
+  - centered title은 `page model` 기준 `x=163.24`, `text="INFINITY TALK"`로 보정됐다.
+  - viewer painter는 이제 engine이 만든 한 줄 text node를 다시 줄바꿈하지 않는다.
+  - inline logo는 `x=169.6`으로 centered되고, 실제 문서 page count는 `7`로 줄었다.
+  - page index 4 기준 image node 수가 `9`로 복구되어 Word의 3x3 screenshot grid와 맞는다.
+  - 실제 page model 기준 table outer bounds는 `x=185.7`, `y=619.5`, `width=223.9`로 고정된다.
+  - 남은 차이는 주로 Word 기본 폰트/테마 폰트 해석과 exact glyph metrics 쪽이다.
+- 결론
+  - 자동 테스트 기준으로는 `DOCX visual parity` 직전 상태다.
+  - 실제 시각 수용 기준으로는 최신 데모 스크린샷을 다시 받아 `hello`와 `infinity`를 한 번 더 비교한 뒤 acceptance를 닫는 편이 맞다.
+
+## 추가 제안
+- `issue/word/JINWOOK/` 케이스를 같은 형식으로 추가하는 편이 좋다.
+- 케이스별로 `notes.md`를 두고 아래 항목만 기록하면 충분하다.
+  - Word 기준 기대 결과
+  - 현재 viewer 결과
+  - 재현 절차
+  - 의심 원인
+  - 우선순위
