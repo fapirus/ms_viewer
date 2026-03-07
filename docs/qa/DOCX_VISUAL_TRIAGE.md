@@ -23,6 +23,19 @@
 - 그 다음은 `infinity`의 floating table과 table-embedded image 처리다.
 - 간격과 폰트 정밀도는 앞의 구조적 문제를 닫은 뒤 다루는 편이 맞다.
 
+## 2026-03-07 재검토
+- `hello`
+  - 페이지 경계와 2페이지 비어 보이는 현상은 해소됐다.
+  - 남은 차이는 Word 대비 줄 간격과 글자 크기 체감이 아직 조금 다르다는 점이다.
+  - `acceptance pass`를 닫기 전에 실제 macOS 데모에서 최신 스크린샷을 한 번 더 비교하는 편이 맞다.
+- `infinity`
+  - 표 내부 이미지 누락은 해소됐다.
+  - 1페이지 표 위치와 크기는 Word와 아직 차이가 있다.
+  - 원인은 `floating table`을 여전히 inline table처럼 배치하는 구조 한계다.
+- 결론
+  - 자동 테스트 기준으로는 `DOCX visual parity` 직전 상태다.
+  - 실제 시각 수용 기준으로는 `floating table positioning`을 별도 후속 작업으로 추가하는 편이 더 정확하다.
+
 ## 추가 제안
 - `issue/word/JINWOOK/` 케이스를 같은 형식으로 추가하는 편이 좋다.
 - 케이스별로 `notes.md`를 두고 아래 항목만 기록하면 충분하다.
