@@ -791,7 +791,14 @@
     - window 범위를 벗어난 셀은 제외하고 향후 frozen/merged edge case는 보정 phase로 이관
   - Tests:
     - 2x2 visible window slice fixture
-- [ ] cell text search index 구현
+- [x] cell text search index 구현
+  - Done:
+    - worksheet cell 값을 row-major text로 평탄화해서 시트 단위 `SearchPage` 생성
+    - cached formula value, boolean, inline/shared string을 검색 인덱스에 포함
+    - 공통 case-insensitive search matcher 재사용
+  - Tests:
+    - sheet search pages fixture
+    - case-insensitive workbook search fixture
 - [ ] text-only selection metadata 구현
 
 ### XLSX tests and acceptance

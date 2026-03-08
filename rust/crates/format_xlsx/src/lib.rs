@@ -3,6 +3,7 @@ use viewer_core::archive::OoxmlArchive;
 use viewer_core::model::{
     BoxNode, PageRenderModel, Rect, RenderNode, SelectionAnchor, TextNode, TextRange, TextStyle,
 };
+use viewer_core::search::{search_pages, SearchMatch, SearchPage};
 use viewer_core::xml::parse_document;
 use viewer_core::ViewerError;
 
@@ -518,6 +519,63 @@ pub fn build_visible_window_render_model(
             render_end_column,
         ),
     )
+}
+
+pub fn build_search_pages(
+    archive: &OoxmlArchive,
+    workbook: &XlsxWorkbook,
+    shared_strings: &[String],
+) -> Result<Vec<SearchPage>, ViewerError> {
+    let worksheet_cells = parse_worksheet_cells(archive, workbook, shared_strings)?;
+    let mut pages = Vec::new();
+
+    for (sheet_index, sheet) in workbook.sheets.iter().enumerate() {
+        let worksheet = worksheet_cells
+            .iter()
+            .find(|worksheet| worksheet.part_name == sheet.part_name)
+            .ok_or(ViewerError::InvalidDocument)?;
+        let mut sorted_cells = worksheet.cells.iter().collect::<Vec<_>>();
+        sorted_cells.sort_by_key(|cell| (cell.row, cell.column));
+
+        let mut current_row = None;
+        let mut row_values = Vec::new();
+        let mut lines = Vec::new();
+        for cell in sorted_cells {
+            if current_row != Some(cell.row) {
+                if !row_values.is_empty() {
+                    lines.push(row_values.join("\t"));
+                    row_values.clear();
+                }
+                current_row = Some(cell.row);
+            }
+
+            if let Some(display_text) = format_cell_display_value(&cell.value) {
+                if !display_text.trim().is_empty() {
+                    row_values.push(display_text);
+                }
+            }
+        }
+        if !row_values.is_empty() {
+            lines.push(row_values.join("\t"));
+        }
+
+        pages.push(SearchPage {
+            page_index: sheet_index as u32,
+            text: lines.join("\n"),
+        });
+    }
+
+    Ok(pages)
+}
+
+pub fn search_workbook(
+    archive: &OoxmlArchive,
+    workbook: &XlsxWorkbook,
+    shared_strings: &[String],
+    query: &str,
+) -> Result<Vec<SearchMatch>, ViewerError> {
+    let pages = build_search_pages(archive, workbook, shared_strings)?;
+    Ok(search_pages(&pages, query))
 }
 
 fn parse_workbook_relationships(
