@@ -282,6 +282,93 @@ void main() {
     expect(find.byType(DocumentPageView), findsNothing);
   });
 
+  testWidgets('view renders xlsx preview page shell without live fetch', (
+    tester,
+  ) async {
+    final controller = MsViewerController(
+      platform: _FakeMsViewerPlatform(
+        onOpen: (_) async => platform.OpenDocumentOpened(
+          const platform.OpenDocumentSuccess(
+            documentId: 'sheet_001',
+            kind: platform.DocumentKind.xlsx,
+            title: 'budget.xlsx',
+            pageCount: 2,
+            capabilities: platform.DocumentCapabilities(
+              search: true,
+              textSelection: true,
+              passwordProtected: false,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await controller.openDocument(
+      const platform.OpenDocumentRequest(
+        source: platform.OpenDocumentSource.path('/tmp/budget.xlsx'),
+      ),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: MsDocumentView(
+            controller: controller,
+            previewPages: [
+              platform.PageRenderModel.fromJson({
+                'pageIndex': 0,
+                'width': 280.0,
+                'height': 160.0,
+                'nodes': [
+                  {
+                    'type': 'box',
+                    'bounds': {
+                      'x': 0.0,
+                      'y': 0.0,
+                      'width': 140.0,
+                      'height': 40.0,
+                    },
+                    'fillColorHex': '#1F4E78',
+                    'strokeColorHex': '#D0D7DE',
+                    'strokeWidth': 1.0,
+                  },
+                  {
+                    'type': 'text',
+                    'text': 'Budget',
+                    'bounds': {
+                      'x': 24.0,
+                      'y': 10.0,
+                      'width': 80.0,
+                      'height': 18.0,
+                    },
+                    'style': {
+                      'fontFamily': 'Calibri',
+                      'fontSize': 12.0,
+                      'bold': true,
+                      'italic': false,
+                      'colorHex': '#FFFFFF',
+                    },
+                    'range': {'start': 0, 'end': 6},
+                  },
+                ],
+                'selectionAnchors': [
+                  {'nodeIndex': 1, 'charIndex': 0, 'x': 24.0, 'y': 10.0},
+                  {'nodeIndex': 1, 'charIndex': 6, 'x': 72.0, 'y': 10.0},
+                ],
+              }),
+            ],
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('budget.xlsx'), findsOneWidget);
+    expect(find.text('2 pages'), findsOneWidget);
+    expect(find.byType(DocumentPageView), findsOneWidget);
+    expect(find.widgetWithText(OutlinedButton, 'Next'), findsOneWidget);
+  });
+
   testWidgets('search action integration widget test', (tester) async {
     platform.GetSelectionPageRequest? selectionRequest;
     final controller = MsViewerController(

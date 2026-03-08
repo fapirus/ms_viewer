@@ -815,13 +815,21 @@
   - Tests:
     - fixture presence smoke test
     - acceptance_xlsx_review_set
-- [ ] Flutter grid rendering widget tests
-- [ ] XLSX MVP acceptance pass
+- [x] Flutter grid rendering widget tests
+  - Done:
+    - 공통 `DocumentPageView`가 XLSX 스타일의 dense grid page model을 그리는지 검증
+    - `MsDocumentView` preview shell이 XLSX preview page를 소비하는지 검증
+  - Tests:
+    - xlsx grid page widget test
+    - xlsx preview shell widget test
+- [x] XLSX MVP acceptance pass
   - Acceptance checks:
     - sheet render
     - search
     - text-only selection
     - cached formula display
+  - Done:
+    - render/search/selection/cached formula가 실제 review fixture와 Flutter widget smoke에서 모두 검증됨
 
 ## Phase 3.5: XLSX demo real integration
 ### Serialized integration gate
