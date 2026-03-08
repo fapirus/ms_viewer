@@ -33,3 +33,6 @@
 - PPTX Phase 2 review set:
   - `pptx/pptx_text_shapes.pptx`
   - `pptx/pptx_theme_layout_images.pptx`
+- XLSX Phase 3 review set:
+  - `xlsx/xlsx_basic_grid.xlsx`
+  - `xlsx/xlsx_merges_frozen_formulas.xlsx`

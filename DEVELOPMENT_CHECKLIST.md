@@ -808,7 +808,13 @@
     - text-only selection anchor fixture
 
 ### XLSX tests and acceptance
-- [ ] Rust fixture tests for sheets, merges, frozen panes, cached formulas
+- [x] Rust fixture tests for sheets, merges, frozen panes, cached formulas
+  - Done:
+    - 실제 review fixture 2종을 `fixtures/xlsx/`에 추가
+    - workbook/sheet open, merged cells, frozen panes, cached formula, render/search/selection acceptance를 실제 파일 기준으로 검증
+  - Tests:
+    - fixture presence smoke test
+    - acceptance_xlsx_review_set
 - [ ] Flutter grid rendering widget tests
 - [ ] XLSX MVP acceptance pass
   - Acceptance checks:
