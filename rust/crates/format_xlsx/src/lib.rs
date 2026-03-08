@@ -81,6 +81,35 @@ pub struct XlsxMergedCellRange {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct WorksheetFrozenPanes {
+    pub part_name: String,
+    pub pane: Option<XlsxFrozenPane>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct XlsxFrozenPane {
+    pub x_split: Option<f32>,
+    pub y_split: Option<f32>,
+    pub top_left_cell: Option<String>,
+    pub state: XlsxFrozenPaneState,
+    pub active_pane: Option<XlsxActivePane>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum XlsxFrozenPaneState {
+    Frozen,
+    FrozenSplit,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum XlsxActivePane {
+    TopLeft,
+    TopRight,
+    BottomLeft,
+    BottomRight,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct XlsxStyleCatalog {
     pub part_name: Option<String>,
     pub number_formats: Vec<XlsxNumberFormat>,
@@ -327,6 +356,17 @@ pub fn parse_merged_cells(
         .collect()
 }
 
+pub fn parse_frozen_panes(
+    archive: &OoxmlArchive,
+    workbook: &XlsxWorkbook,
+) -> Result<Vec<WorksheetFrozenPanes>, ViewerError> {
+    workbook
+        .sheets
+        .iter()
+        .map(|sheet| parse_worksheet_frozen_panes(archive, &sheet.part_name))
+        .collect()
+}
+
 fn parse_workbook_relationships(
     archive: &OoxmlArchive,
     workbook_part: &str,
@@ -507,6 +547,32 @@ fn parse_worksheet_merged_cells(
     Ok(WorksheetMergedCells {
         part_name: worksheet_part.to_string(),
         ranges,
+    })
+}
+
+fn parse_worksheet_frozen_panes(
+    archive: &OoxmlArchive,
+    worksheet_part: &str,
+) -> Result<WorksheetFrozenPanes, ViewerError> {
+    let worksheet_xml = archive.read_part(worksheet_part)?;
+    let worksheet_text =
+        String::from_utf8(worksheet_xml).map_err(|_| ViewerError::InvalidDocument)?;
+    let worksheet_root = parse_document(&worksheet_text)?;
+    if worksheet_root.local_name() != "worksheet" {
+        return Err(ViewerError::InvalidDocument);
+    }
+
+    let pane = worksheet_root
+        .child("sheetViews")
+        .and_then(|sheet_views| sheet_views.child("sheetView"))
+        .and_then(|sheet_view| sheet_view.child("pane"))
+        .map(parse_frozen_pane)
+        .transpose()?
+        .flatten();
+
+    Ok(WorksheetFrozenPanes {
+        part_name: worksheet_part.to_string(),
+        pane,
     })
 }
 
@@ -695,6 +761,47 @@ fn parse_xlsx_color(color: &viewer_core::xml::XmlElement) -> Option<String> {
         return normalize_argb_hex(rgb);
     }
     None
+}
+
+fn parse_frozen_pane(
+    pane: &viewer_core::xml::XmlElement,
+) -> Result<Option<XlsxFrozenPane>, ViewerError> {
+    let Some(state) = pane.attribute("state") else {
+        return Ok(None);
+    };
+
+    let state = match state {
+        "frozen" => XlsxFrozenPaneState::Frozen,
+        "frozenSplit" => XlsxFrozenPaneState::FrozenSplit,
+        "split" => return Ok(None),
+        _ => return Err(ViewerError::InvalidDocument),
+    };
+
+    let top_left_cell = pane.attribute("topLeftCell").map(ToOwned::to_owned);
+    if let Some(reference) = top_left_cell.as_deref() {
+        parse_cell_reference(reference)?;
+    }
+
+    Ok(Some(XlsxFrozenPane {
+        x_split: pane.attribute("xSplit").map(parse_decimal).transpose()?,
+        y_split: pane.attribute("ySplit").map(parse_decimal).transpose()?,
+        top_left_cell,
+        state,
+        active_pane: pane
+            .attribute("activePane")
+            .map(parse_active_pane)
+            .transpose()?,
+    }))
+}
+
+fn parse_active_pane(value: &str) -> Result<XlsxActivePane, ViewerError> {
+    match value {
+        "topLeft" => Ok(XlsxActivePane::TopLeft),
+        "topRight" => Ok(XlsxActivePane::TopRight),
+        "bottomLeft" => Ok(XlsxActivePane::BottomLeft),
+        "bottomRight" => Ok(XlsxActivePane::BottomRight),
+        _ => Err(ViewerError::InvalidDocument),
+    }
 }
 
 fn normalize_argb_hex(hex: &str) -> Option<String> {

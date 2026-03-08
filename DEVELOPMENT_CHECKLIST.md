@@ -746,7 +746,6 @@
     - styles part subset fixture
     - missing styles relationship fixture
     - invalid alignment fixture
-- [ ] merged cells parser 구현
 - [x] merged cells parser 구현
   - Done:
     - worksheet `mergeCells/mergeCell` range 파싱
@@ -756,7 +755,15 @@
     - merged cell ranges fixture
     - worksheet without mergeCells fixture
     - invalid merged range fixture
-- [ ] frozen panes parser 구현
+- [x] frozen panes parser 구현
+  - Done:
+    - worksheet `sheetViews/sheetView/pane`에서 frozen/frozenSplit state 파싱
+    - `xSplit`, `ySplit`, `topLeftCell`, `activePane` 최소 subset 보존
+    - split pane은 viewport 범위 밖으로 보고 무시, malformed state/cell ref는 invalid 처리
+  - Tests:
+    - frozen rows and columns fixture
+    - non-frozen split pane fixture
+    - invalid pane state fixture
 - [ ] formula cell cached value parser 구현
   - Note: no formula engine in MVP
 
