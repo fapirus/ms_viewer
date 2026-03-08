@@ -709,7 +709,16 @@
 - 공통 grid/render/search 계약 변경이 필요해지면 즉시 작업을 멈추고 `develop` 기준 공통 통합 작업으로 전환한다.
 
 ### XLSX parse layer
-- [ ] workbook and worksheet parser 구현
+- [x] workbook and worksheet parser 구현
+  - Done:
+    - package root에서 `xl/workbook.xml` 진입점 탐색
+    - workbook sheet 순서, `activeTab`, `date1904`, sheet visibility 파싱
+    - `workbook.xml.rels`를 통해 worksheet part target 해석
+    - 각 worksheet root와 `dimension` 존재 여부 검증
+  - Tests:
+    - workbook order and visibility fixture
+    - missing worksheet relationship fixture
+    - non-worksheet relationship fixture
 - [ ] shared strings parser 구현
 - [ ] row/column metrics parser 구현
 - [ ] cell style subset parser 구현
