@@ -8,6 +8,7 @@ license.workspace = true
 base64 = "0.22.1"
 format_docx = { path = "../format_docx" }
 format_pptx = { path = "../format_pptx" }
+format_xlsx = { path = "../format_xlsx" }
 serde.workspace = true
 serde_json = "1.0.145"
 viewer_core = { path = "../viewer_core" }

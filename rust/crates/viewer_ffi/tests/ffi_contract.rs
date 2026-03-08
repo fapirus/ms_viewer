@@ -2,7 +2,7 @@ use viewer_core::{DocumentKind, OpenOptions};
 use viewer_ffi::{
     DocumentCapabilities, DocumentSource, ErrorResponse, GetPageRenderModelRequest,
     GetSelectionPageRequest, OpenDocumentRequest, OpenDocumentSuccess, SearchDocumentRequest,
-    ViewerErrorCode,
+    SheetWindow, ViewerErrorCode,
 };
 
 #[test]
@@ -67,6 +67,7 @@ fn get_page_render_model_request_serializes_to_expected_shape() {
         source: DocumentSource::Path("/tmp/sample.docx".to_string()),
         document_id: "path:/tmp/sample.docx".to_string(),
         page_index: 2,
+        sheet_window: None,
         options: OpenOptions::default(),
     };
 
@@ -75,6 +76,32 @@ fn get_page_render_model_request_serializes_to_expected_shape() {
     assert_eq!(value["source"]["kind"], "path");
     assert_eq!(value["documentId"], "path:/tmp/sample.docx");
     assert_eq!(value["pageIndex"], 2);
+}
+
+#[test]
+fn get_page_render_model_request_serializes_sheet_window_when_present() {
+    let request = GetPageRenderModelRequest {
+        source: DocumentSource::Path("/tmp/sample.xlsx".to_string()),
+        document_id: "path:/tmp/sample.xlsx".to_string(),
+        page_index: 0,
+        sheet_window: Some(SheetWindow {
+            start_row: 2,
+            end_row: 10,
+            start_column: 1,
+            end_column: 4,
+        }),
+        options: OpenOptions::default(),
+    };
+
+    let value = serde_json::to_value(&request).expect("request should serialize");
+
+    assert_eq!(value["source"]["kind"], "path");
+    assert_eq!(value["documentId"], "path:/tmp/sample.xlsx");
+    assert_eq!(value["pageIndex"], 0);
+    assert_eq!(value["sheetWindow"]["startRow"], 2);
+    assert_eq!(value["sheetWindow"]["endRow"], 10);
+    assert_eq!(value["sheetWindow"]["startColumn"], 1);
+    assert_eq!(value["sheetWindow"]["endColumn"], 4);
 }
 
 #[test]

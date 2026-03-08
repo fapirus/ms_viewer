@@ -91,6 +91,33 @@ void main() {
     });
   });
 
+  test('get page render model request encodes sheet window when present', () {
+    const request = GetPageRenderModelRequest(
+      source: OpenDocumentSource.path('/tmp/sample.xlsx'),
+      documentId: 'path:/tmp/sample.xlsx',
+      pageIndex: 0,
+      sheetWindow: SheetWindow(
+        startRow: 2,
+        endRow: 10,
+        startColumn: 1,
+        endColumn: 4,
+      ),
+    );
+
+    expect(request.toJson(), {
+      'source': {'kind': 'path', 'value': '/tmp/sample.xlsx'},
+      'documentId': 'path:/tmp/sample.xlsx',
+      'pageIndex': 0,
+      'sheetWindow': {
+        'startRow': 2,
+        'endRow': 10,
+        'startColumn': 1,
+        'endColumn': 4,
+      },
+      'options': {'password': null, 'preferLazyLoading': true},
+    });
+  });
+
   test('get page render model result decodes success response', () {
     final result = GetPageRenderModelResult.fromJson({
       'pageIndex': 0,

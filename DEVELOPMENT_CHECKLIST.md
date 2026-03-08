@@ -838,7 +838,7 @@
 - 권장 브랜치 전략: `XLSX MVP` 브랜치와 별도 `XLSX demo integration` 브랜치로 분리한다.
 
 ### Rust and FFI
-- [ ] XLSX visible sheet window FFI endpoint 연결
+- [x] XLSX visible sheet window FFI endpoint 연결
   - Tests:
     - first sheet window fetch fixture test
     - invalid sheet index error mapping test

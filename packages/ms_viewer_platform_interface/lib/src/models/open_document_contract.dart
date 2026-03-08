@@ -64,12 +64,14 @@ class GetPageRenderModelRequest {
     required this.source,
     required this.documentId,
     required this.pageIndex,
+    this.sheetWindow,
     this.options = const OpenOptions(),
   });
 
   final OpenDocumentSource source;
   final String documentId;
   final int pageIndex;
+  final SheetWindow? sheetWindow;
   final OpenOptions options;
 
   Map<String, Object?> toJson() {
@@ -77,7 +79,31 @@ class GetPageRenderModelRequest {
       'source': source.toJson(),
       'documentId': documentId,
       'pageIndex': pageIndex,
+      if (sheetWindow != null) 'sheetWindow': sheetWindow!.toJson(),
       'options': options.toJson(),
+    };
+  }
+}
+
+class SheetWindow {
+  const SheetWindow({
+    required this.startRow,
+    required this.endRow,
+    required this.startColumn,
+    required this.endColumn,
+  });
+
+  final int startRow;
+  final int endRow;
+  final int startColumn;
+  final int endColumn;
+
+  Map<String, Object?> toJson() {
+    return {
+      'startRow': startRow,
+      'endRow': endRow,
+      'startColumn': startColumn,
+      'endColumn': endColumn,
     };
   }
 }

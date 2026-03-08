@@ -3,6 +3,10 @@ use std::path::Path;
 use base64::Engine;
 use format_docx::{build_selection_page_models, parse_docx, search_document};
 use format_pptx::{build_slide_render_model, parse_pptx, search_slides};
+use format_xlsx::{
+    build_sheet_render_model, build_visible_window_render_model, parse_cell_style_subset,
+    parse_shared_strings, parse_xlsx, XlsxVisibleWindow,
+};
 use serde::{Deserialize, Serialize};
 use viewer_core::archive::OoxmlArchive;
 use viewer_core::crypto::{
@@ -52,7 +56,18 @@ pub struct GetPageRenderModelRequest {
     pub source: DocumentSource,
     pub document_id: String,
     pub page_index: u32,
+    #[serde(default)]
+    pub sheet_window: Option<SheetWindow>,
     pub options: OpenOptions,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SheetWindow {
+    pub start_row: u32,
+    pub end_row: u32,
+    pub start_column: u32,
+    pub end_column: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -338,7 +353,37 @@ fn get_page_render_model_impl(
             let slide_tree = parse_pptx(&archive)?;
             build_slide_render_model(&archive, &slide_tree, request.page_index as usize)
         }
-        DocumentKind::Xlsx => Err(ViewerError::NotImplemented("xlsx page rendering")),
+        DocumentKind::Xlsx => {
+            let workbook = parse_xlsx(&archive)?;
+            let shared_strings = parse_shared_strings(&archive, &workbook)?;
+            let styles = parse_cell_style_subset(&archive, &workbook)?;
+            if let Some(window) = request.sheet_window.as_ref() {
+                if window.end_row < window.start_row || window.end_column < window.start_column {
+                    return Err(ViewerError::InvalidDocument);
+                }
+                build_visible_window_render_model(
+                    &archive,
+                    &workbook,
+                    &shared_strings,
+                    &styles,
+                    request.page_index as usize,
+                    &XlsxVisibleWindow {
+                        start_row: window.start_row,
+                        start_column: window.start_column,
+                        row_count: window.end_row - window.start_row + 1,
+                        column_count: window.end_column - window.start_column + 1,
+                    },
+                )
+            } else {
+                build_sheet_render_model(
+                    &archive,
+                    &workbook,
+                    &shared_strings,
+                    &styles,
+                    request.page_index as usize,
+                )
+            }
+        }
     }
 }
 
@@ -368,6 +413,7 @@ fn get_selection_page_impl(
         source: request.source,
         document_id: request.document_id,
         page_index: request.page_index,
+        sheet_window: None,
         options: request.options,
     })
 }
