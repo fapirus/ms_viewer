@@ -736,7 +736,16 @@
   - Tests:
     - default and custom row/column metrics fixture
     - malformed decimal metric fixture
-- [ ] cell style subset parser 구현
+- [x] cell style subset parser 구현
+  - Done:
+    - `styles.xml` target 해석
+    - custom number formats, fonts, fills, `cellXfs` subset 파싱
+    - horizontal/vertical alignment와 `wrapText` 최소 subset 반영
+    - styles part가 없을 때 empty catalog 반환
+  - Tests:
+    - styles part subset fixture
+    - missing styles relationship fixture
+    - invalid alignment fixture
 - [ ] merged cells parser 구현
 - [ ] frozen panes parser 구현
 - [ ] formula cell cached value parser 구현

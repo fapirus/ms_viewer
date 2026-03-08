@@ -7,6 +7,8 @@ const OFFICE_DOCUMENT_RELATIONSHIP: &str =
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument";
 const SHARED_STRINGS_RELATIONSHIP: &str =
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings";
+const STYLES_RELATIONSHIP: &str =
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles";
 const WORKSHEET_RELATIONSHIP: &str =
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet";
 
@@ -16,6 +18,7 @@ pub struct XlsxWorkbook {
     pub active_sheet_index: Option<u32>,
     pub date_1904: bool,
     pub shared_strings_part: Option<String>,
+    pub styles_part: Option<String>,
     pub sheets: Vec<XlsxWorksheet>,
 }
 
@@ -62,6 +65,72 @@ pub struct WorksheetRowMetric {
     pub custom_height: bool,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct XlsxStyleCatalog {
+    pub part_name: Option<String>,
+    pub number_formats: Vec<XlsxNumberFormat>,
+    pub fonts: Vec<XlsxFontStyle>,
+    pub fills: Vec<XlsxFillStyle>,
+    pub cell_formats: Vec<XlsxCellFormat>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct XlsxNumberFormat {
+    pub id: u32,
+    pub code: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct XlsxFontStyle {
+    pub font_name: Option<String>,
+    pub font_size_points: Option<f32>,
+    pub bold: bool,
+    pub italic: bool,
+    pub underline: bool,
+    pub color_hex: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct XlsxFillStyle {
+    pub pattern_type: Option<String>,
+    pub foreground_color_hex: Option<String>,
+    pub background_color_hex: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct XlsxCellFormat {
+    pub num_fmt_id: u32,
+    pub number_format_code: Option<String>,
+    pub font_id: u32,
+    pub fill_id: u32,
+    pub apply_number_format: bool,
+    pub apply_alignment: bool,
+    pub horizontal_alignment: Option<XlsxHorizontalAlignment>,
+    pub vertical_alignment: Option<XlsxVerticalAlignment>,
+    pub wrap_text: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum XlsxHorizontalAlignment {
+    General,
+    Left,
+    Center,
+    Right,
+    Fill,
+    Justify,
+    CenterContinuous,
+    Distributed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum XlsxVerticalAlignment {
+    Top,
+    Center,
+    Bottom,
+    Justify,
+    Distributed,
+}
+
 pub fn parse_xlsx(archive: &OoxmlArchive) -> Result<XlsxWorkbook, ViewerError> {
     let package_relationships = parse_package_relationships(archive)?;
     let workbook_part = package_relationships
@@ -92,6 +161,10 @@ pub fn parse_xlsx(archive: &OoxmlArchive) -> Result<XlsxWorkbook, ViewerError> {
     let shared_strings_part = workbook_relationships
         .iter()
         .find(|relationship| relationship.relationship_type == SHARED_STRINGS_RELATIONSHIP)
+        .map(|relationship| relationship.resolved_target.trim_start_matches('/').to_string());
+    let styles_part = workbook_relationships
+        .iter()
+        .find(|relationship| relationship.relationship_type == STYLES_RELATIONSHIP)
         .map(|relationship| relationship.resolved_target.trim_start_matches('/').to_string());
 
     let sheets_root = workbook_root.child("sheets").ok_or(ViewerError::InvalidDocument)?;
@@ -135,6 +208,7 @@ pub fn parse_xlsx(archive: &OoxmlArchive) -> Result<XlsxWorkbook, ViewerError> {
         active_sheet_index,
         date_1904,
         shared_strings_part,
+        styles_part,
         sheets,
     })
 }
@@ -174,6 +248,57 @@ pub fn parse_row_column_metrics(
         .iter()
         .map(|sheet| parse_worksheet_grid_metrics(archive, &sheet.part_name))
         .collect()
+}
+
+pub fn parse_cell_style_subset(
+    archive: &OoxmlArchive,
+    workbook: &XlsxWorkbook,
+) -> Result<XlsxStyleCatalog, ViewerError> {
+    let Some(part_name) = workbook.styles_part.as_deref() else {
+        return Ok(XlsxStyleCatalog {
+            part_name: None,
+            number_formats: Vec::new(),
+            fonts: Vec::new(),
+            fills: Vec::new(),
+            cell_formats: Vec::new(),
+        });
+    };
+
+    let xml = archive.read_part(part_name)?;
+    let text = String::from_utf8(xml).map_err(|_| ViewerError::InvalidDocument)?;
+    let root = parse_document(&text)?;
+    if root.local_name() != "styleSheet" {
+        return Err(ViewerError::InvalidDocument);
+    }
+
+    let number_formats = root
+        .child("numFmts")
+        .map(parse_number_formats)
+        .transpose()?
+        .unwrap_or_default();
+    let fonts = root
+        .child("fonts")
+        .map(parse_fonts)
+        .transpose()?
+        .unwrap_or_default();
+    let fills = root
+        .child("fills")
+        .map(parse_fills)
+        .transpose()?
+        .unwrap_or_default();
+    let cell_formats = root
+        .child("cellXfs")
+        .map(|cell_xfs| parse_cell_formats(cell_xfs, &number_formats))
+        .transpose()?
+        .unwrap_or_default();
+
+    Ok(XlsxStyleCatalog {
+        part_name: Some(part_name.to_string()),
+        number_formats,
+        fonts,
+        fills,
+        cell_formats,
+    })
 }
 
 fn parse_workbook_relationships(
@@ -347,4 +472,179 @@ fn parse_shared_string_item(item: &viewer_core::xml::XmlElement) -> String {
 
 fn parse_decimal(value: &str) -> Result<f32, ViewerError> {
     value.parse::<f32>().map_err(|_| ViewerError::InvalidDocument)
+}
+
+fn parse_number_formats(
+    num_fmts: &viewer_core::xml::XmlElement,
+) -> Result<Vec<XlsxNumberFormat>, ViewerError> {
+    let mut formats = Vec::new();
+    for child in &num_fmts.children {
+        if child.local_name() != "numFmt" {
+            continue;
+        }
+
+        formats.push(XlsxNumberFormat {
+            id: child
+                .required_attribute("numFmtId")?
+                .parse::<u32>()
+                .map_err(|_| ViewerError::InvalidDocument)?,
+            code: child.required_attribute("formatCode")?.to_string(),
+        });
+    }
+    Ok(formats)
+}
+
+fn parse_fonts(
+    fonts: &viewer_core::xml::XmlElement,
+) -> Result<Vec<XlsxFontStyle>, ViewerError> {
+    let mut parsed_fonts = Vec::new();
+    for child in &fonts.children {
+        if child.local_name() != "font" {
+            continue;
+        }
+
+        parsed_fonts.push(XlsxFontStyle {
+            font_name: child
+                .child("name")
+                .and_then(|name| name.attribute("val"))
+                .map(ToOwned::to_owned),
+            font_size_points: child
+                .child("sz")
+                .and_then(|size| size.attribute("val"))
+                .map(parse_decimal)
+                .transpose()?,
+            bold: child.child("b").is_some(),
+            italic: child.child("i").is_some(),
+            underline: child.child("u").is_some(),
+            color_hex: child.child("color").and_then(parse_xlsx_color),
+        });
+    }
+    Ok(parsed_fonts)
+}
+
+fn parse_fills(
+    fills: &viewer_core::xml::XmlElement,
+) -> Result<Vec<XlsxFillStyle>, ViewerError> {
+    let mut parsed_fills = Vec::new();
+    for child in &fills.children {
+        if child.local_name() != "fill" {
+            continue;
+        }
+
+        let pattern_fill = child.child("patternFill");
+        parsed_fills.push(XlsxFillStyle {
+            pattern_type: pattern_fill
+                .and_then(|fill| fill.attribute("patternType"))
+                .map(ToOwned::to_owned),
+            foreground_color_hex: pattern_fill
+                .and_then(|fill| fill.child("fgColor"))
+                .and_then(parse_xlsx_color),
+            background_color_hex: pattern_fill
+                .and_then(|fill| fill.child("bgColor"))
+                .and_then(parse_xlsx_color),
+        });
+    }
+    Ok(parsed_fills)
+}
+
+fn parse_cell_formats(
+    cell_xfs: &viewer_core::xml::XmlElement,
+    number_formats: &[XlsxNumberFormat],
+) -> Result<Vec<XlsxCellFormat>, ViewerError> {
+    let mut formats = Vec::new();
+    for child in &cell_xfs.children {
+        if child.local_name() != "xf" {
+            continue;
+        }
+
+        let num_fmt_id = child
+            .required_attribute("numFmtId")?
+            .parse::<u32>()
+            .map_err(|_| ViewerError::InvalidDocument)?;
+        let font_id = child
+            .required_attribute("fontId")?
+            .parse::<u32>()
+            .map_err(|_| ViewerError::InvalidDocument)?;
+        let fill_id = child
+            .required_attribute("fillId")?
+            .parse::<u32>()
+            .map_err(|_| ViewerError::InvalidDocument)?;
+        let alignment = child.child("alignment");
+
+        formats.push(XlsxCellFormat {
+            num_fmt_id,
+            number_format_code: number_formats
+                .iter()
+                .find(|format| format.id == num_fmt_id)
+                .map(|format| format.code.clone()),
+            font_id,
+            fill_id,
+            apply_number_format: matches!(
+                child.attribute("applyNumberFormat"),
+                Some("1" | "true")
+            ),
+            apply_alignment: matches!(child.attribute("applyAlignment"), Some("1" | "true")),
+            horizontal_alignment: alignment
+                .and_then(|alignment| alignment.attribute("horizontal"))
+                .map(parse_horizontal_alignment)
+                .transpose()?,
+            vertical_alignment: alignment
+                .and_then(|alignment| alignment.attribute("vertical"))
+                .map(parse_vertical_alignment)
+                .transpose()?,
+            wrap_text: matches!(
+                alignment.and_then(|alignment| alignment.attribute("wrapText")),
+                Some("1" | "true")
+            ),
+        });
+    }
+    Ok(formats)
+}
+
+fn parse_horizontal_alignment(value: &str) -> Result<XlsxHorizontalAlignment, ViewerError> {
+    match value {
+        "general" => Ok(XlsxHorizontalAlignment::General),
+        "left" => Ok(XlsxHorizontalAlignment::Left),
+        "center" => Ok(XlsxHorizontalAlignment::Center),
+        "right" => Ok(XlsxHorizontalAlignment::Right),
+        "fill" => Ok(XlsxHorizontalAlignment::Fill),
+        "justify" => Ok(XlsxHorizontalAlignment::Justify),
+        "centerContinuous" => Ok(XlsxHorizontalAlignment::CenterContinuous),
+        "distributed" => Ok(XlsxHorizontalAlignment::Distributed),
+        _ => Err(ViewerError::InvalidDocument),
+    }
+}
+
+fn parse_vertical_alignment(value: &str) -> Result<XlsxVerticalAlignment, ViewerError> {
+    match value {
+        "top" => Ok(XlsxVerticalAlignment::Top),
+        "center" => Ok(XlsxVerticalAlignment::Center),
+        "bottom" => Ok(XlsxVerticalAlignment::Bottom),
+        "justify" => Ok(XlsxVerticalAlignment::Justify),
+        "distributed" => Ok(XlsxVerticalAlignment::Distributed),
+        _ => Err(ViewerError::InvalidDocument),
+    }
+}
+
+fn parse_xlsx_color(color: &viewer_core::xml::XmlElement) -> Option<String> {
+    if let Some(rgb) = color.attribute("rgb") {
+        return normalize_argb_hex(rgb);
+    }
+    None
+}
+
+fn normalize_argb_hex(hex: &str) -> Option<String> {
+    if hex.len() == 8 {
+        let alpha = &hex[0..2];
+        let rgb = &hex[2..8];
+        if alpha.eq_ignore_ascii_case("FF") {
+            Some(format!("#{rgb}"))
+        } else {
+            Some(format!("#{rgb}{alpha}"))
+        }
+    } else if hex.len() == 6 {
+        Some(format!("#{hex}"))
+    } else {
+        None
+    }
 }
