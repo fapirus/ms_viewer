@@ -776,7 +776,14 @@
     - invalid shared string index fixture
 
 ### XLSX layout and interaction
-- [ ] sheet grid render model 구현
+- [x] sheet grid render model 구현
+  - Done:
+    - worksheet cell subset, metrics, merges, style subset을 공통 `PageRenderModel`로 투영
+    - 셀을 `BoxNode + TextNode`로 렌더하고 merged cell span을 단일 box로 처리
+    - cached formula value, boolean, error, shared/inline string을 표시값으로 반영
+    - text-only selection anchor를 셀 텍스트 기준으로 생성
+  - Tests:
+    - merged header + cached formula + style render model fixture
 - [ ] visible window cell virtualization 초안 구현
 - [ ] cell text search index 구현
 - [ ] text-only selection metadata 구현

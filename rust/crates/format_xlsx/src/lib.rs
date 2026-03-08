@@ -1,5 +1,8 @@
 use format_shared::{parse_package_relationships, resolve_relationship_target, PackageRelationship};
 use viewer_core::archive::OoxmlArchive;
+use viewer_core::model::{
+    BoxNode, PageRenderModel, Rect, RenderNode, SelectionAnchor, TextNode, TextRange, TextStyle,
+};
 use viewer_core::xml::parse_document;
 use viewer_core::ViewerError;
 
@@ -403,6 +406,37 @@ pub fn parse_worksheet_cells(
         .collect()
 }
 
+pub fn build_sheet_render_model(
+    archive: &OoxmlArchive,
+    workbook: &XlsxWorkbook,
+    shared_strings: &[String],
+    styles: &XlsxStyleCatalog,
+    sheet_index: usize,
+) -> Result<PageRenderModel, ViewerError> {
+    let sheet = workbook
+        .sheets
+        .get(sheet_index)
+        .ok_or(ViewerError::InvalidDocument)?;
+    let cells_by_sheet = parse_worksheet_cells(archive, workbook, shared_strings)?;
+    let metrics_by_sheet = parse_row_column_metrics(archive, workbook)?;
+    let merges_by_sheet = parse_merged_cells(archive, workbook)?;
+
+    let worksheet_cells = cells_by_sheet
+        .iter()
+        .find(|worksheet| worksheet.part_name == sheet.part_name)
+        .ok_or(ViewerError::InvalidDocument)?;
+    let metrics = metrics_by_sheet
+        .iter()
+        .find(|worksheet| worksheet.part_name == sheet.part_name)
+        .ok_or(ViewerError::InvalidDocument)?;
+    let merges = merges_by_sheet
+        .iter()
+        .find(|worksheet| worksheet.part_name == sheet.part_name)
+        .ok_or(ViewerError::InvalidDocument)?;
+
+    render_sheet_model(sheet_index as u32, sheet, worksheet_cells, metrics, merges, styles)
+}
+
 fn parse_workbook_relationships(
     archive: &OoxmlArchive,
     workbook_part: &str,
@@ -645,6 +679,124 @@ fn parse_cells_for_worksheet(
     Ok(WorksheetCells {
         part_name: worksheet_part.to_string(),
         cells,
+    })
+}
+
+fn render_sheet_model(
+    sheet_index: u32,
+    sheet: &XlsxWorksheet,
+    worksheet_cells: &WorksheetCells,
+    metrics: &WorksheetGridMetrics,
+    merges: &WorksheetMergedCells,
+    styles: &XlsxStyleCatalog,
+) -> Result<PageRenderModel, ViewerError> {
+    let (start_row, start_column, end_row, end_column) =
+        sheet.dimension_ref.as_deref().map(parse_dimension_reference).transpose()?.unwrap_or_else(
+            || infer_sheet_bounds(worksheet_cells, merges),
+        );
+
+    let column_widths: Vec<f32> = (start_column..=end_column)
+        .map(|column| resolve_column_width(metrics, column))
+        .collect();
+    let row_heights: Vec<f32> = (start_row..=end_row)
+        .map(|row| resolve_row_height(metrics, row))
+        .collect();
+    let width = column_widths.iter().sum::<f32>();
+    let height = row_heights.iter().sum::<f32>();
+
+    let mut nodes = Vec::new();
+    let mut selection_anchors = Vec::new();
+    let mut selection_offset = 0u32;
+
+    for row in start_row..=end_row {
+        let cell_y = sum_lengths(&row_heights, start_row, row);
+        for column in start_column..=end_column {
+            if merges
+                .ranges
+                .iter()
+                .any(|range| is_covered_by_merged_range(range, row, column) && !is_merge_origin(range, row, column))
+            {
+                continue;
+            }
+
+            let cell_x = sum_lengths(&column_widths, start_column, column);
+            let cell = worksheet_cells
+                .cells
+                .iter()
+                .find(|cell| cell.row == row && cell.column == column);
+            let merged_range = merges
+                .ranges
+                .iter()
+                .find(|range| is_merge_origin(range, row, column));
+            let span_columns = merged_range
+                .map(|range| range.end_column - range.start_column + 1)
+                .unwrap_or(1);
+            let span_rows = merged_range
+                .map(|range| range.end_row - range.start_row + 1)
+                .unwrap_or(1);
+            let cell_width = column_span_width(&column_widths, start_column, column, span_columns);
+            let cell_height = row_span_height(&row_heights, start_row, row, span_rows);
+            let cell_rect = Rect {
+                x: cell_x,
+                y: cell_y,
+                width: cell_width,
+                height: cell_height,
+            };
+            let style = cell
+                .and_then(|cell| cell.style_index)
+                .and_then(|index| styles.cell_formats.get(index as usize));
+            let fill_color_hex = style
+                .and_then(|format| styles.fills.get(format.fill_id as usize))
+                .and_then(|fill| fill.foreground_color_hex.clone().or(fill.background_color_hex.clone()));
+
+            nodes.push(RenderNode::Box(BoxNode {
+                bounds: cell_rect.clone(),
+                fill_color_hex,
+                gradient_end_color_hex: None,
+                gradient_angle_degrees: None,
+                stroke_color_hex: Some("#D0D7DE".to_string()),
+                stroke_width: 1.0,
+                corner_radius: None,
+            }));
+
+            if let Some(cell) = cell {
+                if let Some(display_text) = format_cell_display_value(&cell.value) {
+                    if !display_text.is_empty() {
+                        let text_style = resolve_text_style(styles, style);
+                        let text_bounds =
+                            layout_cell_text(&display_text, &cell_rect, style, &text_style);
+                        let range_start = selection_offset;
+                        let range_end = range_start + display_text.chars().count() as u32;
+                        let node_index = nodes.len() as u32;
+                        selection_anchors.extend(build_text_selection_anchors(
+                            &display_text,
+                            &text_bounds,
+                            &text_style,
+                            node_index,
+                        ));
+                        selection_offset = range_end;
+
+                        nodes.push(RenderNode::Text(TextNode {
+                            text: display_text,
+                            bounds: text_bounds,
+                            style: text_style,
+                            range: TextRange {
+                                start: range_start,
+                                end: range_end,
+                            },
+                        }));
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(PageRenderModel {
+        page_index: sheet_index,
+        width,
+        height,
+        nodes,
+        selection_anchors,
     })
 }
 
@@ -944,6 +1096,234 @@ fn parse_boolean_cell_value(value: &str) -> Result<bool, ViewerError> {
         "1" | "true" => Ok(true),
         "0" | "false" => Ok(false),
         _ => Err(ViewerError::InvalidDocument),
+    }
+}
+
+fn parse_dimension_reference(reference: &str) -> Result<(u32, u32, u32, u32), ViewerError> {
+    if reference.contains(':') {
+        return parse_merged_cell_reference(reference);
+    }
+
+    let (row, column) = parse_cell_reference(reference)?;
+    Ok((row, column, row, column))
+}
+
+fn infer_sheet_bounds(
+    worksheet_cells: &WorksheetCells,
+    merges: &WorksheetMergedCells,
+) -> (u32, u32, u32, u32) {
+    let mut start_row = u32::MAX;
+    let mut start_column = u32::MAX;
+    let mut end_row = 1u32;
+    let mut end_column = 1u32;
+
+    for cell in &worksheet_cells.cells {
+        start_row = start_row.min(cell.row);
+        start_column = start_column.min(cell.column);
+        end_row = end_row.max(cell.row);
+        end_column = end_column.max(cell.column);
+    }
+
+    for range in &merges.ranges {
+        start_row = start_row.min(range.start_row);
+        start_column = start_column.min(range.start_column);
+        end_row = end_row.max(range.end_row);
+        end_column = end_column.max(range.end_column);
+    }
+
+    if start_row == u32::MAX || start_column == u32::MAX {
+        (1, 1, 1, 1)
+    } else {
+        (start_row, start_column, end_row, end_column)
+    }
+}
+
+fn resolve_column_width(metrics: &WorksheetGridMetrics, column: u32) -> f32 {
+    let width_units = metrics
+        .columns
+        .iter()
+        .find(|metric| column >= metric.min && column <= metric.max)
+        .and_then(|metric| metric.width)
+        .or(metrics.default_column_width)
+        .unwrap_or(8.43);
+    (width_units * 7.0).max(24.0)
+}
+
+fn resolve_row_height(metrics: &WorksheetGridMetrics, row: u32) -> f32 {
+    let points = metrics
+        .rows
+        .iter()
+        .find(|metric| metric.index == row)
+        .and_then(|metric| metric.height_points)
+        .or(metrics.default_row_height_points)
+        .unwrap_or(15.0);
+    (points * (96.0 / 72.0)).max(20.0)
+}
+
+fn sum_lengths(lengths: &[f32], start_index: u32, current_index: u32) -> f32 {
+    if current_index <= start_index {
+        return 0.0;
+    }
+    lengths
+        .iter()
+        .take((current_index - start_index) as usize)
+        .sum()
+}
+
+fn column_span_width(
+    column_widths: &[f32],
+    start_column: u32,
+    column: u32,
+    span_columns: u32,
+) -> f32 {
+    let start_index = (column - start_column) as usize;
+    column_widths
+        .iter()
+        .skip(start_index)
+        .take(span_columns as usize)
+        .sum()
+}
+
+fn row_span_height(row_heights: &[f32], start_row: u32, row: u32, span_rows: u32) -> f32 {
+    let start_index = (row - start_row) as usize;
+    row_heights
+        .iter()
+        .skip(start_index)
+        .take(span_rows as usize)
+        .sum()
+}
+
+fn is_merge_origin(range: &XlsxMergedCellRange, row: u32, column: u32) -> bool {
+    range.start_row == row && range.start_column == column
+}
+
+fn is_covered_by_merged_range(range: &XlsxMergedCellRange, row: u32, column: u32) -> bool {
+    row >= range.start_row
+        && row <= range.end_row
+        && column >= range.start_column
+        && column <= range.end_column
+}
+
+fn resolve_text_style(
+    styles: &XlsxStyleCatalog,
+    format: Option<&XlsxCellFormat>,
+) -> TextStyle {
+    let font = format
+        .and_then(|format| styles.fonts.get(format.font_id as usize));
+    TextStyle {
+        font_family: font
+            .and_then(|font| font.font_name.clone())
+            .unwrap_or_else(|| "Calibri".to_string()),
+        font_size: font
+            .and_then(|font| font.font_size_points)
+            .unwrap_or(11.0),
+        bold: font.map(|font| font.bold).unwrap_or(false),
+        italic: font.map(|font| font.italic).unwrap_or(false),
+        underline: font.map(|font| font.underline).unwrap_or(false),
+        color_hex: font
+            .and_then(|font| font.color_hex.clone())
+            .unwrap_or_else(|| "#000000".to_string()),
+        gradient_end_color_hex: None,
+        gradient_angle_degrees: None,
+    }
+}
+
+fn layout_cell_text(
+    display_text: &str,
+    cell_rect: &Rect,
+    format: Option<&XlsxCellFormat>,
+    text_style: &TextStyle,
+) -> Rect {
+    let padding_x = 4.0;
+    let padding_y = 2.0;
+    let available_width = (cell_rect.width - padding_x * 2.0).max(0.0);
+    let estimated_width =
+        estimate_text_width(display_text, text_style.font_size).min(available_width);
+    let text_height = text_style.font_size * 1.2;
+    let horizontal_alignment = format
+        .and_then(|format| format.horizontal_alignment.as_ref())
+        .unwrap_or(&XlsxHorizontalAlignment::Left);
+    let vertical_alignment = format
+        .and_then(|format| format.vertical_alignment.as_ref())
+        .unwrap_or(&XlsxVerticalAlignment::Center);
+    let x = match horizontal_alignment {
+        XlsxHorizontalAlignment::Center | XlsxHorizontalAlignment::CenterContinuous => {
+            cell_rect.x + ((cell_rect.width - estimated_width) / 2.0).max(padding_x)
+        }
+        XlsxHorizontalAlignment::Right => {
+            (cell_rect.x + cell_rect.width - padding_x - estimated_width).max(cell_rect.x + padding_x)
+        }
+        _ => cell_rect.x + padding_x,
+    };
+    let y = match vertical_alignment {
+        XlsxVerticalAlignment::Top => cell_rect.y + padding_y,
+        XlsxVerticalAlignment::Bottom => {
+            (cell_rect.y + cell_rect.height - padding_y - text_height).max(cell_rect.y + padding_y)
+        }
+        _ => cell_rect.y + ((cell_rect.height - text_height) / 2.0).max(padding_y),
+    };
+
+    Rect {
+        x,
+        y,
+        width: estimated_width,
+        height: text_height,
+    }
+}
+
+fn estimate_text_width(text: &str, font_size: f32) -> f32 {
+    text.chars().fold(0.0, |accumulator, character| {
+        let width_factor = if character.is_ascii_whitespace() {
+            0.35
+        } else if character.is_ascii() {
+            0.56
+        } else {
+            0.95
+        };
+        accumulator + (font_size * width_factor)
+    })
+}
+
+fn build_text_selection_anchors(
+    text: &str,
+    bounds: &Rect,
+    text_style: &TextStyle,
+    node_index: u32,
+) -> Vec<SelectionAnchor> {
+    let mut anchors = Vec::new();
+    let mut x = bounds.x;
+    for (char_index, character) in text.chars().enumerate() {
+        anchors.push(SelectionAnchor {
+            node_index,
+            char_index: char_index as u32,
+            x,
+            y: bounds.y,
+        });
+        let width_factor = if character.is_ascii_whitespace() {
+            0.35
+        } else if character.is_ascii() {
+            0.56
+        } else {
+            0.95
+        };
+        x += text_style.font_size * width_factor;
+    }
+    anchors.push(SelectionAnchor {
+        node_index,
+        char_index: text.chars().count() as u32,
+        x,
+        y: bounds.y,
+    });
+    anchors
+}
+
+fn format_cell_display_value(value: &Option<XlsxCellValue>) -> Option<String> {
+    match value {
+        Some(XlsxCellValue::Text(text)) => Some(text.clone()),
+        Some(XlsxCellValue::Number(number)) => Some(number.clone()),
+        Some(XlsxCellValue::Boolean(value)) => Some(if *value { "TRUE" } else { "FALSE" }.to_string()),
+        Some(XlsxCellValue::Error(error)) => Some(error.clone()),
+        None => None,
     }
 }
 
