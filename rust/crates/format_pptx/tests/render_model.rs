@@ -1525,3 +1525,292 @@ fn render_model_does_not_round_full_slide_background_panel() {
 
     assert!(background.corner_radius.is_none());
 }
+
+#[test]
+fn render_model_does_not_round_left_aligned_theme_panel() {
+    let dir = tempdir().expect("tempdir should exist");
+    let path = dir.path().join("render-model-left-panel-roundrect.pptx");
+    create_zip(
+        &path,
+        &[(
+            "ppt/slides/slide1.xml",
+            br#"
+<p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+       xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <p:cSld>
+    <p:spTree>
+      <p:sp>
+        <p:nvSpPr>
+          <p:cNvPr id="2" name="Theme Panel" />
+          <p:cNvSpPr />
+          <p:nvPr />
+        </p:nvSpPr>
+        <p:spPr>
+          <a:xfrm>
+            <a:off x="0" y="0" />
+            <a:ext cx="7143750" cy="6858000" />
+          </a:xfrm>
+          <a:prstGeom prst="roundRect"><a:avLst /></a:prstGeom>
+          <a:solidFill><a:srgbClr val="FFFFFF" /></a:solidFill>
+        </p:spPr>
+      </p:sp>
+    </p:spTree>
+  </p:cSld>
+</p:sld>
+"#,
+        )],
+    );
+
+    let archive = OoxmlArchive::open_path(&path).expect("archive should open");
+    let slide_tree = PptxSlideTree {
+        presentation_part: "ppt/presentation.xml".to_string(),
+        presentation_size: Some(PresentationSize {
+            width_emu: 9_144_000,
+            height_emu: 6_858_000,
+        }),
+        slides: vec![SlideReference {
+            slide_id: 256,
+            relationship_id: "rIdSlide1".to_string(),
+            part_name: "ppt/slides/slide1.xml".to_string(),
+            layout_part_name: None,
+            notes_part_name: None,
+            has_transition: false,
+            ignored_animation_nodes: 0,
+        }],
+        slide_masters: Vec::new(),
+    };
+
+    let page = build_slide_render_model(&archive, &slide_tree, 0).expect("render model");
+    let panel = page
+        .nodes
+        .iter()
+        .find_map(|node| match node {
+            RenderNode::Box(node) => Some(node),
+            _ => None,
+        })
+        .expect("panel box");
+
+    assert!(panel.corner_radius.is_none());
+}
+
+#[test]
+fn render_model_keeps_small_table_rows_readable() {
+    let dir = tempdir().expect("tempdir should exist");
+    let path = dir.path().join("render-model-compact-table.pptx");
+    create_zip(
+        &path,
+        &[
+            (
+                "[Content_Types].xml",
+                br#"
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/>
+  <Override PartName="/ppt/slides/slide1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>
+</Types>
+"#,
+            ),
+            (
+                "_rels/.rels",
+                br#"
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="ppt/presentation.xml"/>
+</Relationships>
+"#,
+            ),
+            (
+                "ppt/presentation.xml",
+                br#"
+<p:presentation xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+                xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <p:sldIdLst><p:sldId id="256" r:id="rIdSlide1"/></p:sldIdLst>
+  <p:sldSz cx="9144000" cy="6858000"/>
+</p:presentation>
+"#,
+            ),
+            (
+                "ppt/_rels/presentation.xml.rels",
+                br#"
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdSlide1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide1.xml"/>
+</Relationships>
+"#,
+            ),
+            (
+                "ppt/slides/slide1.xml",
+                r#"
+<p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+       xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <p:cSld>
+    <p:spTree>
+      <p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>
+      <p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr>
+      <p:graphicFrame>
+        <p:nvGraphicFramePr><p:cNvPr id="5" name="Compact Table"/><p:cNvGraphicFramePr/><p:nvPr/></p:nvGraphicFramePr>
+        <p:xfrm><a:off x="6858000" y="3810000"/><a:ext cx="2286000" cy="1210520"/></p:xfrm>
+        <a:graphic>
+          <a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/table">
+            <a:tbl>
+              <a:tblPr firstRow="1" firstCol="1">
+                <a:tableStyleId>{5C22544A-7EE6-4342-B048-85BDC9FD1C3A}</a:tableStyleId>
+              </a:tblPr>
+              <a:tblGrid>
+                <a:gridCol w="585543"/>
+                <a:gridCol w="819760"/>
+                <a:gridCol w="819760"/>
+                <a:gridCol w="819760"/>
+              </a:tblGrid>
+              <a:tr h="242104">
+                <a:tc><a:txBody><a:bodyPr/><a:lstStyle/><a:p><a:r><a:rPr sz="900"/><a:t/></a:r></a:p></a:txBody><a:tcPr><a:solidFill><a:srgbClr val="2F45A5"/></a:solidFill></a:tcPr></a:tc>
+                <a:tc><a:txBody><a:bodyPr/><a:lstStyle/><a:p><a:r><a:rPr sz="900"/><a:t>Writer</a:t></a:r></a:p></a:txBody><a:tcPr><a:solidFill><a:srgbClr val="2F45A5"/></a:solidFill></a:tcPr></a:tc>
+                <a:tc><a:txBody><a:bodyPr/><a:lstStyle/><a:p><a:r><a:rPr sz="900"/><a:t>Lead</a:t></a:r></a:p></a:txBody><a:tcPr><a:solidFill><a:srgbClr val="2F45A5"/></a:solidFill></a:tcPr></a:tc>
+                <a:tc><a:txBody><a:bodyPr/><a:lstStyle/><a:p><a:r><a:rPr sz="900"/><a:t>Director</a:t></a:r></a:p></a:txBody><a:tcPr><a:solidFill><a:srgbClr val="2F45A5"/></a:solidFill></a:tcPr></a:tc>
+              </a:tr>
+              <a:tr h="242104">
+                <a:tc><a:txBody><a:bodyPr/><a:lstStyle/><a:p><a:r><a:rPr sz="900"/><a:t>Approver</a:t></a:r></a:p></a:txBody><a:tcPr><a:solidFill><a:srgbClr val="2F45A5"/></a:solidFill></a:tcPr></a:tc>
+                <a:tc><a:txBody><a:bodyPr/><a:lstStyle/><a:p><a:r><a:rPr sz="900"/><a:t>Kim One</a:t></a:r></a:p></a:txBody><a:tcPr/></a:tc>
+                <a:tc><a:txBody><a:bodyPr/><a:lstStyle/><a:p><a:r><a:rPr sz="900"/><a:t>Park Two</a:t></a:r></a:p></a:txBody><a:tcPr/></a:tc>
+                <a:tc><a:txBody><a:bodyPr/><a:lstStyle/><a:p><a:r><a:rPr sz="900"/><a:t>Lee Three</a:t></a:r></a:p></a:txBody><a:tcPr/></a:tc>
+              </a:tr>
+            </a:tbl>
+          </a:graphicData>
+        </a:graphic>
+      </p:graphicFrame>
+    </p:spTree>
+  </p:cSld>
+</p:sld>
+"#
+                .as_bytes(),
+            ),
+            (
+                "ppt/tableStyles.xml",
+                br#"
+<a:tblStyleLst xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" def="{5C22544A-7EE6-4342-B048-85BDC9FD1C3A}">
+  <a:tblStyle styleId="{5C22544A-7EE6-4342-B048-85BDC9FD1C3A}" styleName="Fixture Table Style">
+    <a:wholeTbl>
+      <a:tcTxStyle><a:fontRef idx="minor"><a:prstClr val="black"/></a:fontRef><a:schemeClr val="dk1"/></a:tcTxStyle>
+    </a:wholeTbl>
+    <a:firstRow>
+      <a:tcTxStyle b="on"><a:fontRef idx="minor"><a:prstClr val="black"/></a:fontRef><a:schemeClr val="lt1"/></a:tcTxStyle>
+    </a:firstRow>
+    <a:firstCol>
+      <a:tcTxStyle b="on"><a:fontRef idx="minor"><a:prstClr val="black"/></a:fontRef><a:schemeClr val="lt1"/></a:tcTxStyle>
+    </a:firstCol>
+  </a:tblStyle>
+</a:tblStyleLst>
+"#,
+            ),
+        ],
+    );
+
+    let archive = OoxmlArchive::open_path(&path).expect("archive should open");
+    let slide_tree = parse_pptx(&archive).expect("slide tree");
+    let page = build_slide_render_model(&archive, &slide_tree, 0).expect("render model");
+    let texts: Vec<_> = page
+        .nodes
+        .iter()
+        .filter_map(|node| match node {
+            RenderNode::Text(node) => Some(node.text.as_str()),
+            _ => None,
+        })
+        .collect();
+
+    assert!(texts.contains(&"Writer"));
+    assert!(texts.contains(&"Lead"));
+    assert!(texts.contains(&"Director"));
+    assert!(texts.iter().any(|text| text.starts_with("Approv")));
+    assert!(texts.iter().any(|text| text.ends_with("er")));
+    assert!(texts.contains(&"Kim One"));
+    assert!(texts.contains(&"Park Two"));
+    assert!(texts.contains(&"Lee Three"));
+}
+
+#[test]
+fn render_model_preserves_spaces_between_runs() {
+    let dir = tempdir().expect("tempdir should exist");
+    let path = dir.path().join("render-model-run-spaces.pptx");
+    create_zip(
+        &path,
+        &[
+            (
+                "[Content_Types].xml",
+                br#"
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/>
+  <Override PartName="/ppt/slides/slide1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>
+</Types>
+"#,
+            ),
+            (
+                "_rels/.rels",
+                br#"
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="ppt/presentation.xml"/>
+</Relationships>
+"#,
+            ),
+            (
+                "ppt/presentation.xml",
+                br#"
+<p:presentation xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+                xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <p:sldIdLst><p:sldId id="256" r:id="rIdSlide1"/></p:sldIdLst>
+  <p:sldSz cx="9144000" cy="6858000"/>
+</p:presentation>
+"#,
+            ),
+            (
+                "ppt/_rels/presentation.xml.rels",
+                br#"
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdSlide1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide1.xml"/>
+</Relationships>
+"#,
+            ),
+            (
+                "ppt/slides/slide1.xml",
+                br#"
+<p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+       xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <p:cSld>
+    <p:spTree>
+      <p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>
+      <p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr>
+      <p:sp>
+        <p:nvSpPr><p:cNvPr id="2" name="Body"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr>
+        <p:spPr><a:xfrm><a:off x="914400" y="914400"/><a:ext cx="3657600" cy="914400"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/></p:spPr>
+        <p:txBody>
+          <a:bodyPr/>
+          <a:lstStyle/>
+          <a:p>
+            <a:r><a:rPr sz="2200"/><a:t>Need </a:t></a:r>
+            <a:r><a:rPr sz="2200"/><a:t>web </a:t></a:r>
+            <a:r><a:rPr sz="2200"/><a:t>access.</a:t></a:r>
+          </a:p>
+        </p:txBody>
+      </p:sp>
+    </p:spTree>
+  </p:cSld>
+</p:sld>
+"#,
+            ),
+        ],
+    );
+
+    let archive = OoxmlArchive::open_path(&path).expect("archive should open");
+    let slide_tree = parse_pptx(&archive).expect("slide tree");
+    let page = build_slide_render_model(&archive, &slide_tree, 0).expect("render model");
+    let texts: Vec<_> = page
+        .nodes
+        .iter()
+        .filter_map(|node| match node {
+            RenderNode::Text(node) => Some(node.text.as_str()),
+            _ => None,
+        })
+        .collect();
+
+    assert!(texts.contains(&"Need web access."));
+}

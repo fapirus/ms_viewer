@@ -36,7 +36,9 @@ impl XmlElement {
 
 pub fn parse_document(xml: &str) -> Result<XmlElement, ViewerError> {
     let mut reader = Reader::from_str(xml);
-    reader.config_mut().trim_text(true);
+    // OOXML text runs rely on leading/trailing spaces inside elements like
+    // `a:t` and `w:t`. Trimming here corrupts layout-sensitive content.
+    reader.config_mut().trim_text(false);
 
     let mut stack: Vec<XmlElement> = Vec::new();
 

@@ -245,6 +245,8 @@ pub struct SlideTextBox {
     pub bounds: Option<EmuRectangle>,
     pub insets: SlideTextInsets,
     pub vertical_anchor: SlideTextVerticalAnchor,
+    min_line_height_centipoints: u32,
+    default_spacing_after_centipoints: u32,
     wrap_none: bool,
     pub placeholder: Option<SlidePlaceholderReference>,
     style_sheet: SlideTextStyleSheet,
@@ -1670,6 +1672,8 @@ fn parse_text_box_shape_with_context(
         bounds,
         insets,
         vertical_anchor,
+        min_line_height_centipoints: 1800,
+        default_spacing_after_centipoints: 600,
         wrap_none,
         placeholder,
         style_sheet,
@@ -2708,7 +2712,11 @@ fn shape_corner_radius_points(
     match geometry {
         BasicShapeGeometry::Preset(name)
             if name == "roundRect"
-                && !is_full_slide_background_panel(bounds, slide_width, slide_height) =>
+                && !is_background_panel_without_visible_corner_radius(
+                    bounds,
+                    slide_width,
+                    slide_height,
+                ) =>
         {
             Some(emu_to_points(bounds.width.min(bounds.height)) * 0.16667)
         }
@@ -2716,17 +2724,23 @@ fn shape_corner_radius_points(
     }
 }
 
-fn is_full_slide_background_panel(
+fn is_background_panel_without_visible_corner_radius(
     bounds: &EmuRectangle,
     slide_width: f32,
     slide_height: f32,
 ) -> bool {
     let rect = rect_from_emu_bounds(bounds);
     let tolerance = 1.0;
-    rect.x.abs() <= tolerance
+    let is_full_slide = rect.x.abs() <= tolerance
         && rect.y.abs() <= tolerance
         && (rect.width - slide_width).abs() <= tolerance
+        && (rect.height - slide_height).abs() <= tolerance;
+    let is_left_panel = rect.x.abs() <= tolerance
+        && rect.y.abs() <= tolerance
         && (rect.height - slide_height).abs() <= tolerance
+        && rect.width >= slide_width * 0.65
+        && rect.width <= slide_width * 0.95;
+    is_full_slide || is_left_panel
 }
 
 fn derive_table_cell_font_size_centipoints(cell_height_emu: i64, margins: &SlideTextInsets) -> u32 {
@@ -2849,6 +2863,8 @@ fn build_table_nodes(
                     bounds: Some(cell_bounds),
                     insets: cell.margins.clone(),
                     vertical_anchor: SlideTextVerticalAnchor::Center,
+                    min_line_height_centipoints: 0,
+                    default_spacing_after_centipoints: 0,
                     wrap_none: false,
                     placeholder: None,
                     style_sheet,
@@ -3045,7 +3061,7 @@ fn prepare_text_box_paragraphs(
             let spacing_after = resolve_spacing_points(
                 resolved_style.spacing_after.as_ref(),
                 paragraph_font_size,
-                6.0,
+                text_box.default_spacing_after_centipoints as f32 / 100.0,
             );
             let margin_left = resolved_style
                 .margin_left_emu
@@ -3083,6 +3099,7 @@ fn prepare_text_box_paragraphs(
                         line.max_font_size.max(paragraph_font_size),
                         resolved_style.line_spacing.as_ref(),
                     )
+                    .max(text_box.min_line_height_centipoints as f32 / 100.0)
                 })
                 .collect();
 
@@ -3171,7 +3188,7 @@ fn resolve_line_height(font_size: f32, spacing: Option<&SlideSpacing>) -> f32 {
         Some(SlideSpacing::Percent(percent)) => {
             (font_size * (*percent as f32 / 100_000.0)).max(font_size * 0.95)
         }
-        None => (font_size * 1.2).max(18.0),
+        None => (font_size * 1.2).max(font_size),
     }
 }
 

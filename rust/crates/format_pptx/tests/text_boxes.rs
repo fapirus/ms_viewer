@@ -223,6 +223,58 @@ fn invalid_transform_geometry_fails() {
 }
 
 #[test]
+fn text_box_parser_preserves_run_spaces() {
+    let dir = tempdir().expect("tempdir should exist");
+    let path = dir.path().join("text-box-spaces.pptx");
+    create_zip(
+        &path,
+        &[(
+            "ppt/slides/slide1.xml",
+            br#"
+<p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+       xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <p:cSld>
+    <p:spTree>
+      <p:sp>
+        <p:nvSpPr>
+          <p:cNvPr id="2" name="Body 1" />
+          <p:cNvSpPr />
+          <p:nvPr />
+        </p:nvSpPr>
+        <p:spPr>
+          <a:xfrm>
+            <a:off x="0" y="0" />
+            <a:ext cx="4572000" cy="914400" />
+          </a:xfrm>
+        </p:spPr>
+        <p:txBody>
+          <a:bodyPr />
+          <a:lstStyle />
+          <a:p>
+            <a:r><a:t>Need </a:t></a:r>
+            <a:r><a:t>web </a:t></a:r>
+            <a:r><a:t>access</a:t></a:r>
+          </a:p>
+        </p:txBody>
+      </p:sp>
+    </p:spTree>
+  </p:cSld>
+</p:sld>
+"#,
+        )],
+    );
+
+    let archive = OoxmlArchive::open_path(&path).expect("archive should open");
+    let text_boxes =
+        parse_slide_text_boxes(&archive, "ppt/slides/slide1.xml").expect("text boxes should parse");
+
+    let runs = &text_boxes[0].paragraphs[0].runs;
+    assert_eq!(runs[0].text, "Need ");
+    assert_eq!(runs[1].text, "web ");
+    assert_eq!(runs[2].text, "access");
+}
+
+#[test]
 fn text_box_parser_ignores_timing_subtree_content() {
     let dir = tempdir().expect("tempdir should exist");
     let path = dir.path().join("ignore-timing.pptx");
