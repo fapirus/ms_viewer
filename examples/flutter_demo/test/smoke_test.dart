@@ -77,6 +77,28 @@ void main() {
     expect(find.text('picked.pptx'), findsWidgets);
   });
 
+  testWidgets('demo app opens picked xlsx through path source', (tester) async {
+    final fakePlatform = _FakeDemoPlatform();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: DemoHomePage(
+          viewerPlatform: fakePlatform,
+          assetBundle: _FakeAssetBundle(),
+          pickFiles: () async => const ['/tmp/picked.xlsx'],
+          supportsDesktopDropOverride: true,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Open File'));
+    await tester.pumpAndSettle();
+
+    expect(fakePlatform.openCallCount, 2);
+    expect(fakePlatform.openSourceKinds.last, platform.DocumentSourceKind.path);
+    expect(find.text('picked.xlsx'), findsWidgets);
+  });
+
   testWidgets('demo app opens dropped docx through path source', (tester) async {
     final fakePlatform = _FakeDemoPlatform();
     await tester.pumpWidget(
@@ -121,6 +143,28 @@ void main() {
     expect(find.text('dropped.pptx'), findsWidgets);
   });
 
+  testWidgets('demo app opens dropped xlsx through path source', (tester) async {
+    final fakePlatform = _FakeDemoPlatform();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: DemoHomePage(
+          viewerPlatform: fakePlatform,
+          assetBundle: _FakeAssetBundle(),
+          pickFiles: () async => const [],
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final state = tester.state(find.byType(DemoHomePage)) as dynamic;
+    await state.handleDroppedPaths(const ['/tmp/dropped.xlsx']);
+    await tester.pumpAndSettle();
+
+    expect(fakePlatform.openCallCount, 2);
+    expect(fakePlatform.openSourceKinds.last, platform.DocumentSourceKind.path);
+    expect(find.text('dropped.xlsx'), findsWidgets);
+  });
+
   testWidgets('demo app opens fixture pptx through bytes source', (tester) async {
     final fakePlatform = _FakeDemoPlatform();
     await tester.pumpWidget(
@@ -142,6 +186,32 @@ void main() {
     expect(fakePlatform.openCallCount, 2);
     expect(fakePlatform.openSourceKinds.last, platform.DocumentSourceKind.bytesBase64);
     expect(find.text('pptx_text_shapes.pptx'), findsWidgets);
+  });
+
+  testWidgets('demo app opens fixture xlsx through bytes source', (tester) async {
+    final fakePlatform = _FakeDemoPlatform();
+    await tester.pumpWidget(
+      DemoApp(
+        platform: fakePlatform,
+        assetBundle: _FakeAssetBundle(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.scrollUntilVisible(
+      find.text('xlsx_basic_grid.xlsx'),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.tap(find.text('xlsx_basic_grid.xlsx'));
+    await tester.pumpAndSettle();
+
+    expect(fakePlatform.openCallCount, 2);
+    expect(
+      fakePlatform.openSourceKinds.last,
+      platform.DocumentSourceKind.bytesBase64,
+    );
+    expect(find.text('xlsx_basic_grid.xlsx'), findsWidgets);
   });
 }
 

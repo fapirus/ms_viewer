@@ -858,9 +858,9 @@
     - sheet text selection integration widget test
 
 ### Demo app
-- [ ] demo fixture 목록에서 실제 XLSX 열기 연결
-- [ ] demo file picker XLSX 실연동
-- [ ] demo desktop drop XLSX 실연동
+- [x] demo fixture 목록에서 실제 XLSX 열기 연결
+- [x] demo file picker XLSX 실연동
+- [x] demo desktop drop XLSX 실연동
 - [ ] XLSX demo real integration acceptance pass
   - Acceptance checks:
     - fixture xlsx opens through real engine path

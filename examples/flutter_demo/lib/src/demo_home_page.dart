@@ -113,11 +113,16 @@ class _DemoHomePageState extends State<DemoHomePage> {
         'External DOCX file. Real engine open is wired in the desktop demo.',
       (DemoDocumentOrigin.picked, 'pptx') =>
         'External PPTX file. Real engine open is wired in the desktop demo.',
+      (DemoDocumentOrigin.picked, 'xlsx') =>
+        'External XLSX file. Real engine open is wired in the desktop demo.',
       (DemoDocumentOrigin.dropped, 'docx') =>
         'External DOCX file. Real engine open is wired in the desktop demo.',
       (DemoDocumentOrigin.dropped, 'pptx') =>
         'External PPTX file. Real engine open is wired in the desktop demo.',
-      (_, 'xlsx') => 'XLSX parser and renderer are not implemented yet.',
+      (DemoDocumentOrigin.dropped, 'xlsx') =>
+        'External XLSX file. Real engine open is wired in the desktop demo.',
+      (_, 'xlsx') =>
+        'External XLSX file. Real engine open will be wired in the desktop demo.',
       (_, 'pptx') =>
         'External PPTX file. Real engine open will be wired in the desktop demo.',
       (_, 'docx') =>
@@ -175,11 +180,15 @@ class _DemoHomePageState extends State<DemoHomePage> {
   }
 
   bool _usesEngineForFixture(DocumentKind kind) {
-    return kind == DocumentKind.docx || kind == DocumentKind.pptx;
+    return kind == DocumentKind.docx ||
+        kind == DocumentKind.pptx ||
+        kind == DocumentKind.xlsx;
   }
 
   bool _usesEngineForPickedImport(DocumentKind kind) {
-    return kind == DocumentKind.docx || kind == DocumentKind.pptx;
+    return kind == DocumentKind.docx ||
+        kind == DocumentKind.pptx ||
+        kind == DocumentKind.xlsx;
   }
 
   bool _usesEngineForImportedPath(DemoDocumentEntry entry) {
@@ -188,7 +197,9 @@ class _DemoHomePageState extends State<DemoHomePage> {
     }
 
     if (entry.origin == DemoDocumentOrigin.dropped) {
-      return entry.kind == DocumentKind.docx || entry.kind == DocumentKind.pptx;
+      return entry.kind == DocumentKind.docx ||
+          entry.kind == DocumentKind.pptx ||
+          entry.kind == DocumentKind.xlsx;
     }
 
     return false;
@@ -255,7 +266,7 @@ class _DemoHomePageState extends State<DemoHomePage> {
             Text('Fixtures', style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 6),
             Text(
-              'DOCX/PPTX review fixtures are bundled here for mid-project checks.',
+              'DOCX/PPTX/XLSX review fixtures are bundled here for mid-project checks.',
               style: Theme.of(context).textTheme.bodySmall,
             ),
           ],
