@@ -848,7 +848,7 @@
     - sheet selection metadata fetch smoke test
 
 ### Flutter bridge
-- [ ] Flutter platform bridge에서 XLSX sheet window fetch 연결
+- [x] Flutter platform bridge에서 XLSX sheet window fetch 연결
   - Tests:
     - sheet window fetch controller test
     - sheet fetch error state widget test

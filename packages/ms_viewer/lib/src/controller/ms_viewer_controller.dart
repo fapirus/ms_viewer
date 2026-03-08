@@ -16,6 +16,14 @@ enum ViewerShellStatus { idle, loading, ready, passwordPrompt, error }
 enum ViewerPageStatus { idle, loading, ready, error }
 
 class MsViewerController extends ChangeNotifier {
+  static const viewer_platform.SheetWindow _defaultSheetWindow =
+      viewer_platform.SheetWindow(
+        startRow: 1,
+        endRow: 20,
+        startColumn: 1,
+        endColumn: 8,
+      );
+
   MsViewerController({
     this.document,
     viewer_platform.MsViewerPlatform? platform,
@@ -138,11 +146,12 @@ class MsViewerController extends ChangeNotifier {
     notifyListeners();
 
     final result = await _platform.getPageRenderModel(
-      viewer_platform.GetPageRenderModelRequest(
+      _buildPageRequest(
         source: lastRequest.source,
         documentId: descriptor.id,
         pageIndex: pageIndex,
         options: lastRequest.options,
+        kind: descriptor.kind,
       ),
     );
 
@@ -184,7 +193,24 @@ class MsViewerController extends ChangeNotifier {
 
   bool _supportsImmediatePageFetch(viewer_platform.DocumentKind kind) {
     return kind == viewer_platform.DocumentKind.docx ||
-        kind == viewer_platform.DocumentKind.pptx;
+        kind == viewer_platform.DocumentKind.pptx ||
+        kind == viewer_platform.DocumentKind.xlsx;
+  }
+
+  viewer_platform.GetPageRenderModelRequest _buildPageRequest({
+    required viewer_platform.OpenDocumentSource source,
+    required String documentId,
+    required int pageIndex,
+    required viewer_platform.OpenOptions options,
+    required DocumentKind kind,
+  }) {
+    return viewer_platform.GetPageRenderModelRequest(
+      source: source,
+      documentId: documentId,
+      pageIndex: pageIndex,
+      sheetWindow: kind == DocumentKind.xlsx ? _defaultSheetWindow : null,
+      options: options,
+    );
   }
 
   Future<void> search(String query) async {

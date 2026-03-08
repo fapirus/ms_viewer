@@ -218,6 +218,56 @@ void main() {
     expect(controller.currentPageIndex, 0);
   });
 
+  test('controller fetches first sheet window after opening xlsx', () async {
+    platform.GetPageRenderModelRequest? capturedPageRequest;
+    final controller = MsViewerController(
+      platform: _FakeMsViewerPlatform(
+        onOpen: (_) async => platform.OpenDocumentOpened(
+          const platform.OpenDocumentSuccess(
+            documentId: 'xlsx_001',
+            kind: platform.DocumentKind.xlsx,
+            title: 'budget.xlsx',
+            pageCount: 2,
+            capabilities: platform.DocumentCapabilities(
+              search: true,
+              textSelection: true,
+              passwordProtected: false,
+            ),
+          ),
+        ),
+        onGetPage: (request) async {
+          capturedPageRequest = request;
+          return platform.GetPageRenderModelSuccess(
+            platform.PageRenderModel.fromJson({
+              'pageIndex': 0,
+              'width': 640.0,
+              'height': 360.0,
+              'nodes': const [],
+              'selectionAnchors': const [],
+            }),
+          );
+        },
+      ),
+    );
+
+    await controller.openDocument(
+      const platform.OpenDocumentRequest(
+        source: platform.OpenDocumentSource.path('/tmp/budget.xlsx'),
+      ),
+    );
+
+    expect(capturedPageRequest, isNotNull);
+    expect(capturedPageRequest!.documentId, 'xlsx_001');
+    expect(capturedPageRequest!.pageIndex, 0);
+    expect(capturedPageRequest!.sheetWindow, isNotNull);
+    expect(capturedPageRequest!.sheetWindow!.startRow, 1);
+    expect(capturedPageRequest!.sheetWindow!.endRow, 20);
+    expect(capturedPageRequest!.sheetWindow!.startColumn, 1);
+    expect(capturedPageRequest!.sheetWindow!.endColumn, 8);
+    expect(controller.pageStatus, ViewerPageStatus.ready);
+    expect(controller.currentPageIndex, 0);
+  });
+
   test('controller navigates to next page when requested', () async {
     final requests = <platform.GetPageRenderModelRequest>[];
     final controller = MsViewerController(
