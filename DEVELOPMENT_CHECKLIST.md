@@ -602,12 +602,15 @@
   - Done:
     - dropped `.pptx` import가 실제 engine path open을 타도록 분기 확장
     - dropped `.pptx` smoke test 추가
-- [ ] PPTX demo real integration acceptance pass
+- [x] PPTX demo real integration acceptance pass
   - Acceptance checks:
     - fixture pptx opens through real engine path
     - picked pptx opens through real engine path
     - dropped pptx opens through real engine path
     - first slide render matches real model
+  - Done:
+    - `fixday` 및 review fixture 기준으로 desktop demo의 fixture/picked/dropped 경로를 수동 확인
+    - first slide render가 실제 engine render model과 일치하는 수준으로 확인됨
 
 ## Phase 2.6: PPTX visual parity pass
 ### Visual regression triage
@@ -642,10 +645,10 @@
     - full-slide background container는 곡률을 제거하고, 실제 콘텐츠용 `roundRect`만 곡률을 유지한다
   - Tests:
     - full-slide background round-rect regression fixture
-- [ ] PPTX repaint flicker 완화
+- [x] PPTX repaint flicker triage 및 hardening 이관
   - Notes:
     - `gaplessPlayback` 1차 적용
-    - 수동 점검에서 잔존 여부 확인
+    - 수동 점검에서 잔존 가능성이 있으나 문서 열람을 막는 수준은 아니므로 `Phase 4: Hardening`으로 이관
 
 ### Geometry and typography
 - [x] PPTX 텍스트 박스 정렬과 줄바꿈 보정
@@ -689,13 +692,16 @@
     - gradient title/default fill regression fixture
 
 ### Acceptance
-- [ ] PPTX visual parity acceptance pass
+- [x] PPTX visual parity acceptance pass
   - Acceptance checks:
     - 주요 issue slide가 빈 화면 없이 렌더된다
     - 텍스트 박스 정렬과 줄바꿈이 허용 범위 내에 있다
     - image/shape 배치가 허용 범위 내에 있다
     - table fill/text, underline, overlay composition이 주요 issue slide에서 재현된다
     - 최소 재현 fixture 회귀 테스트가 추가되었다
+  - Done:
+    - `issue/powerpoint/fixday` 1~6 페이지 기준으로 구조 이슈가 해소됨
+    - 남은 미세 오차는 font metrics, effect, repaint flicker 성격으로 `Phase 4: Hardening`에 이관
 
 ## Phase 3: XLSX MVP
 ### MVP scope note
@@ -837,6 +843,13 @@
     - issue screenshot review set
     - mixed Korean/Latin glyph width regression fixture
     - representative real-world review documents
+- [ ] PPTX repaint flicker 최종 완화
+  - Notes:
+    - `gaplessPlayback` 1차 적용 후에도 데모 앱 상호작용 시 잔존 가능성이 있다
+    - visual parity acceptance는 통과했지만, 최종 품질 경화 단계에서 repaint 경로를 다시 점검한다
+  - Tests:
+    - desktop demo interaction smoke
+    - repeated page navigation smoke
 - [ ] PPTX shadow/effect fidelity 보강
   - Notes:
     - slide 5~6의 outer shadow, effectRef 기반 표현은 핵심 배치보다 후순위로 미뤘다
