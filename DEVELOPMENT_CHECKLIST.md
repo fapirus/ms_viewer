@@ -799,7 +799,13 @@
   - Tests:
     - sheet search pages fixture
     - case-insensitive workbook search fixture
-- [ ] text-only selection metadata 구현
+- [x] text-only selection metadata 구현
+  - Done:
+    - 공통 `PageRenderModel.selectionAnchors`를 시트 단위 selection helper로 노출
+    - 텍스트 노드에 대해서만 char-level anchor 생성
+    - 숫자/문자열/cached formula 결과를 모두 text-only selection 대상으로 포함
+  - Tests:
+    - text-only selection anchor fixture
 
 ### XLSX tests and acceptance
 - [ ] Rust fixture tests for sheets, merges, frozen panes, cached formulas

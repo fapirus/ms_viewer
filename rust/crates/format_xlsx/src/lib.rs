@@ -578,6 +578,22 @@ pub fn search_workbook(
     Ok(search_pages(&pages, query))
 }
 
+pub fn build_selection_sheet_models(
+    archive: &OoxmlArchive,
+    workbook: &XlsxWorkbook,
+    shared_strings: &[String],
+    styles: &XlsxStyleCatalog,
+) -> Result<Vec<PageRenderModel>, ViewerError> {
+    workbook
+        .sheets
+        .iter()
+        .enumerate()
+        .map(|(sheet_index, _)| {
+            build_sheet_render_model(archive, workbook, shared_strings, styles, sheet_index)
+        })
+        .collect()
+}
+
 fn parse_workbook_relationships(
     archive: &OoxmlArchive,
     workbook_part: &str,
