@@ -2,9 +2,11 @@ use std::fs;
 use std::io::Write;
 
 use format_xlsx::build_sheet_render_model;
+use format_xlsx::build_visible_window_render_model;
 use format_xlsx::parse_cell_style_subset;
 use format_xlsx::parse_shared_strings;
 use format_xlsx::parse_xlsx;
+use format_xlsx::XlsxVisibleWindow;
 use tempfile::tempdir;
 use viewer_core::archive::OoxmlArchive;
 use viewer_core::model::RenderNode;
@@ -184,4 +186,129 @@ fn builds_sheet_render_model_from_cells_metrics_and_merges() {
     assert_eq!(header_text.style.color_hex, "#FFFFFF");
     assert!(header_text.style.bold);
     assert!(!render_model.selection_anchors.is_empty());
+}
+
+#[test]
+fn visible_window_render_model_limits_rows_and_columns() {
+    let dir = tempdir().expect("tempdir should exist");
+    let path = dir.path().join("sheet-window.xlsx");
+    create_zip(
+        &path,
+        &[
+            (
+                "_rels/.rels",
+                br#"
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>
+"#,
+            ),
+            (
+                "xl/workbook.xml",
+                br#"
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+          xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets>
+    <sheet name="Sheet1" sheetId="1" r:id="rIdSheet1"/>
+  </sheets>
+</workbook>
+"#,
+            ),
+            (
+                "xl/_rels/workbook.xml.rels",
+                br#"
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdSheet1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+  <Relationship Id="rIdSharedStrings" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings" Target="sharedStrings.xml"/>
+  <Relationship Id="rIdStyles" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+</Relationships>
+"#,
+            ),
+            (
+                "xl/sharedStrings.xml",
+                br#"
+<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <si><t>Header</t></si>
+</sst>
+"#,
+            ),
+            (
+                "xl/styles.xml",
+                br#"
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <fonts count="1"><font><name val="Calibri"/><sz val="11"/></font></fonts>
+  <fills count="2">
+    <fill><patternFill patternType="none"/></fill>
+    <fill><patternFill patternType="gray125"/></fill>
+  </fills>
+  <cellXfs count="1"><xf numFmtId="0" fontId="0" fillId="0"/></cellXfs>
+</styleSheet>
+"#,
+            ),
+            (
+                "xl/worksheets/sheet1.xml",
+                br#"
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <dimension ref="A1:C4"/>
+  <sheetFormatPr defaultRowHeight="15" defaultColWidth="8.43"/>
+  <sheetData>
+    <row r="1">
+      <c r="A1" t="s"><v>0</v></c>
+      <c r="B1"><v>10</v></c>
+      <c r="C1"><v>11</v></c>
+    </row>
+    <row r="2">
+      <c r="A2"><v>20</v></c>
+      <c r="B2"><v>21</v></c>
+      <c r="C2"><v>22</v></c>
+    </row>
+    <row r="3">
+      <c r="A3"><v>30</v></c>
+      <c r="B3"><v>31</v></c>
+      <c r="C3"><v>32</v></c>
+    </row>
+    <row r="4">
+      <c r="A4"><v>40</v></c>
+      <c r="B4"><v>41</v></c>
+      <c r="C4"><v>42</v></c>
+    </row>
+  </sheetData>
+</worksheet>
+"#,
+            ),
+        ],
+    );
+
+    let archive = OoxmlArchive::open_path(&path).expect("archive should open");
+    let workbook = parse_xlsx(&archive).expect("xlsx should parse");
+    let shared_strings = parse_shared_strings(&archive, &workbook).expect("shared strings");
+    let styles = parse_cell_style_subset(&archive, &workbook).expect("styles");
+    let render_model = build_visible_window_render_model(
+        &archive,
+        &workbook,
+        &shared_strings,
+        &styles,
+        0,
+        &XlsxVisibleWindow {
+            start_row: 2,
+            start_column: 2,
+            row_count: 2,
+            column_count: 2,
+        },
+    )
+    .expect("window render model");
+
+    let text_values: Vec<_> = render_model
+        .nodes
+        .iter()
+        .filter_map(|node| match node {
+            RenderNode::Text(node) => Some(node.text.as_str()),
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(text_values, vec!["21", "22", "31", "32"]);
+    assert!(render_model.width > 0.0);
+    assert!(render_model.height > 0.0);
+    assert!(render_model.selection_anchors.len() >= 8);
 }

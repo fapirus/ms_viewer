@@ -784,7 +784,13 @@
     - text-only selection anchor를 셀 텍스트 기준으로 생성
   - Tests:
     - merged header + cached formula + style render model fixture
-- [ ] visible window cell virtualization 초안 구현
+- [x] visible window cell virtualization 초안 구현
+  - Done:
+    - row/column window 기준으로 worksheet grid를 부분 렌더하는 초안 추가
+    - visible window 좌표계를 local origin으로 재정렬
+    - window 범위를 벗어난 셀은 제외하고 향후 frozen/merged edge case는 보정 phase로 이관
+  - Tests:
+    - 2x2 visible window slice fixture
 - [ ] cell text search index 구현
 - [ ] text-only selection metadata 구현
 

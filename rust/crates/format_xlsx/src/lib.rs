@@ -146,6 +146,14 @@ pub enum XlsxCellValue {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct XlsxVisibleWindow {
+    pub start_row: u32,
+    pub start_column: u32,
+    pub row_count: u32,
+    pub column_count: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct XlsxNumberFormat {
     pub id: u32,
     pub code: String,
@@ -434,7 +442,82 @@ pub fn build_sheet_render_model(
         .find(|worksheet| worksheet.part_name == sheet.part_name)
         .ok_or(ViewerError::InvalidDocument)?;
 
-    render_sheet_model(sheet_index as u32, sheet, worksheet_cells, metrics, merges, styles)
+    let full_bounds = sheet
+        .dimension_ref
+        .as_deref()
+        .map(parse_dimension_reference)
+        .transpose()?
+        .unwrap_or_else(|| infer_sheet_bounds(worksheet_cells, merges));
+
+    render_sheet_model(
+        sheet_index as u32,
+        worksheet_cells,
+        metrics,
+        merges,
+        styles,
+        full_bounds,
+    )
+}
+
+pub fn build_visible_window_render_model(
+    archive: &OoxmlArchive,
+    workbook: &XlsxWorkbook,
+    shared_strings: &[String],
+    styles: &XlsxStyleCatalog,
+    sheet_index: usize,
+    window: &XlsxVisibleWindow,
+) -> Result<PageRenderModel, ViewerError> {
+    if window.row_count == 0 || window.column_count == 0 {
+        return Err(ViewerError::InvalidDocument);
+    }
+
+    let sheet = workbook
+        .sheets
+        .get(sheet_index)
+        .ok_or(ViewerError::InvalidDocument)?;
+    let cells_by_sheet = parse_worksheet_cells(archive, workbook, shared_strings)?;
+    let metrics_by_sheet = parse_row_column_metrics(archive, workbook)?;
+    let merges_by_sheet = parse_merged_cells(archive, workbook)?;
+
+    let worksheet_cells = cells_by_sheet
+        .iter()
+        .find(|worksheet| worksheet.part_name == sheet.part_name)
+        .ok_or(ViewerError::InvalidDocument)?;
+    let metrics = metrics_by_sheet
+        .iter()
+        .find(|worksheet| worksheet.part_name == sheet.part_name)
+        .ok_or(ViewerError::InvalidDocument)?;
+    let merges = merges_by_sheet
+        .iter()
+        .find(|worksheet| worksheet.part_name == sheet.part_name)
+        .ok_or(ViewerError::InvalidDocument)?;
+    let (sheet_start_row, sheet_start_column, sheet_end_row, sheet_end_column) = sheet
+        .dimension_ref
+        .as_deref()
+        .map(parse_dimension_reference)
+        .transpose()?
+        .unwrap_or_else(|| infer_sheet_bounds(worksheet_cells, merges));
+    let render_start_row = window.start_row.max(sheet_start_row);
+    let render_start_column = window.start_column.max(sheet_start_column);
+    let render_end_row = (window.start_row + window.row_count - 1).min(sheet_end_row);
+    let render_end_column = (window.start_column + window.column_count - 1).min(sheet_end_column);
+    if render_start_row > render_end_row || render_start_column > render_end_column {
+        return Err(ViewerError::InvalidDocument);
+    }
+
+    render_sheet_model(
+        sheet_index as u32,
+        worksheet_cells,
+        metrics,
+        merges,
+        styles,
+        (
+            render_start_row,
+            render_start_column,
+            render_end_row,
+            render_end_column,
+        ),
+    )
 }
 
 fn parse_workbook_relationships(
@@ -684,16 +767,13 @@ fn parse_cells_for_worksheet(
 
 fn render_sheet_model(
     sheet_index: u32,
-    sheet: &XlsxWorksheet,
     worksheet_cells: &WorksheetCells,
     metrics: &WorksheetGridMetrics,
     merges: &WorksheetMergedCells,
     styles: &XlsxStyleCatalog,
+    render_bounds: (u32, u32, u32, u32),
 ) -> Result<PageRenderModel, ViewerError> {
-    let (start_row, start_column, end_row, end_column) =
-        sheet.dimension_ref.as_deref().map(parse_dimension_reference).transpose()?.unwrap_or_else(
-            || infer_sheet_bounds(worksheet_cells, merges),
-        );
+    let (start_row, start_column, end_row, end_column) = render_bounds;
 
     let column_widths: Vec<f32> = (start_column..=end_column)
         .map(|column| resolve_column_width(metrics, column))
