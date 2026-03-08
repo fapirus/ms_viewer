@@ -764,8 +764,16 @@
     - frozen rows and columns fixture
     - non-frozen split pane fixture
     - invalid pane state fixture
-- [ ] formula cell cached value parser 구현
-  - Note: no formula engine in MVP
+- [x] formula cell cached value parser 구현
+  - Done:
+    - worksheet `sheetData/row/c` subset 파싱
+    - formula 문자열과 cached value를 분리해서 보존
+    - shared string, inline string, boolean, numeric, error 최소 타입 지원
+    - formula engine은 여전히 미구현이며 cached value만 사용
+  - Tests:
+    - formula cells with cached values fixture
+    - formula without cached value fixture
+    - invalid shared string index fixture
 
 ### XLSX layout and interaction
 - [ ] sheet grid render model 구현

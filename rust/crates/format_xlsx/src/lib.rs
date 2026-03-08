@@ -118,6 +118,30 @@ pub struct XlsxStyleCatalog {
     pub cell_formats: Vec<XlsxCellFormat>,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct WorksheetCells {
+    pub part_name: String,
+    pub cells: Vec<XlsxCell>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct XlsxCell {
+    pub reference: String,
+    pub row: u32,
+    pub column: u32,
+    pub style_index: Option<u32>,
+    pub formula: Option<String>,
+    pub value: Option<XlsxCellValue>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum XlsxCellValue {
+    Text(String),
+    Number(String),
+    Boolean(bool),
+    Error(String),
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct XlsxNumberFormat {
     pub id: u32,
@@ -367,6 +391,18 @@ pub fn parse_frozen_panes(
         .collect()
 }
 
+pub fn parse_worksheet_cells(
+    archive: &OoxmlArchive,
+    workbook: &XlsxWorkbook,
+    shared_strings: &[String],
+) -> Result<Vec<WorksheetCells>, ViewerError> {
+    workbook
+        .sheets
+        .iter()
+        .map(|sheet| parse_cells_for_worksheet(archive, &sheet.part_name, shared_strings))
+        .collect()
+}
+
 fn parse_workbook_relationships(
     archive: &OoxmlArchive,
     workbook_part: &str,
@@ -573,6 +609,42 @@ fn parse_worksheet_frozen_panes(
     Ok(WorksheetFrozenPanes {
         part_name: worksheet_part.to_string(),
         pane,
+    })
+}
+
+fn parse_cells_for_worksheet(
+    archive: &OoxmlArchive,
+    worksheet_part: &str,
+    shared_strings: &[String],
+) -> Result<WorksheetCells, ViewerError> {
+    let worksheet_xml = archive.read_part(worksheet_part)?;
+    let worksheet_text =
+        String::from_utf8(worksheet_xml).map_err(|_| ViewerError::InvalidDocument)?;
+    let worksheet_root = parse_document(&worksheet_text)?;
+    if worksheet_root.local_name() != "worksheet" {
+        return Err(ViewerError::InvalidDocument);
+    }
+
+    let mut cells = Vec::new();
+    if let Some(sheet_data) = worksheet_root.child("sheetData") {
+        for row in &sheet_data.children {
+            if row.local_name() != "row" {
+                continue;
+            }
+
+            for cell in &row.children {
+                if cell.local_name() != "c" {
+                    continue;
+                }
+
+                cells.push(parse_cell(cell, shared_strings)?);
+            }
+        }
+    }
+
+    Ok(WorksheetCells {
+        part_name: worksheet_part.to_string(),
+        cells,
     })
 }
 
@@ -800,6 +872,77 @@ fn parse_active_pane(value: &str) -> Result<XlsxActivePane, ViewerError> {
         "topRight" => Ok(XlsxActivePane::TopRight),
         "bottomLeft" => Ok(XlsxActivePane::BottomLeft),
         "bottomRight" => Ok(XlsxActivePane::BottomRight),
+        _ => Err(ViewerError::InvalidDocument),
+    }
+}
+
+fn parse_cell(
+    cell: &viewer_core::xml::XmlElement,
+    shared_strings: &[String],
+) -> Result<XlsxCell, ViewerError> {
+    let reference = cell.required_attribute("r")?.to_string();
+    let (row, column) = parse_cell_reference(&reference)?;
+    let style_index = cell
+        .attribute("s")
+        .map(|value| value.parse::<u32>().map_err(|_| ViewerError::InvalidDocument))
+        .transpose()?;
+    let formula = cell.child("f").map(|formula| formula.text.clone());
+    let value = parse_cell_value(cell, shared_strings)?;
+
+    Ok(XlsxCell {
+        reference,
+        row,
+        column,
+        style_index,
+        formula,
+        value,
+    })
+}
+
+fn parse_cell_value(
+    cell: &viewer_core::xml::XmlElement,
+    shared_strings: &[String],
+) -> Result<Option<XlsxCellValue>, ViewerError> {
+    let cell_type = cell.attribute("t");
+    match cell_type {
+        Some("s") => {
+            let shared_index = cell
+                .child("v")
+                .map(|value| value.text.parse::<usize>().map_err(|_| ViewerError::InvalidDocument))
+                .transpose()?
+                .ok_or(ViewerError::InvalidDocument)?;
+            let value = shared_strings
+                .get(shared_index)
+                .cloned()
+                .ok_or(ViewerError::InvalidDocument)?;
+            Ok(Some(XlsxCellValue::Text(value)))
+        }
+        Some("inlineStr") => Ok(cell
+            .child("is")
+            .map(parse_shared_string_item)
+            .map(XlsxCellValue::Text)),
+        Some("str") => Ok(cell
+            .child("v")
+            .map(|value| XlsxCellValue::Text(value.text.clone()))),
+        Some("b") => Ok(cell
+            .child("v")
+            .map(|value| parse_boolean_cell_value(&value.text))
+            .transpose()?
+            .map(XlsxCellValue::Boolean)),
+        Some("e") => Ok(cell
+            .child("v")
+            .map(|value| XlsxCellValue::Error(value.text.clone()))),
+        Some("n") | None => Ok(cell
+            .child("v")
+            .map(|value| XlsxCellValue::Number(value.text.clone()))),
+        _ => Err(ViewerError::InvalidDocument),
+    }
+}
+
+fn parse_boolean_cell_value(value: &str) -> Result<bool, ViewerError> {
+    match value {
+        "1" | "true" => Ok(true),
+        "0" | "false" => Ok(false),
         _ => Err(ViewerError::InvalidDocument),
     }
 }
