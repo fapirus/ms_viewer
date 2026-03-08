@@ -312,3 +312,199 @@ fn visible_window_render_model_limits_rows_and_columns() {
     assert!(render_model.height > 0.0);
     assert!(render_model.selection_anchors.len() >= 8);
 }
+
+#[test]
+fn hidden_rows_and_columns_do_not_consume_sheet_space() {
+    let dir = tempdir().expect("tempdir should exist");
+    let path = dir.path().join("sheet-hidden-metrics.xlsx");
+    create_zip(
+        &path,
+        &[
+            (
+                "_rels/.rels",
+                br#"
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>
+"#,
+            ),
+            (
+                "xl/workbook.xml",
+                br#"
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+          xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets>
+    <sheet name="Sheet1" sheetId="1" r:id="rIdSheet1"/>
+  </sheets>
+</workbook>
+"#,
+            ),
+            (
+                "xl/_rels/workbook.xml.rels",
+                br#"
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdSheet1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+</Relationships>
+"#,
+            ),
+            (
+                "xl/worksheets/sheet1.xml",
+                br#"
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <dimension ref="A1:B2"/>
+  <sheetFormatPr defaultRowHeight="15" defaultColWidth="8.43"/>
+  <cols>
+    <col min="1" max="1" width="12" customWidth="1"/>
+    <col min="2" max="2" width="20" hidden="1" customWidth="1"/>
+  </cols>
+  <sheetData>
+    <row r="1" ht="12" customHeight="1">
+      <c r="A1" t="inlineStr"><is><t>visible</t></is></c>
+      <c r="B1" t="inlineStr"><is><t>hidden column</t></is></c>
+    </row>
+    <row r="2" hidden="1">
+      <c r="A2" t="inlineStr"><is><t>hidden row</t></is></c>
+    </row>
+  </sheetData>
+</worksheet>
+"#,
+            ),
+        ],
+    );
+
+    let archive = OoxmlArchive::open_path(&path).expect("archive should open");
+    let workbook = parse_xlsx(&archive).expect("xlsx should parse");
+    let styles = parse_cell_style_subset(&archive, &workbook).expect("styles");
+    let render_model =
+        build_sheet_render_model(&archive, &workbook, &[], &styles, 0).expect("render model");
+
+    let text_nodes: Vec<_> = render_model
+        .nodes
+        .iter()
+        .filter_map(|node| match node {
+            RenderNode::Text(text) => Some(text),
+            _ => None,
+        })
+        .collect();
+    let box_nodes: Vec<_> = render_model
+        .nodes
+        .iter()
+        .filter_map(|node| match node {
+            RenderNode::Box(node) => Some(node),
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(box_nodes.len(), 1);
+    assert_eq!(text_nodes.len(), 1);
+    assert_eq!(text_nodes[0].text, "visible");
+    assert!((render_model.width - excel_column_width_to_pixels(12.0)).abs() < 0.1);
+    assert!((render_model.height - (12.0 * (96.0 / 72.0))).abs() < 0.1);
+}
+
+#[test]
+fn merged_cells_use_spanned_column_widths_and_row_heights() {
+    let dir = tempdir().expect("tempdir should exist");
+    let path = dir.path().join("sheet-merged-span.xlsx");
+    create_zip(
+        &path,
+        &[
+            (
+                "_rels/.rels",
+                br#"
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>
+"#,
+            ),
+            (
+                "xl/workbook.xml",
+                br#"
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+          xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets>
+    <sheet name="Sheet1" sheetId="1" r:id="rIdSheet1"/>
+  </sheets>
+</workbook>
+"#,
+            ),
+            (
+                "xl/_rels/workbook.xml.rels",
+                br#"
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdSheet1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+</Relationships>
+"#,
+            ),
+            (
+                "xl/worksheets/sheet1.xml",
+                br#"
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <dimension ref="A1:B2"/>
+  <sheetFormatPr defaultRowHeight="15" defaultColWidth="8.43"/>
+  <cols>
+    <col min="1" max="1" width="10" customWidth="1"/>
+    <col min="2" max="2" width="15" customWidth="1"/>
+  </cols>
+  <sheetData>
+    <row r="1" ht="18" customHeight="1">
+      <c r="A1" t="inlineStr"><is><t>Merged title</t></is></c>
+      <c r="B1"/>
+    </row>
+    <row r="2" ht="21" customHeight="1">
+      <c r="A2"/>
+      <c r="B2"/>
+    </row>
+  </sheetData>
+  <mergeCells count="1">
+    <mergeCell ref="A1:B2"/>
+  </mergeCells>
+</worksheet>
+"#,
+            ),
+        ],
+    );
+
+    let archive = OoxmlArchive::open_path(&path).expect("archive should open");
+    let workbook = parse_xlsx(&archive).expect("xlsx should parse");
+    let styles = parse_cell_style_subset(&archive, &workbook).expect("styles");
+    let render_model =
+        build_sheet_render_model(&archive, &workbook, &[], &styles, 0).expect("render model");
+
+    let merged_box = render_model
+        .nodes
+        .iter()
+        .find_map(|node| match node {
+            RenderNode::Box(node) => Some(node),
+            _ => None,
+        })
+        .expect("merged cell box should exist");
+    let merged_text = render_model
+        .nodes
+        .iter()
+        .find_map(|node| match node {
+            RenderNode::Text(node) => Some(node),
+            _ => None,
+        })
+        .expect("merged cell text should exist");
+
+    let expected_width = excel_column_width_to_pixels(10.0) + excel_column_width_to_pixels(15.0);
+    let expected_height = (18.0 * (96.0 / 72.0)) + (21.0 * (96.0 / 72.0));
+
+    assert!((merged_box.bounds.width - expected_width).abs() < 0.1);
+    assert!((merged_box.bounds.height - expected_height).abs() < 0.1);
+    assert!(merged_text.bounds.x >= merged_box.bounds.x);
+    assert!(merged_text.bounds.y >= merged_box.bounds.y);
+    assert!(merged_text.bounds.x + merged_text.bounds.width <= merged_box.bounds.x + merged_box.bounds.width);
+    assert!(
+        merged_text.bounds.y + merged_text.bounds.height
+            <= merged_box.bounds.y + merged_box.bounds.height
+    );
+}
+
+fn excel_column_width_to_pixels(width_units: f32) -> f32 {
+    let max_digit_width = 7.0;
+    let padding = 5.0;
+    let truncation = (128.0_f32 / max_digit_width).floor();
+    ((((256.0 * width_units) + truncation) / 256.0).floor() * max_digit_width + padding).max(0.0)
+}

@@ -893,7 +893,7 @@
   - Tests:
     - pinned header widget test
     - header/body scroll sync test
-- [ ] XLSX column width/row height/merged cell 배치 보정
+- [x] XLSX column width/row height/merged cell 배치 보정
   - Tests:
     - merged cell layout regression fixture
     - row height regression fixture

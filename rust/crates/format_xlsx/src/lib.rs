@@ -863,8 +863,16 @@ fn render_sheet_model(
     let mut selection_offset = 0u32;
 
     for row in start_row..=end_row {
+        let row_height = row_heights[(row - start_row) as usize];
+        if row_height <= 0.0 {
+            continue;
+        }
         let cell_y = sum_lengths(&row_heights, start_row, row);
         for column in start_column..=end_column {
+            let column_width = column_widths[(column - start_column) as usize];
+            if column_width <= 0.0 {
+                continue;
+            }
             if merges
                 .ranges
                 .iter()
@@ -1293,25 +1301,40 @@ fn infer_sheet_bounds(
 }
 
 fn resolve_column_width(metrics: &WorksheetGridMetrics, column: u32) -> f32 {
-    let width_units = metrics
+    let metric = metrics
         .columns
         .iter()
-        .find(|metric| column >= metric.min && column <= metric.max)
+        .find(|metric| column >= metric.min && column <= metric.max);
+    if metric.map(|metric| metric.hidden).unwrap_or(false) {
+        return 0.0;
+    }
+
+    let width_units = metric
         .and_then(|metric| metric.width)
         .or(metrics.default_column_width)
         .unwrap_or(8.43);
-    (width_units * 7.0).max(24.0)
+    if width_units <= 0.0 {
+        return 0.0;
+    }
+
+    excel_column_width_to_pixels(width_units)
 }
 
 fn resolve_row_height(metrics: &WorksheetGridMetrics, row: u32) -> f32 {
-    let points = metrics
-        .rows
-        .iter()
-        .find(|metric| metric.index == row)
+    let metric = metrics.rows.iter().find(|metric| metric.index == row);
+    if metric.map(|metric| metric.hidden).unwrap_or(false) {
+        return 0.0;
+    }
+
+    let points = metric
         .and_then(|metric| metric.height_points)
         .or(metrics.default_row_height_points)
         .unwrap_or(15.0);
-    (points * (96.0 / 72.0)).max(20.0)
+    if points <= 0.0 {
+        return 0.0;
+    }
+
+    points * (96.0 / 72.0)
 }
 
 fn sum_lengths(lengths: &[f32], start_index: u32, current_index: u32) -> f32 {
@@ -1436,6 +1459,13 @@ fn estimate_text_width(text: &str, font_size: f32) -> f32 {
         };
         accumulator + (font_size * width_factor)
     })
+}
+
+fn excel_column_width_to_pixels(width_units: f32) -> f32 {
+    let max_digit_width = 7.0;
+    let padding = 5.0;
+    let truncation = (128.0_f32 / max_digit_width).floor();
+    ((((256.0 * width_units) + truncation) / 256.0).floor() * max_digit_width + padding).max(0.0)
 }
 
 fn build_text_selection_anchors(
