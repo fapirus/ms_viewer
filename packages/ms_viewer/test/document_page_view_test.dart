@@ -226,6 +226,93 @@ void main() {
     expect(tester.getSize(find.byType(Image)), const Size(50, 37.5));
   });
 
+  testWidgets('renders xlsx grid page with dense cell boxes and text nodes', (
+    tester,
+  ) async {
+    final page = PageRenderModel.fromJson({
+      'pageIndex': 0,
+      'width': 280.0,
+      'height': 160.0,
+      'nodes': [
+        {
+          'type': 'box',
+          'bounds': {'x': 0.0, 'y': 0.0, 'width': 140.0, 'height': 40.0},
+          'fillColorHex': '#1F4E78',
+          'strokeColorHex': '#D0D7DE',
+          'strokeWidth': 1.0,
+        },
+        {
+          'type': 'box',
+          'bounds': {'x': 140.0, 'y': 0.0, 'width': 140.0, 'height': 40.0},
+          'fillColorHex': '#1F4E78',
+          'strokeColorHex': '#D0D7DE',
+          'strokeWidth': 1.0,
+        },
+        {
+          'type': 'text',
+          'text': 'Quarterly Summary',
+          'bounds': {'x': 20.0, 'y': 10.0, 'width': 180.0, 'height': 18.0},
+          'style': {
+            'fontFamily': 'Calibri',
+            'fontSize': 12.0,
+            'bold': true,
+            'italic': false,
+            'colorHex': '#FFFFFF',
+          },
+          'range': {'start': 0, 'end': 17},
+        },
+        {
+          'type': 'box',
+          'bounds': {'x': 0.0, 'y': 40.0, 'width': 140.0, 'height': 40.0},
+          'fillColorHex': null,
+          'strokeColorHex': '#D0D7DE',
+          'strokeWidth': 1.0,
+        },
+        {
+          'type': 'text',
+          'text': '420',
+          'bounds': {'x': 8.0, 'y': 52.0, 'width': 30.0, 'height': 16.0},
+          'style': {
+            'fontFamily': 'Calibri',
+            'fontSize': 11.0,
+            'bold': false,
+            'italic': false,
+            'colorHex': '#000000',
+          },
+          'range': {'start': 17, 'end': 20},
+        },
+      ],
+      'selectionAnchors': const [
+        {'nodeIndex': 2, 'charIndex': 0, 'x': 20.0, 'y': 10.0},
+        {'nodeIndex': 2, 'charIndex': 17, 'x': 200.0, 'y': 10.0},
+        {'nodeIndex': 4, 'charIndex': 0, 'x': 8.0, 'y': 52.0},
+        {'nodeIndex': 4, 'charIndex': 3, 'x': 30.0, 'y': 52.0},
+      ],
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: SizedBox(
+              width: 280,
+              height: 160,
+              child: DocumentPageView(
+                page: page,
+                highlights: const [Rect.fromLTWH(8, 52, 24, 16)],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byType(DocumentPageView), findsOneWidget);
+    expect(find.byType(CustomPaint), findsWidgets);
+    expect(find.byType(SelectionHighlightOverlay), findsOneWidget);
+  });
+
   testWidgets('preserves render node order inside page stack', (tester) async {
     final page = PageRenderModel.fromJson({
       'pageIndex': 0,

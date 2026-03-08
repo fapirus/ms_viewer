@@ -709,30 +709,127 @@
 - 공통 grid/render/search 계약 변경이 필요해지면 즉시 작업을 멈추고 `develop` 기준 공통 통합 작업으로 전환한다.
 
 ### XLSX parse layer
-- [ ] workbook and worksheet parser 구현
-- [ ] shared strings parser 구현
-- [ ] row/column metrics parser 구현
-- [ ] cell style subset parser 구현
-- [ ] merged cells parser 구현
-- [ ] frozen panes parser 구현
-- [ ] formula cell cached value parser 구현
-  - Note: no formula engine in MVP
+- [x] workbook and worksheet parser 구현
+  - Done:
+    - package root에서 `xl/workbook.xml` 진입점 탐색
+    - workbook sheet 순서, `activeTab`, `date1904`, sheet visibility 파싱
+    - `workbook.xml.rels`를 통해 worksheet part target 해석
+    - 각 worksheet root와 `dimension` 존재 여부 검증
+  - Tests:
+    - workbook order and visibility fixture
+    - missing worksheet relationship fixture
+    - non-worksheet relationship fixture
+- [x] shared strings parser 구현
+  - Done:
+    - `workbook.xml.rels`에서 `sharedStrings.xml` target 해석
+    - plain string과 rich-text run 조합을 하나의 shared string으로 평탄화
+    - shared strings part가 없는 workbook은 빈 테이블로 처리
+  - Tests:
+    - simple and rich shared strings fixture
+    - missing shared strings relationship fixture
+    - missing shared strings part fixture
+- [x] row/column metrics parser 구현
+  - Done:
+    - worksheet `sheetFormatPr`의 `defaultRowHeight`, `defaultColWidth` 파싱
+    - `cols/col`의 범위별 width, hidden, customWidth 파싱
+    - `sheetData/row`의 row index, height, hidden, customHeight 파싱
+  - Tests:
+    - default and custom row/column metrics fixture
+    - malformed decimal metric fixture
+- [x] cell style subset parser 구현
+  - Done:
+    - `styles.xml` target 해석
+    - custom number formats, fonts, fills, `cellXfs` subset 파싱
+    - horizontal/vertical alignment와 `wrapText` 최소 subset 반영
+    - styles part가 없을 때 empty catalog 반환
+  - Tests:
+    - styles part subset fixture
+    - missing styles relationship fixture
+    - invalid alignment fixture
+- [x] merged cells parser 구현
+  - Done:
+    - worksheet `mergeCells/mergeCell` range 파싱
+    - `A1:C3` 형태 ref를 row/column 좌표로 정규화
+    - 잘못된 범위 순서나 malformed ref는 즉시 invalid 처리
+  - Tests:
+    - merged cell ranges fixture
+    - worksheet without mergeCells fixture
+    - invalid merged range fixture
+- [x] frozen panes parser 구현
+  - Done:
+    - worksheet `sheetViews/sheetView/pane`에서 frozen/frozenSplit state 파싱
+    - `xSplit`, `ySplit`, `topLeftCell`, `activePane` 최소 subset 보존
+    - split pane은 viewport 범위 밖으로 보고 무시, malformed state/cell ref는 invalid 처리
+  - Tests:
+    - frozen rows and columns fixture
+    - non-frozen split pane fixture
+    - invalid pane state fixture
+- [x] formula cell cached value parser 구현
+  - Done:
+    - worksheet `sheetData/row/c` subset 파싱
+    - formula 문자열과 cached value를 분리해서 보존
+    - shared string, inline string, boolean, numeric, error 최소 타입 지원
+    - formula engine은 여전히 미구현이며 cached value만 사용
+  - Tests:
+    - formula cells with cached values fixture
+    - formula without cached value fixture
+    - invalid shared string index fixture
 
 ### XLSX layout and interaction
-- [ ] sheet grid render model 구현
-- [ ] visible window cell virtualization 초안 구현
-- [ ] cell text search index 구현
-- [ ] text-only selection metadata 구현
+- [x] sheet grid render model 구현
+  - Done:
+    - worksheet cell subset, metrics, merges, style subset을 공통 `PageRenderModel`로 투영
+    - 셀을 `BoxNode + TextNode`로 렌더하고 merged cell span을 단일 box로 처리
+    - cached formula value, boolean, error, shared/inline string을 표시값으로 반영
+    - text-only selection anchor를 셀 텍스트 기준으로 생성
+  - Tests:
+    - merged header + cached formula + style render model fixture
+- [x] visible window cell virtualization 초안 구현
+  - Done:
+    - row/column window 기준으로 worksheet grid를 부분 렌더하는 초안 추가
+    - visible window 좌표계를 local origin으로 재정렬
+    - window 범위를 벗어난 셀은 제외하고 향후 frozen/merged edge case는 보정 phase로 이관
+  - Tests:
+    - 2x2 visible window slice fixture
+- [x] cell text search index 구현
+  - Done:
+    - worksheet cell 값을 row-major text로 평탄화해서 시트 단위 `SearchPage` 생성
+    - cached formula value, boolean, inline/shared string을 검색 인덱스에 포함
+    - 공통 case-insensitive search matcher 재사용
+  - Tests:
+    - sheet search pages fixture
+    - case-insensitive workbook search fixture
+- [x] text-only selection metadata 구현
+  - Done:
+    - 공통 `PageRenderModel.selectionAnchors`를 시트 단위 selection helper로 노출
+    - 텍스트 노드에 대해서만 char-level anchor 생성
+    - 숫자/문자열/cached formula 결과를 모두 text-only selection 대상으로 포함
+  - Tests:
+    - text-only selection anchor fixture
 
 ### XLSX tests and acceptance
-- [ ] Rust fixture tests for sheets, merges, frozen panes, cached formulas
-- [ ] Flutter grid rendering widget tests
-- [ ] XLSX MVP acceptance pass
+- [x] Rust fixture tests for sheets, merges, frozen panes, cached formulas
+  - Done:
+    - 실제 review fixture 2종을 `fixtures/xlsx/`에 추가
+    - workbook/sheet open, merged cells, frozen panes, cached formula, render/search/selection acceptance를 실제 파일 기준으로 검증
+  - Tests:
+    - fixture presence smoke test
+    - acceptance_xlsx_review_set
+- [x] Flutter grid rendering widget tests
+  - Done:
+    - 공통 `DocumentPageView`가 XLSX 스타일의 dense grid page model을 그리는지 검증
+    - `MsDocumentView` preview shell이 XLSX preview page를 소비하는지 검증
+  - Tests:
+    - xlsx grid page widget test
+    - xlsx preview shell widget test
+- [x] XLSX MVP acceptance pass
   - Acceptance checks:
     - sheet render
     - search
     - text-only selection
     - cached formula display
+  - Done:
+    - render/search/selection/cached formula가 실제 review fixture와 Flutter widget smoke에서 모두 검증됨
 
 ## Phase 3.5: XLSX demo real integration
 ### Serialized integration gate

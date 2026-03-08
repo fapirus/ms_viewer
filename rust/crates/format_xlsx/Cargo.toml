@@ -7,3 +7,7 @@ license.workspace = true
 [dependencies]
 format_shared = { path = "../format_shared" }
 viewer_core = { path = "../viewer_core" }
+
+[dev-dependencies]
+tempfile = "3.13"
+zip = { version = "2.2", default-features = false, features = ["deflate"] }
