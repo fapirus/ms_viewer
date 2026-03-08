@@ -870,12 +870,29 @@
 
 ## Phase 3.6: XLSX visual parity and large-sheet pass
 ### Visual regression triage
+- [x] XLSX grid-first viewer UX 아키텍처 확정
+  - Done when:
+    - `docs/architecture/xlsx_viewer_ux.md` 기준으로 UX 방향이 고정된다
+    - `XLSX`가 page viewer가 아니라 sheet viewport라는 점이 `PROJECT_PLAN.md`와 동기화된다
+  - Output:
+    - row/column header, 2D scroll, frozen pane, visible window 정책 확정
 - [ ] issue 기반 XLSX 시각 회귀 분류 규칙 정리
   - Scope:
     - column width, row height, merged cell, frozen pane, large-sheet viewport 차이를 `issue/` 기준으로 분류
     - 최소 재현 fixture 후보를 `fixtures/regression/`에 승격
 
 ### Layout and viewport fidelity
+- [ ] Flutter 전용 2D sheet viewport scaffold 구현
+  - Scope:
+    - 공통 `DocumentPageView` 대신 `XLSX` 전용 viewport shell 도입
+    - `TableView` 또는 동등한 2D viewport 기반으로 row/column scrolling 구조 구성
+  - Tests:
+    - initial viewport widget test
+    - 2D scroll smoke test
+- [ ] pinned row/column headers와 corner cell 구현
+  - Tests:
+    - pinned header widget test
+    - header/body scroll sync test
 - [ ] XLSX column width/row height/merged cell 배치 보정
   - Tests:
     - merged cell layout regression fixture
@@ -884,6 +901,13 @@
   - Tests:
     - frozen pane viewport regression fixture
     - large-sheet scroll stability regression fixture
+- [ ] XLSX effective bounds와 overscan 정책 보정
+  - Scope:
+    - `dimension`, actual cells, metrics, merges, frozen panes를 합쳐 effective bounds 계산
+    - global max row/column가 아니라 used-range 중심 viewport를 사용
+  - Tests:
+    - effective bounds regression fixture
+    - overscan stability regression fixture
 - [ ] XLSX number/date format 및 기본 타이포그래피 보정
   - Tests:
     - number/date display regression fixture
@@ -893,6 +917,8 @@
 - [ ] XLSX visual parity acceptance pass
   - Acceptance checks:
     - 주요 issue sheet가 빈 영역/잘린 영역 없이 렌더된다
+    - `XLSX`가 page viewer처럼 보이지 않고 spreadsheet viewport처럼 동작한다
+    - row/column headers가 유지된다
     - column width와 row height가 허용 범위 내에 있다
     - frozen pane과 visible window가 안정적으로 동작한다
     - 최소 재현 fixture 회귀 테스트가 추가되었다

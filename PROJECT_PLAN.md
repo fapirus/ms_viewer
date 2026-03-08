@@ -305,16 +305,24 @@ OOXML은 ZIP 기반이라 완전한 스트리밍이 쉽지 않다.
 - 검색
 - 순수 텍스트 선택
 - 수식 셀은 cached value 우선 표시
+- 최종 UX는 page viewer가 아니라 `grid-first 2D spreadsheet viewer`로 간다
 
 ### Phase 3.5: XLSX demo real integration
 - Rust FFI로 실제 sheet window render model fetch
 - Flutter bridge에서 실제 sheet window fetch
 - demo app fixture/file picker/desktop drop 경로에서 실제 XLSX 열기
+- 단, 이 phase의 acceptance는 "단순 grid가 보인다"가 아니라 "sheet viewport로 탐색 가능하다"까지를 기준으로 삼는다
 
 초기 제약 권장:
 - 직접 수식 계산 미지원
 - 캐시 없는 수식 셀은 후속 과제
 - 차트, 피벗, 매크로, 외부 연결은 후순위
+
+### XLSX viewer UX direction
+- `XLSX`는 `DOCX/PPTX`와 달리 page-like preview를 최종 UX로 삼지 않는다.
+- row/column header, 2D scroll, frozen pane, visible window virtualization을 가진 sheet viewport가 기본 모델이다.
+- 초기 dense grid render model은 엔진 검증용 transitional step으로 보고, 실제 product UX는 별도 sheet viewport로 올린다.
+- 세부 방향은 [docs/architecture/xlsx_viewer_ux.md](/Users/ultramarine/Documents/Workspace/Fapirus/ms_viewer/docs/architecture/xlsx_viewer_ux.md)를 따른다.
 
 ## FileHandle support
 우선순위는 낮지만 구조는 초기에 반영하는 편이 좋다.
