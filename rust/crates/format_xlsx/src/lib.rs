@@ -5,6 +5,8 @@ use viewer_core::ViewerError;
 
 const OFFICE_DOCUMENT_RELATIONSHIP: &str =
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument";
+const SHARED_STRINGS_RELATIONSHIP: &str =
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings";
 const WORKSHEET_RELATIONSHIP: &str =
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet";
 
@@ -13,6 +15,7 @@ pub struct XlsxWorkbook {
     pub workbook_part: String,
     pub active_sheet_index: Option<u32>,
     pub date_1904: bool,
+    pub shared_strings_part: Option<String>,
     pub sheets: Vec<XlsxWorksheet>,
 }
 
@@ -60,6 +63,10 @@ pub fn parse_xlsx(archive: &OoxmlArchive) -> Result<XlsxWorkbook, ViewerError> {
         .and_then(|properties| properties.attribute("date1904"))
         .map(|value| matches!(value, "1" | "true"))
         .unwrap_or(false);
+    let shared_strings_part = workbook_relationships
+        .iter()
+        .find(|relationship| relationship.relationship_type == SHARED_STRINGS_RELATIONSHIP)
+        .map(|relationship| relationship.resolved_target.trim_start_matches('/').to_string());
 
     let sheets_root = workbook_root.child("sheets").ok_or(ViewerError::InvalidDocument)?;
     let mut sheets = Vec::new();
@@ -101,8 +108,35 @@ pub fn parse_xlsx(archive: &OoxmlArchive) -> Result<XlsxWorkbook, ViewerError> {
         workbook_part,
         active_sheet_index,
         date_1904,
+        shared_strings_part,
         sheets,
     })
+}
+
+pub fn parse_shared_strings(
+    archive: &OoxmlArchive,
+    workbook: &XlsxWorkbook,
+) -> Result<Vec<String>, ViewerError> {
+    let Some(part_name) = workbook.shared_strings_part.as_deref() else {
+        return Ok(Vec::new());
+    };
+
+    let xml = archive.read_part(part_name)?;
+    let text = String::from_utf8(xml).map_err(|_| ViewerError::InvalidDocument)?;
+    let root = parse_document(&text)?;
+    if root.local_name() != "sst" {
+        return Err(ViewerError::InvalidDocument);
+    }
+
+    let mut strings = Vec::new();
+    for child in &root.children {
+        if child.local_name() != "si" {
+            continue;
+        }
+        strings.push(parse_shared_string_item(child));
+    }
+
+    Ok(strings)
 }
 
 fn parse_workbook_relationships(
@@ -171,4 +205,20 @@ fn parse_sheet_visibility(state: Option<&str>) -> WorksheetVisibility {
         Some("veryHidden") => WorksheetVisibility::VeryHidden,
         _ => WorksheetVisibility::Visible,
     }
+}
+
+fn parse_shared_string_item(item: &viewer_core::xml::XmlElement) -> String {
+    let mut text = String::new();
+    for child in &item.children {
+        match child.local_name() {
+            "t" => text.push_str(&child.text),
+            "r" => {
+                if let Some(run_text) = child.child("t") {
+                    text.push_str(&run_text.text);
+                }
+            }
+            _ => {}
+        }
+    }
+    text
 }

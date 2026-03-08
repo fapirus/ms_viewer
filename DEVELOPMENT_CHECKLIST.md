@@ -719,7 +719,15 @@
     - workbook order and visibility fixture
     - missing worksheet relationship fixture
     - non-worksheet relationship fixture
-- [ ] shared strings parser 구현
+- [x] shared strings parser 구현
+  - Done:
+    - `workbook.xml.rels`에서 `sharedStrings.xml` target 해석
+    - plain string과 rich-text run 조합을 하나의 shared string으로 평탄화
+    - shared strings part가 없는 workbook은 빈 테이블로 처리
+  - Tests:
+    - simple and rich shared strings fixture
+    - missing shared strings relationship fixture
+    - missing shared strings part fixture
 - [ ] row/column metrics parser 구현
 - [ ] cell style subset parser 구현
 - [ ] merged cells parser 구현
