@@ -747,6 +747,15 @@
     - missing styles relationship fixture
     - invalid alignment fixture
 - [ ] merged cells parser 구현
+- [x] merged cells parser 구현
+  - Done:
+    - worksheet `mergeCells/mergeCell` range 파싱
+    - `A1:C3` 형태 ref를 row/column 좌표로 정규화
+    - 잘못된 범위 순서나 malformed ref는 즉시 invalid 처리
+  - Tests:
+    - merged cell ranges fixture
+    - worksheet without mergeCells fixture
+    - invalid merged range fixture
 - [ ] frozen panes parser 구현
 - [ ] formula cell cached value parser 구현
   - Note: no formula engine in MVP

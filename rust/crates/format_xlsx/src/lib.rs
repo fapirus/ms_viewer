@@ -65,6 +65,21 @@ pub struct WorksheetRowMetric {
     pub custom_height: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorksheetMergedCells {
+    pub part_name: String,
+    pub ranges: Vec<XlsxMergedCellRange>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct XlsxMergedCellRange {
+    pub reference: String,
+    pub start_row: u32,
+    pub start_column: u32,
+    pub end_row: u32,
+    pub end_column: u32,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct XlsxStyleCatalog {
     pub part_name: Option<String>,
@@ -301,6 +316,17 @@ pub fn parse_cell_style_subset(
     })
 }
 
+pub fn parse_merged_cells(
+    archive: &OoxmlArchive,
+    workbook: &XlsxWorkbook,
+) -> Result<Vec<WorksheetMergedCells>, ViewerError> {
+    workbook
+        .sheets
+        .iter()
+        .map(|sheet| parse_worksheet_merged_cells(archive, &sheet.part_name))
+        .collect()
+}
+
 fn parse_workbook_relationships(
     archive: &OoxmlArchive,
     workbook_part: &str,
@@ -443,6 +469,44 @@ fn parse_worksheet_grid_metrics(
         default_column_width,
         columns,
         rows,
+    })
+}
+
+fn parse_worksheet_merged_cells(
+    archive: &OoxmlArchive,
+    worksheet_part: &str,
+) -> Result<WorksheetMergedCells, ViewerError> {
+    let worksheet_xml = archive.read_part(worksheet_part)?;
+    let worksheet_text =
+        String::from_utf8(worksheet_xml).map_err(|_| ViewerError::InvalidDocument)?;
+    let worksheet_root = parse_document(&worksheet_text)?;
+    if worksheet_root.local_name() != "worksheet" {
+        return Err(ViewerError::InvalidDocument);
+    }
+
+    let mut ranges = Vec::new();
+    if let Some(merge_cells) = worksheet_root.child("mergeCells") {
+        for merge_cell in &merge_cells.children {
+            if merge_cell.local_name() != "mergeCell" {
+                continue;
+            }
+
+            let reference = merge_cell.required_attribute("ref")?.to_string();
+            let (start_row, start_column, end_row, end_column) =
+                parse_merged_cell_reference(&reference)?;
+            ranges.push(XlsxMergedCellRange {
+                reference,
+                start_row,
+                start_column,
+                end_row,
+                end_column,
+            });
+        }
+    }
+
+    Ok(WorksheetMergedCells {
+        part_name: worksheet_part.to_string(),
+        ranges,
     })
 }
 
@@ -647,4 +711,67 @@ fn normalize_argb_hex(hex: &str) -> Option<String> {
     } else {
         None
     }
+}
+
+fn parse_merged_cell_reference(reference: &str) -> Result<(u32, u32, u32, u32), ViewerError> {
+    let mut parts = reference.split(':');
+    let start = parts.next().ok_or(ViewerError::InvalidDocument)?;
+    let end = parts.next().ok_or(ViewerError::InvalidDocument)?;
+    if parts.next().is_some() {
+        return Err(ViewerError::InvalidDocument);
+    }
+
+    let (start_row, start_column) = parse_cell_reference(start)?;
+    let (end_row, end_column) = parse_cell_reference(end)?;
+    if start_row > end_row || start_column > end_column {
+        return Err(ViewerError::InvalidDocument);
+    }
+
+    Ok((start_row, start_column, end_row, end_column))
+}
+
+fn parse_cell_reference(reference: &str) -> Result<(u32, u32), ViewerError> {
+    let mut column = String::new();
+    let mut row = String::new();
+
+    for character in reference.chars() {
+        if character.is_ascii_alphabetic() {
+            if !row.is_empty() {
+                return Err(ViewerError::InvalidDocument);
+            }
+            column.push(character);
+        } else if character.is_ascii_digit() {
+            row.push(character);
+        } else {
+            return Err(ViewerError::InvalidDocument);
+        }
+    }
+
+    if column.is_empty() || row.is_empty() {
+        return Err(ViewerError::InvalidDocument);
+    }
+
+    let column_index = column_letters_to_index(&column)?;
+    let row_index = row.parse::<u32>().map_err(|_| ViewerError::InvalidDocument)?;
+    if row_index == 0 {
+        return Err(ViewerError::InvalidDocument);
+    }
+
+    Ok((row_index, column_index))
+}
+
+fn column_letters_to_index(column: &str) -> Result<u32, ViewerError> {
+    let mut value = 0u32;
+    for character in column.chars() {
+        if !character.is_ascii_alphabetic() {
+            return Err(ViewerError::InvalidDocument);
+        }
+        value = value
+            .checked_mul(26)
+            .and_then(|current| {
+                current.checked_add((character.to_ascii_uppercase() as u32) - ('A' as u32) + 1)
+            })
+            .ok_or(ViewerError::InvalidDocument)?;
+    }
+    Ok(value)
 }
