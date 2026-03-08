@@ -370,6 +370,8 @@ fn opens_xlsx_bytes_request_from_json() {
             assert_eq!(success.kind, viewer_core::DocumentKind::Xlsx);
             assert_eq!(success.title, "memory-document");
             assert_eq!(success.page_count, 2);
+            assert!(success.capabilities.search);
+            assert!(success.capabilities.text_selection);
         }
         other => panic!("expected success, got {other:?}"),
     }
@@ -901,6 +903,28 @@ fn search_query_returns_pptx_matches() {
 }
 
 #[test]
+fn search_query_returns_xlsx_matches() {
+    let path = xlsx_fixture_path("xlsx_basic_grid.xlsx");
+
+    let response = search_document_pages(SearchDocumentRequest {
+        source: DocumentSource::Path(path.display().to_string()),
+        document_id: format!("path:{}", path.display()),
+        query: "status".to_string(),
+        options: OpenOptions::default(),
+    });
+
+    match response {
+        SearchDocumentResponse::Success(matches) => {
+            assert_eq!(matches.len(), 1);
+            assert_eq!(matches[0].page_index, 1);
+            assert_eq!(matches[0].query, "status");
+            assert!(matches[0].preview.to_lowercase().contains("status"));
+        }
+        other => panic!("expected search matches, got {other:?}"),
+    }
+}
+
+#[test]
 fn selection_metadata_fetch_returns_page_with_anchors() {
     let file = create_package(&[
         (
@@ -940,6 +964,37 @@ fn selection_metadata_fetch_returns_page_with_anchors() {
     match response {
         GetSelectionPageResponse::Success(page) => {
             assert_eq!(page.page_index, 0);
+            assert!(!page.selection_anchors.is_empty());
+        }
+        other => panic!("expected selection page, got {other:?}"),
+    }
+}
+
+#[test]
+fn selection_metadata_fetch_returns_xlsx_sheet_with_anchors() {
+    let path = xlsx_fixture_path("xlsx_merges_frozen_formulas.xlsx");
+
+    let response = get_selection_page(GetSelectionPageRequest {
+        source: DocumentSource::Path(path.display().to_string()),
+        document_id: format!("path:{}", path.display()),
+        page_index: 0,
+        options: OpenOptions::default(),
+    });
+
+    match response {
+        GetSelectionPageResponse::Success(page) => {
+            let text_nodes = page
+                .nodes
+                .iter()
+                .filter_map(|node| match node {
+                    viewer_core::model::RenderNode::Text(text) => Some(text.text.as_str()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+
+            assert_eq!(page.page_index, 0);
+            assert!(text_nodes.contains(&"420"));
+            assert!(text_nodes.contains(&"inline"));
             assert!(!page.selection_anchors.is_empty());
         }
         other => panic!("expected selection page, got {other:?}"),

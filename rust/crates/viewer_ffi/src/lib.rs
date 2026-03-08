@@ -5,7 +5,7 @@ use format_docx::{build_selection_page_models, parse_docx, search_document};
 use format_pptx::{build_slide_render_model, parse_pptx, search_slides};
 use format_xlsx::{
     build_sheet_render_model, build_visible_window_render_model, parse_cell_style_subset,
-    parse_shared_strings, parse_xlsx, XlsxVisibleWindow,
+    parse_shared_strings, parse_xlsx, search_workbook, XlsxVisibleWindow,
 };
 use serde::{Deserialize, Serialize};
 use viewer_core::archive::OoxmlArchive;
@@ -402,7 +402,11 @@ fn search_document_pages_impl(
             let slide_tree = parse_pptx(&archive)?;
             search_slides(&archive, &slide_tree, &request.query)
         }
-        DocumentKind::Xlsx => Err(ViewerError::NotImplemented("xlsx search")),
+        DocumentKind::Xlsx => {
+            let workbook = parse_xlsx(&archive)?;
+            let shared_strings = parse_shared_strings(&archive, &workbook)?;
+            search_workbook(&archive, &workbook, &shared_strings, &request.query)
+        }
     }
 }
 
@@ -431,9 +435,9 @@ fn open_archive_from_source(source: DocumentSource) -> Result<OoxmlArchive, View
 }
 
 fn supports_text_search(kind: DocumentKind) -> bool {
-    matches!(kind, DocumentKind::Docx | DocumentKind::Pptx)
+    matches!(kind, DocumentKind::Docx | DocumentKind::Pptx | DocumentKind::Xlsx)
 }
 
 fn supports_text_selection(kind: DocumentKind) -> bool {
-    matches!(kind, DocumentKind::Docx | DocumentKind::Pptx)
+    matches!(kind, DocumentKind::Docx | DocumentKind::Pptx | DocumentKind::Xlsx)
 }

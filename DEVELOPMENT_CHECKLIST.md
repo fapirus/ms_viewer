@@ -842,7 +842,7 @@
   - Tests:
     - first sheet window fetch fixture test
     - invalid sheet index error mapping test
-- [ ] XLSX search and selection FFI endpoint 연결
+- [x] XLSX search and selection FFI endpoint 연결
   - Tests:
     - sheet search round-trip test
     - sheet selection metadata fetch smoke test
