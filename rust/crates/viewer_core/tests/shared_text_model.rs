@@ -11,7 +11,10 @@ fn shared_text_model_can_be_constructed() {
         font_size: 11.0,
         bold: false,
         italic: false,
+        underline: false,
         color_hex: "#000000".to_string(),
+        gradient_end_color_hex: None,
+        gradient_angle_degrees: None,
     };
 
     let paragraph = Block::Paragraph {
@@ -127,7 +130,10 @@ fn shared_text_model_round_trips_via_serde() {
                 font_size: 11.0,
                 bold: true,
                 italic: false,
+                underline: false,
                 color_hex: "#222222".to_string(),
+                gradient_end_color_hex: None,
+                gradient_angle_degrees: None,
             },
         }],
         list: Some(ListMarker {

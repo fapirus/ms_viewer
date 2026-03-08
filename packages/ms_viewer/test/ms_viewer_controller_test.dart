@@ -173,6 +173,51 @@ void main() {
     expect(controller.currentPageIndex, 0);
   });
 
+  test('controller fetches first slide after opening pptx', () async {
+    platform.GetPageRenderModelRequest? capturedPageRequest;
+    final controller = MsViewerController(
+      platform: _FakeMsViewerPlatform(
+        onOpen: (_) async => platform.OpenDocumentOpened(
+          const platform.OpenDocumentSuccess(
+            documentId: 'ppt_001',
+            kind: platform.DocumentKind.pptx,
+            title: 'deck.pptx',
+            pageCount: 2,
+            capabilities: platform.DocumentCapabilities(
+              search: true,
+              textSelection: true,
+              passwordProtected: false,
+            ),
+          ),
+        ),
+        onGetPage: (request) async {
+          capturedPageRequest = request;
+          return platform.GetPageRenderModelSuccess(
+            platform.PageRenderModel.fromJson({
+              'pageIndex': 0,
+              'width': 720.0,
+              'height': 540.0,
+              'nodes': const [],
+              'selectionAnchors': const [],
+            }),
+          );
+        },
+      ),
+    );
+
+    await controller.openDocument(
+      const platform.OpenDocumentRequest(
+        source: platform.OpenDocumentSource.path('/tmp/deck.pptx'),
+      ),
+    );
+
+    expect(capturedPageRequest, isNotNull);
+    expect(capturedPageRequest!.documentId, 'ppt_001');
+    expect(capturedPageRequest!.pageIndex, 0);
+    expect(controller.pageStatus, ViewerPageStatus.ready);
+    expect(controller.currentPageIndex, 0);
+  });
+
   test('controller navigates to next page when requested', () async {
     final requests = <platform.GetPageRenderModelRequest>[];
     final controller = MsViewerController(

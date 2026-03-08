@@ -488,7 +488,6 @@ void main() {
         source: platform.OpenDocumentSource.path('/tmp/deck.pptx'),
       ),
     );
-    await controller.loadPage(0);
 
     await tester.pumpWidget(
       MaterialApp(
@@ -507,6 +506,200 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Page 2 / 2'), findsOneWidget);
+  });
+
+  testWidgets('view shows pptx slide fetch error state', (tester) async {
+    final controller = MsViewerController(
+      platform: _FakeMsViewerPlatform(
+        onOpen: (_) async => platform.OpenDocumentOpened(
+          const platform.OpenDocumentSuccess(
+            documentId: 'ppt_001',
+            kind: platform.DocumentKind.pptx,
+            title: 'deck.pptx',
+            pageCount: 1,
+            capabilities: platform.DocumentCapabilities(
+              search: true,
+              textSelection: true,
+              passwordProtected: false,
+            ),
+          ),
+        ),
+        onGetPage: (_) async => const platform.GetPageRenderModelFailure(
+          platform.OpenDocumentError(
+            code: platform.ViewerErrorCode.invalidDocument,
+            message: 'Failed to load slide preview.',
+          ),
+        ),
+      ),
+    );
+
+    await controller.openDocument(
+      const platform.OpenDocumentRequest(
+        source: platform.OpenDocumentSource.path('/tmp/deck.pptx'),
+      ),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: MsDocumentView(controller: controller)),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('deck.pptx'), findsOneWidget);
+    expect(find.text('Failed to load slide preview.'), findsOneWidget);
+    expect(find.byType(DocumentPageView), findsNothing);
+  });
+
+  testWidgets('pptx slide search integration widget test', (tester) async {
+    platform.GetSelectionPageRequest? selectionRequest;
+    final controller = MsViewerController(
+      platform: _FakeMsViewerPlatform(
+        onOpen: (_) async => platform.OpenDocumentOpened(
+          const platform.OpenDocumentSuccess(
+            documentId: 'ppt_001',
+            kind: platform.DocumentKind.pptx,
+            title: 'deck.pptx',
+            pageCount: 3,
+            capabilities: platform.DocumentCapabilities(
+              search: true,
+              textSelection: true,
+              passwordProtected: false,
+            ),
+          ),
+        ),
+        onGetPage: (_) async => _pageModel(
+          _pageJson(pageIndex: 0, text: 'Agenda overview'),
+        ),
+        onSearch: (_) async => const platform.SearchDocumentSuccess([
+          platform.SearchMatchModel(
+            query: 'forecast',
+            pageIndex: 2,
+            start: 0,
+            end: 8,
+            preview: 'forecast on closing slide',
+          ),
+        ]),
+        onGetSelectionPage: (request) async {
+          selectionRequest = request;
+          return platform.GetSelectionPageSuccess(
+            platform.PageRenderModel.fromJson(
+              _pageJson(pageIndex: 2, text: 'forecast on closing slide'),
+            ),
+          );
+        },
+      ),
+    );
+
+    await controller.openDocument(
+      const platform.OpenDocumentRequest(
+        source: platform.OpenDocumentSource.path('/tmp/deck.pptx'),
+      ),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: MsDocumentView(controller: controller)),
+      ),
+    );
+    await tester.pump();
+
+    await tester.enterText(find.byType(TextField).first, 'forecast');
+    await tester.tap(find.text('Search'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('forecast on closing slide'), findsOneWidget);
+
+    await tester.tap(find.text('forecast on closing slide'));
+    await tester.pumpAndSettle();
+
+    expect(selectionRequest, isNotNull);
+    expect(selectionRequest!.pageIndex, 2);
+    expect(controller.currentPageIndex, 2);
+    expect(controller.pageHighlights, isNotEmpty);
+  });
+
+  testWidgets('pptx slide selection integration widget test', (tester) async {
+    final controller = MsViewerController(
+      platform: _FakeMsViewerPlatform(
+        onOpen: (_) async => platform.OpenDocumentOpened(
+          const platform.OpenDocumentSuccess(
+            documentId: 'ppt_001',
+            kind: platform.DocumentKind.pptx,
+            title: 'deck.pptx',
+            pageCount: 1,
+            capabilities: platform.DocumentCapabilities(
+              search: true,
+              textSelection: true,
+              passwordProtected: false,
+            ),
+          ),
+        ),
+        onGetPage: (_) async => platform.GetPageRenderModelSuccess(
+          platform.PageRenderModel.fromJson({
+            'pageIndex': 0,
+            'width': 720.0,
+            'height': 540.0,
+            'nodes': [
+              {
+                'type': 'text',
+                'text': 'Quarterly Results',
+                'bounds': {
+                  'x': 66.0,
+                  'y': 24.0,
+                  'width': 220.0,
+                  'height': 28.0,
+                },
+                'style': {
+                  'fontFamily': 'Aptos',
+                  'fontSize': 24.0,
+                  'bold': true,
+                  'italic': false,
+                  'colorHex': '#000000',
+                },
+                'range': {'start': 0, 'end': 17},
+              },
+            ],
+            'selectionAnchors': const [
+              {'nodeIndex': 0, 'charIndex': 0, 'x': 66.0, 'y': 24.0},
+              {'nodeIndex': 0, 'charIndex': 17, 'x': 286.0, 'y': 24.0},
+            ],
+          }),
+        ),
+      ),
+    );
+
+    await controller.openDocument(
+      const platform.OpenDocumentRequest(
+        source: platform.OpenDocumentSource.path('/tmp/deck.pptx'),
+      ),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: MsDocumentView(controller: controller)),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final pageFinder = find.byType(DocumentPageView);
+    expect(pageFinder, findsOneWidget);
+    final pageRect = tester.getRect(pageFinder);
+    final start = Offset(
+      pageRect.left + pageRect.width * (66.0 / 720.0),
+      pageRect.top + pageRect.height * (24.0 / 540.0),
+    );
+    final delta = Offset(
+      pageRect.width * (120.0 / 720.0),
+      pageRect.height * (18.0 / 540.0),
+    );
+
+    final gesture = await tester.startGesture(start);
+    await gesture.moveBy(delta);
+    await tester.pump();
+
+    expect(controller.pageHighlights, isNotEmpty);
+    expect(find.byType(Positioned), findsWidgets);
   });
 }
 

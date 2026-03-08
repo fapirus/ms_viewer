@@ -907,8 +907,11 @@ pub fn build_selection_page_models(
                             height,
                         },
                         fill_color_hex: None,
+                        gradient_end_color_hex: None,
+                        gradient_angle_degrees: None,
                         stroke_color_hex: Some("#CBD5E1".to_string()),
                         stroke_width: 1.0,
+                        corner_radius: None,
                     }));
 
                     for row in rows {
@@ -921,8 +924,11 @@ pub fn build_selection_page_models(
                                     height: cell.height,
                                 },
                                 fill_color_hex: Some("#FFFFFF".to_string()),
+                                gradient_end_color_hex: None,
+                                gradient_angle_degrees: None,
                                 stroke_color_hex: Some("#CBD5E1".to_string()),
                                 stroke_width: 1.0,
+                                corner_radius: None,
                             }));
 
                             for line in cell.lines {
@@ -961,6 +967,9 @@ pub fn build_selection_page_models(
                                         width: image.width,
                                         height: image.height,
                                     },
+                                    crop: None,
+                                    flip_horizontal: false,
+                                    flip_vertical: false,
                                 }));
                             }
                         }
@@ -989,6 +998,9 @@ pub fn build_selection_page_models(
                             width,
                             height,
                         },
+                        crop: None,
+                        flip_horizontal: false,
+                        flip_vertical: false,
                     }));
                 }
             }
@@ -2403,7 +2415,10 @@ fn materialize_text_style_for_script(style: &ResolvedTextStyle, script: Script) 
         font_size: style.font_size.unwrap_or(fallback.font_size),
         bold: style.bold.unwrap_or(fallback.bold),
         italic: style.italic.unwrap_or(fallback.italic),
+        underline: false,
         color_hex: style.color_hex.clone().unwrap_or(fallback.color_hex),
+        gradient_end_color_hex: None,
+        gradient_angle_degrees: None,
     }
 }
 
@@ -2546,6 +2561,9 @@ fn default_text_style() -> TextStyle {
         font_size: 12.0,
         bold: false,
         italic: false,
+        underline: false,
         color_hex: "#000000".to_string(),
+        gradient_end_color_hex: None,
+        gradient_angle_degrees: None,
     }
 }

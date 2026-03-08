@@ -108,11 +108,20 @@ class _DemoHomePageState extends State<DemoHomePage> {
       'xlsx' => DocumentKind.xlsx,
       _ => DocumentKind.docx,
     };
-    final note = switch (extension) {
-      'docx' =>
+    final note = switch ((origin, extension)) {
+      (DemoDocumentOrigin.picked, 'docx') =>
         'External DOCX file. Real engine open is wired in the desktop demo.',
-      'pptx' => 'PPTX parser and renderer are not implemented yet.',
-      'xlsx' => 'XLSX parser and renderer are not implemented yet.',
+      (DemoDocumentOrigin.picked, 'pptx') =>
+        'External PPTX file. Real engine open is wired in the desktop demo.',
+      (DemoDocumentOrigin.dropped, 'docx') =>
+        'External DOCX file. Real engine open is wired in the desktop demo.',
+      (DemoDocumentOrigin.dropped, 'pptx') =>
+        'External PPTX file. Real engine open is wired in the desktop demo.',
+      (_, 'xlsx') => 'XLSX parser and renderer are not implemented yet.',
+      (_, 'pptx') =>
+        'External PPTX file. Real engine open will be wired in the desktop demo.',
+      (_, 'docx') =>
+        'External DOCX file. Real engine open is wired in the desktop demo.',
       _ => 'Unknown document type.',
     };
 
@@ -140,7 +149,7 @@ class _DemoHomePageState extends State<DemoHomePage> {
     });
 
     if (entry.origin == DemoDocumentOrigin.fixture &&
-        entry.kind == DocumentKind.docx &&
+        _usesEngineForFixture(entry.kind) &&
         entry.location != null) {
       final bytes = await widget.assetBundle.load(entry.location!);
       final encoded = base64Encode(bytes.buffer.asUint8List());
@@ -152,9 +161,7 @@ class _DemoHomePageState extends State<DemoHomePage> {
       return;
     }
 
-    if ((entry.origin == DemoDocumentOrigin.picked ||
-            entry.origin == DemoDocumentOrigin.dropped) &&
-        entry.kind == DocumentKind.docx &&
+    if (_usesEngineForImportedPath(entry) &&
         entry.location != null) {
       await _controller.openDocument(
         platform.OpenDocumentRequest(
@@ -165,6 +172,26 @@ class _DemoHomePageState extends State<DemoHomePage> {
     }
 
     _controller.attachDocument(entry.descriptor);
+  }
+
+  bool _usesEngineForFixture(DocumentKind kind) {
+    return kind == DocumentKind.docx || kind == DocumentKind.pptx;
+  }
+
+  bool _usesEngineForPickedImport(DocumentKind kind) {
+    return kind == DocumentKind.docx || kind == DocumentKind.pptx;
+  }
+
+  bool _usesEngineForImportedPath(DemoDocumentEntry entry) {
+    if (entry.origin == DemoDocumentOrigin.picked) {
+      return _usesEngineForPickedImport(entry.kind);
+    }
+
+    if (entry.origin == DemoDocumentOrigin.dropped) {
+      return entry.kind == DocumentKind.docx || entry.kind == DocumentKind.pptx;
+    }
+
+    return false;
   }
 
   @override
@@ -228,7 +255,7 @@ class _DemoHomePageState extends State<DemoHomePage> {
             Text('Fixtures', style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 6),
             Text(
-              'DOCX review fixtures are bundled here for mid-project checks.',
+              'DOCX/PPTX review fixtures are bundled here for mid-project checks.',
               style: Theme.of(context).textTheme.bodySmall,
             ),
           ],

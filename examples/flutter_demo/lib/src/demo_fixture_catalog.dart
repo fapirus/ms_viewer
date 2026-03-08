@@ -65,5 +65,39 @@ List<DemoDocumentEntry> buildFixtureEntries() {
       requiresPassword: true,
       note: 'Encrypted container detection stub for password flow checks.',
     ),
+    DemoDocumentEntry(
+      id: 'pptx_text_shapes',
+      title: 'pptx_text_shapes.pptx',
+      kind: DocumentKind.pptx,
+      origin: DemoDocumentOrigin.fixture,
+      previewPages: [
+        buildImportedPreviewPage(
+          title: 'pptx_text_shapes.pptx',
+          extension: 'pptx',
+        ),
+      ],
+      tags: const ['text', 'shapes', 'pptx'],
+      sourceLabel: 'Bundled fixture',
+      statusLabel: 'Ready',
+      location: 'assets/fixtures/pptx/pptx_text_shapes.pptx',
+      note: 'Text box and basic shape review fixture.',
+    ),
+    DemoDocumentEntry(
+      id: 'pptx_theme_layout_images',
+      title: 'pptx_theme_layout_images.pptx',
+      kind: DocumentKind.pptx,
+      origin: DemoDocumentOrigin.fixture,
+      previewPages: [
+        buildImportedPreviewPage(
+          title: 'pptx_theme_layout_images.pptx',
+          extension: 'pptx',
+        ),
+      ],
+      tags: const ['theme', 'layout', 'images', 'pptx'],
+      sourceLabel: 'Bundled fixture',
+      statusLabel: 'Ready',
+      location: 'assets/fixtures/pptx/pptx_theme_layout_images.pptx',
+      note: 'Theme, layout and image review fixture.',
+    ),
   ];
 }

@@ -31,3 +31,14 @@ fn malformed_xml_returns_invalid_document() {
 
     assert!(matches!(error, ViewerError::InvalidDocument));
 }
+
+#[test]
+fn text_nodes_preserve_surrounding_spaces() {
+    let root = parse_document(
+        r#"<a:r xmlns:a="urn:test"><a:t>Hello </a:t><a:t> World</a:t></a:r>"#,
+    )
+    .expect("xml should parse");
+
+    let texts: Vec<_> = root.children.iter().map(|child| child.text.as_str()).collect();
+    assert_eq!(texts, vec!["Hello ", " World"]);
+}

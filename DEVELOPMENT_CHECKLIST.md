@@ -554,64 +554,154 @@
 - 권장 브랜치 전략: `PPTX MVP` 브랜치와 별도 `PPTX demo integration` 브랜치로 분리한다.
 
 ### Rust and FFI
-- [ ] PPTX slide render model FFI endpoint 연결
+- [x] PPTX slide render model FFI endpoint 연결
+  - Done:
+    - `viewer_ffi`에서 문서 kind를 감지해 PPTX는 `build_slide_render_model(...)`로 slide fetch 분기
+    - DOCX/XLSX 경로와 충돌하지 않도록 source -> archive helper 분리
   - Tests:
     - first slide fetch fixture test
     - invalid slide index error mapping test
-- [ ] PPTX search and selection FFI endpoint 연결
+- [x] PPTX search and selection FFI endpoint 연결
+  - Done:
+    - `viewer_ffi`에서 PPTX search를 `search_slides(...)`로 연결
+    - `get_selection_page`가 PPTX slide selection metadata를 반환하도록 page fetch 경로 재사용
+    - `OpenDocumentSuccess.capabilities`에 PPTX search/selection 지원 반영
   - Tests:
     - slide search round-trip test
     - slide selection metadata fetch smoke test
 
 ### Flutter bridge
-- [ ] Flutter platform bridge에서 PPTX slide fetch 연결
+- [x] Flutter platform bridge에서 PPTX slide fetch 연결
+  - Done:
+    - `MsViewerController.openDocument(...)`가 PPTX open 성공 시 첫 slide를 자동 fetch하도록 확장
+    - PPTX preview/navigation widget test를 자동 first-slide fetch 흐름에 맞춰 정리
+    - PPTX slide fetch error state widget test 추가
   - Tests:
     - slide fetch controller test
     - slide fetch error state widget test
-- [ ] Flutter PPTX search/selection bridge 연결
+- [x] Flutter PPTX search/selection bridge 연결
+  - Done:
+    - 기존 포맷 중립 search/selection 흐름이 PPTX에서도 동작함을 widget test로 고정
+    - PPTX slide search result tap -> selection page fetch -> highlight 적용 흐름 검증
+    - PPTX slide drag selection highlight 흐름 검증
   - Tests:
     - slide search integration widget test
     - slide selection integration widget test
 
 ### Demo app
-- [ ] demo fixture 목록에서 실제 PPTX 열기 연결
-- [ ] demo file picker PPTX 실연동
-- [ ] demo desktop drop PPTX 실연동
-- [ ] PPTX demo real integration acceptance pass
+- [x] demo fixture 목록에서 실제 PPTX 열기 연결
+  - Done:
+    - demo fixture catalog에 `pptx_text_shapes.pptx`, `pptx_theme_layout_images.pptx` 추가
+    - fixture PPTX를 asset으로 등록하고 선택 시 `bytesBase64` source로 실제 engine open 연결
+    - demo smoke test에 fixture PPTX open 경로 추가
+- [x] demo file picker PPTX 실연동
+  - Done:
+    - picked `.pptx` import가 실제 engine path open을 타도록 분기 확장
+    - picked `.pptx` smoke test 추가
+- [x] demo desktop drop PPTX 실연동
+  - Done:
+    - dropped `.pptx` import가 실제 engine path open을 타도록 분기 확장
+    - dropped `.pptx` smoke test 추가
+- [x] PPTX demo real integration acceptance pass
   - Acceptance checks:
     - fixture pptx opens through real engine path
     - picked pptx opens through real engine path
     - dropped pptx opens through real engine path
     - first slide render matches real model
+  - Done:
+    - `fixday` 및 review fixture 기준으로 desktop demo의 fixture/picked/dropped 경로를 수동 확인
+    - first slide render가 실제 engine render model과 일치하는 수준으로 확인됨
 
 ## Phase 2.6: PPTX visual parity pass
 ### Visual regression triage
-- [ ] issue 기반 PPTX 시각 회귀 분류 규칙 정리
+- [x] issue 기반 PPTX 시각 회귀 분류 규칙 정리
   - Scope:
     - slide 배치, 텍스트 박스 정렬, shape/image fit, theme font 차이를 `issue/` 기준으로 분류
     - 최소 재현 fixture 후보를 `fixtures/regression/`에 승격
+  - Notes:
+    - `fixday` 케이스는 [docs/qa/PPTX_VISUAL_TRIAGE.md](/Users/ultramarine/Documents/Workspace/Fapirus/ms_viewer/docs/qa/PPTX_VISUAL_TRIAGE.md) 기준으로 관리한다
+
+### Rendering completeness
+- [x] PPTX placeholder layout inheritance 보정
+  - Tests:
+    - placeholder without local `spPr` inherits layout bounds
+- [x] PPTX group shape, table, background rendering 보정
+  - Tests:
+    - `grpSp` recursive image render regression
+    - `graphicFrame/a:tbl` render regression
+    - master background regression
+- [x] PPTX 표 셀 배경색과 표 내부 텍스트 스타일 보정
+  - Notes:
+    - `fixday` slide 1 우하단 표에서 cell fill, border, text run style 일부가 누락된다
+    - 표가 읽히는 수준은 넘었지만, 현재는 acceptance를 닫기 어려운 오차다
+    - 기본 table style에 font size가 없을 때 18pt fallback으로 셀 텍스트가 잘리는 문제가 있어, cell height 기반 기본 font size와 vertical centering을 반영했다
+  - Tests:
+    - table cell fill regression fixture
+    - table rich-text run style regression fixture
+    - default table style fallback regression fixture
+- [x] PPTX full-slide background panel 곡률 보정
+  - Notes:
+    - `fixday` slide 1의 레이아웃 배경처럼 slide 전체를 덮는 `roundRect`는 그대로 곡률을 주면 PDF보다 과장된 흰 패널이 된다
+    - full-slide background container는 곡률을 제거하고, 실제 콘텐츠용 `roundRect`만 곡률을 유지한다
+  - Tests:
+    - full-slide background round-rect regression fixture
+- [x] PPTX repaint flicker triage 및 hardening 이관
+  - Notes:
+    - `gaplessPlayback` 1차 적용
+    - 수동 점검에서 잔존 가능성이 있으나 문서 열람을 막는 수준은 아니므로 `Phase 4: Hardening`으로 이관
 
 ### Geometry and typography
-- [ ] PPTX 텍스트 박스 정렬과 줄바꿈 보정
+- [x] PPTX 텍스트 박스 정렬과 줄바꿈 보정
   - Tests:
     - centered title regression fixture
     - mixed font line break regression fixture
-- [ ] PPTX shape/image transform 및 crop 보정
+    - bullet/default paragraph indent regression fixture
+- [x] PPTX 밑줄, 텍스트 clipping, 제목/본문 개행 보정
+  - Notes:
+    - `fixday` slide 2~5에서 underline이 빠지고 `Client -> Clien` clipping이 발생한다
+    - 제목 영역의 띄어쓰기/개행도 여전히 PDF와 차이가 있어 acceptance 전 보정이 필요하다
+  - Tests:
+    - underline text render regression fixture
+    - last-glyph clipping regression fixture
+    - mixed Korean/Latin title wrapping regression fixture
+    - `wrap=\"none\"` text box regression fixture
+- [x] PPTX text box vertical anchor 보정
+  - Notes:
+    - `fixday` slide 5~6은 `bodyPr anchor=\"ctr\"`를 많이 사용하지만, 엔진은 상단 기준으로만 텍스트를 배치하고 있었다
+    - 카드/오버레이 내부 텍스트 배치가 어긋나는 핵심 원인이므로 visual parity 전에 반영한다
+  - Tests:
+    - `anchor=\"ctr\"` parser regression fixture
+    - centered card vertical placement regression fixture
+- [x] PPTX shape/image transform 및 crop 보정
   - Tests:
     - image crop regression fixture
     - rotated shape bounds regression fixture
-- [ ] PPTX theme font와 기본 스타일 메트릭 보정
+- [x] PPTX shape z-order, opacity, rounded corner, overlay composition 보정
+  - Notes:
+    - `fixday` slide 2, 5, 6에서 회색 오버레이, 반투명 도형, 흰색 마스크, 곡률, 그림자, 겹침 순서가 PDF와 다르다
+    - 원본 노드 순서 보존, alpha, roundRect 곡률, shape style fallback은 이번 라운드에서 반영
+    - exact shadow/effect fidelity는 `Phase 4: Hardening`으로 이관
+  - Tests:
+    - overlay z-order regression fixture
+    - translucent shape opacity regression fixture
+    - rounded rectangle corner radius regression fixture
+- [x] PPTX theme font와 기본 스타일 메트릭 보정
   - Tests:
     - theme font regression fixture
     - line spacing regression fixture
+    - gradient title/default fill regression fixture
 
 ### Acceptance
-- [ ] PPTX visual parity acceptance pass
+- [x] PPTX visual parity acceptance pass
   - Acceptance checks:
     - 주요 issue slide가 빈 화면 없이 렌더된다
     - 텍스트 박스 정렬과 줄바꿈이 허용 범위 내에 있다
     - image/shape 배치가 허용 범위 내에 있다
+    - table fill/text, underline, overlay composition이 주요 issue slide에서 재현된다
     - 최소 재현 fixture 회귀 테스트가 추가되었다
+  - Done:
+    - `issue/powerpoint/fixday` 1~6 페이지 기준으로 구조 이슈가 해소됨
+    - 남은 미세 오차는 font metrics, effect, repaint flicker 성격으로 `Phase 4: Hardening`에 이관
 
 ## Phase 3: XLSX MVP
 ### MVP scope note
@@ -745,7 +835,28 @@
     - DOCX/PPTX/XLSX에서 남긴 시각 충실도 잔여 항목을 공통 정책과 포맷별 정책으로 다시 나눠 처리
   - Tests:
     - issue screenshot review set
+- [ ] PPTX exact glyph metrics, font spacing, line-wrap fidelity 보강
+  - Notes:
+    - `fixday` slide 1~6 비교 기준으로 남은 띄어쓰기, 글자폭, 줄바꿈 오차는 구조 버그보다 폰트 메트릭 오차 성격이 강하다
+    - acceptance를 막는 구조 이슈를 먼저 닫고, 최종 경화 단계에서 exact glyph metrics와 서체 availability를 같이 본다
+  - Tests:
+    - issue screenshot review set
+    - mixed Korean/Latin glyph width regression fixture
     - representative real-world review documents
+- [ ] PPTX repaint flicker 최종 완화
+  - Notes:
+    - `gaplessPlayback` 1차 적용 후에도 데모 앱 상호작용 시 잔존 가능성이 있다
+    - visual parity acceptance는 통과했지만, 최종 품질 경화 단계에서 repaint 경로를 다시 점검한다
+  - Tests:
+    - desktop demo interaction smoke
+    - repeated page navigation smoke
+- [ ] PPTX shadow/effect fidelity 보강
+  - Notes:
+    - slide 5~6의 outer shadow, effectRef 기반 표현은 핵심 배치보다 후순위로 미뤘다
+    - 현재는 z-order, opacity, 곡률, crop/flip까지 맞춘 상태이며 effect 픽셀 정밀도는 hardening에서 보정
+  - Tests:
+    - issue screenshot review set
+    - shadow/effect smoke regression fixture
 - [ ] coverage tooling and threshold 정리
   - Scope:
     - Rust coverage 도구 도입

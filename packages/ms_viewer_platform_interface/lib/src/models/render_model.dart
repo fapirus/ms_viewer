@@ -38,14 +38,20 @@ class TextStyleModel {
     required this.fontSize,
     required this.bold,
     required this.italic,
+    required this.underline,
     required this.colorHex,
+    required this.gradientEndColorHex,
+    required this.gradientAngleDegrees,
   });
 
   final String fontFamily;
   final double fontSize;
   final bool bold;
   final bool italic;
+  final bool underline;
   final String colorHex;
+  final String? gradientEndColorHex;
+  final double? gradientAngleDegrees;
 
   factory TextStyleModel.fromJson(Map<String, Object?> json) {
     return TextStyleModel(
@@ -53,7 +59,10 @@ class TextStyleModel {
       fontSize: (json['fontSize'] as num).toDouble(),
       bold: json['bold'] as bool? ?? false,
       italic: json['italic'] as bool? ?? false,
+      underline: json['underline'] as bool? ?? false,
       colorHex: json['colorHex'] as String,
+      gradientEndColorHex: json['gradientEndColorHex'] as String?,
+      gradientAngleDegrees: (json['gradientAngleDegrees'] as num?)?.toDouble(),
     );
   }
 }
@@ -128,6 +137,9 @@ class ImageRenderNodeModel extends RenderNodeModel {
     required this.contentType,
     required this.dataBase64,
     required this.bounds,
+    required this.crop,
+    required this.flipHorizontal,
+    required this.flipVertical,
   });
 
   final String resourceId;
@@ -135,14 +147,44 @@ class ImageRenderNodeModel extends RenderNodeModel {
   final String? contentType;
   final String? dataBase64;
   final RectModel bounds;
+  final ImageCropInsetsModel? crop;
+  final bool flipHorizontal;
+  final bool flipVertical;
 
   factory ImageRenderNodeModel.fromJson(Map<String, Object?> json) {
+    final cropJson = json['crop'] as Map<String, Object?>?;
     return ImageRenderNodeModel(
       resourceId: json['resourceId'] as String,
       description: json['description'] as String?,
       contentType: json['contentType'] as String?,
       dataBase64: json['dataBase64'] as String?,
       bounds: RectModel.fromJson(json['bounds'] as Map<String, Object?>),
+      crop: cropJson == null ? null : ImageCropInsetsModel.fromJson(cropJson),
+      flipHorizontal: json['flipHorizontal'] as bool? ?? false,
+      flipVertical: json['flipVertical'] as bool? ?? false,
+    );
+  }
+}
+
+class ImageCropInsetsModel {
+  const ImageCropInsetsModel({
+    required this.left,
+    required this.top,
+    required this.right,
+    required this.bottom,
+  });
+
+  final double left;
+  final double top;
+  final double right;
+  final double bottom;
+
+  factory ImageCropInsetsModel.fromJson(Map<String, Object?> json) {
+    return ImageCropInsetsModel(
+      left: (json['left'] as num).toDouble(),
+      top: (json['top'] as num).toDouble(),
+      right: (json['right'] as num).toDouble(),
+      bottom: (json['bottom'] as num).toDouble(),
     );
   }
 }
@@ -151,21 +193,30 @@ class BoxRenderNodeModel extends RenderNodeModel {
   const BoxRenderNodeModel({
     required this.bounds,
     required this.fillColorHex,
+    required this.gradientEndColorHex,
+    required this.gradientAngleDegrees,
     required this.strokeColorHex,
     required this.strokeWidth,
+    required this.cornerRadius,
   });
 
   final RectModel bounds;
   final String? fillColorHex;
+  final String? gradientEndColorHex;
+  final double? gradientAngleDegrees;
   final String? strokeColorHex;
   final double strokeWidth;
+  final double? cornerRadius;
 
   factory BoxRenderNodeModel.fromJson(Map<String, Object?> json) {
     return BoxRenderNodeModel(
       bounds: RectModel.fromJson(json['bounds'] as Map<String, Object?>),
       fillColorHex: json['fillColorHex'] as String?,
+      gradientEndColorHex: json['gradientEndColorHex'] as String?,
+      gradientAngleDegrees: (json['gradientAngleDegrees'] as num?)?.toDouble(),
       strokeColorHex: json['strokeColorHex'] as String?,
       strokeWidth: (json['strokeWidth'] as num).toDouble(),
+      cornerRadius: (json['cornerRadius'] as num?)?.toDouble(),
     );
   }
 }

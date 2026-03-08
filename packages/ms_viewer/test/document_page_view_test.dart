@@ -22,12 +22,42 @@ void main() {
     final painter = buildRenderTextPainter(
       node: node,
       platform: ViewerPlatform.macOs,
+      scaleX: 1.0,
       scaleY: 1.0,
     )..layout();
 
     expect(painter.maxLines, 1);
     expect(painter.didExceedMaxLines, isFalse);
   });
+
+  test(
+    'render text painter applies underline decoration from engine style',
+    () {
+      final node = TextRenderNodeModel.fromJson({
+        'type': 'text',
+        'text': '두 가지',
+        'bounds': {'x': 72.0, 'y': 132.0, 'width': 120.0, 'height': 38.0},
+        'style': {
+          'fontFamily': 'Pretendard Medium',
+          'fontSize': 30.0,
+          'bold': true,
+          'italic': false,
+          'underline': true,
+          'colorHex': '#003296',
+        },
+        'range': {'start': 0, 'end': 4},
+      });
+
+      final painter = buildRenderTextPainter(
+        node: node,
+        platform: ViewerPlatform.macOs,
+        scaleX: 1.0,
+        scaleY: 1.0,
+      );
+
+      expect(painter.text!.style!.decoration, TextDecoration.underline);
+    },
+  );
 
   testWidgets('placeholder paint test from mock render model', (tester) async {
     final page = PageRenderModel.fromJson({
@@ -194,5 +224,155 @@ void main() {
     expect(find.byType(Image), findsOneWidget);
     expect(find.byType(SelectionHighlightOverlay), findsOneWidget);
     expect(tester.getSize(find.byType(Image)), const Size(50, 37.5));
+  });
+
+  testWidgets('preserves render node order inside page stack', (tester) async {
+    final page = PageRenderModel.fromJson({
+      'pageIndex': 0,
+      'width': 720.0,
+      'height': 540.0,
+      'nodes': [
+        {
+          'type': 'box',
+          'bounds': {'x': 0.0, 'y': 0.0, 'width': 720.0, 'height': 540.0},
+          'fillColorHex': '#003EA7',
+          'strokeColorHex': null,
+          'strokeWidth': 0.0,
+        },
+        {
+          'type': 'image',
+          'resourceId': 'ppt/media/image1.png',
+          'description': 'Fixture image',
+          'contentType': 'image/png',
+          'dataBase64':
+              'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+lm2cAAAAASUVORK5CYII=',
+          'bounds': {'x': 100.0, 'y': 100.0, 'width': 160.0, 'height': 90.0},
+          'crop': {'left': 0.1, 'top': 0.0, 'right': 0.2, 'bottom': 0.0},
+          'flipHorizontal': true,
+        },
+        {
+          'type': 'box',
+          'bounds': {'x': 120.0, 'y': 110.0, 'width': 120.0, 'height': 70.0},
+          'fillColorHex': '#FFFFFF80',
+          'strokeColorHex': null,
+          'strokeWidth': 0.0,
+          'cornerRadius': 16.0,
+        },
+        {
+          'type': 'text',
+          'text': 'Overlay title',
+          'bounds': {'x': 140.0, 'y': 128.0, 'width': 120.0, 'height': 24.0},
+          'style': {
+            'fontFamily': 'Aptos',
+            'fontSize': 20.0,
+            'bold': true,
+            'italic': false,
+            'colorHex': '#000000',
+          },
+          'range': {'start': 0, 'end': 13},
+        },
+      ],
+      'selectionAnchors': const [],
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: SizedBox(
+              width: 360,
+              height: 270,
+              child: DocumentPageView(page: page),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final pageStack = tester
+        .widgetList<Stack>(
+          find.descendant(
+            of: find.byType(DocumentPageView),
+            matching: find.byType(Stack),
+          ),
+        )
+        .first;
+    final keyedChildren = pageStack.children
+        .where((child) => child.key != null)
+        .toList();
+    expect(keyedChildren.take(4).map((child) => child.key).toList(), const [
+      ValueKey('node-0'),
+      ValueKey('node-1'),
+      ValueKey('node-2'),
+      ValueKey('node-3'),
+    ]);
+  });
+
+  testWidgets('renders gradient background boxes without crashing', (
+    tester,
+  ) async {
+    final page = PageRenderModel.fromJson({
+      'pageIndex': 0,
+      'width': 720.0,
+      'height': 540.0,
+      'nodes': [
+        {
+          'type': 'box',
+          'bounds': {'x': 0.0, 'y': 0.0, 'width': 720.0, 'height': 540.0},
+          'fillColorHex': '#003EA7',
+          'gradientEndColorHex': '#70AD47',
+          'gradientAngleDegrees': 62.0,
+          'strokeColorHex': null,
+          'strokeWidth': 0.0,
+        },
+      ],
+      'selectionAnchors': const [],
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: SizedBox(
+              width: 360,
+              height: 270,
+              child: DocumentPageView(page: page),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byType(DocumentPageView), findsOneWidget);
+    expect(find.byType(CustomPaint), findsWidgets);
+  });
+
+  test('render text painter supports gradient text styles', () {
+    final node = TextRenderNodeModel.fromJson({
+      'type': 'text',
+      'text': 'Theme Title',
+      'bounds': {'x': 32.0, 'y': 48.0, 'width': 240.0, 'height': 54.0},
+      'style': {
+        'fontFamily': '맑은 고딕',
+        'fontSize': 48.0,
+        'bold': true,
+        'italic': false,
+        'colorHex': '#003EA7',
+        'gradientEndColorHex': '#70AD47',
+        'gradientAngleDegrees': 32.0,
+      },
+      'range': {'start': 0, 'end': 11},
+    });
+
+    final painter = buildRenderTextPainter(
+      node: node,
+      platform: ViewerPlatform.macOs,
+      scaleX: 1.0,
+      scaleY: 1.0,
+    )..layout();
+
+    expect(painter.maxLines, 1);
+    expect(painter.didExceedMaxLines, isFalse);
   });
 }

@@ -2,6 +2,7 @@ use std::path::Path;
 
 use base64::Engine;
 use format_docx::{build_selection_page_models, parse_docx, search_document};
+use format_pptx::{build_slide_render_model, parse_pptx, search_slides};
 use serde::{Deserialize, Serialize};
 use viewer_core::archive::OoxmlArchive;
 use viewer_core::crypto::{
@@ -251,8 +252,8 @@ fn build_open_success(
         title,
         page_count,
         capabilities: DocumentCapabilities {
-            search: kind == DocumentKind::Docx,
-            text_selection: kind == DocumentKind::Docx,
+            search: supports_text_search(kind),
+            text_selection: supports_text_selection(kind),
             password_protected: false,
         },
     })
@@ -323,9 +324,9 @@ fn get_page_render_model_impl(
 ) -> Result<PageRenderModel, ViewerError> {
     let _ = &request.document_id;
 
-    match request.source {
-        DocumentSource::Path(path) => {
-            let archive = OoxmlArchive::open_path(&path)?;
+    let archive = open_archive_from_source(request.source)?;
+    match detect_document_kind(&archive)? {
+        DocumentKind::Docx => {
             let package = parse_docx(&archive)?;
             let pages = build_selection_page_models(&archive, &package)?;
             pages
@@ -333,18 +334,11 @@ fn get_page_render_model_impl(
                 .cloned()
                 .ok_or(ViewerError::InvalidDocument)
         }
-        DocumentSource::BytesBase64(value) => {
-            let bytes = base64::engine::general_purpose::STANDARD
-                .decode(value)
-                .map_err(|_| ViewerError::InvalidDocument)?;
-            let archive = OoxmlArchive::open_bytes(bytes)?;
-            let package = parse_docx(&archive)?;
-            let pages = build_selection_page_models(&archive, &package)?;
-            pages
-                .get(request.page_index as usize)
-                .cloned()
-                .ok_or(ViewerError::InvalidDocument)
+        DocumentKind::Pptx => {
+            let slide_tree = parse_pptx(&archive)?;
+            build_slide_render_model(&archive, &slide_tree, request.page_index as usize)
         }
+        DocumentKind::Xlsx => Err(ViewerError::NotImplemented("xlsx page rendering")),
     }
 }
 
@@ -353,49 +347,47 @@ fn search_document_pages_impl(
 ) -> Result<Vec<SearchMatch>, ViewerError> {
     let _ = &request.document_id;
 
-    match request.source {
-        DocumentSource::Path(path) => {
-            let archive = OoxmlArchive::open_path(&path)?;
+    let archive = open_archive_from_source(request.source)?;
+    match detect_document_kind(&archive)? {
+        DocumentKind::Docx => {
             let package = parse_docx(&archive)?;
             search_document(&archive, &package, &request.query)
         }
-        DocumentSource::BytesBase64(value) => {
-            let bytes = base64::engine::general_purpose::STANDARD
-                .decode(value)
-                .map_err(|_| ViewerError::InvalidDocument)?;
-            let archive = OoxmlArchive::open_bytes(bytes)?;
-            let package = parse_docx(&archive)?;
-            search_document(&archive, &package, &request.query)
+        DocumentKind::Pptx => {
+            let slide_tree = parse_pptx(&archive)?;
+            search_slides(&archive, &slide_tree, &request.query)
         }
+        DocumentKind::Xlsx => Err(ViewerError::NotImplemented("xlsx search")),
     }
 }
 
 fn get_selection_page_impl(
     request: GetSelectionPageRequest,
 ) -> Result<PageRenderModel, ViewerError> {
-    let _ = &request.document_id;
+    get_page_render_model_impl(GetPageRenderModelRequest {
+        source: request.source,
+        document_id: request.document_id,
+        page_index: request.page_index,
+        options: request.options,
+    })
+}
 
-    match request.source {
-        DocumentSource::Path(path) => {
-            let archive = OoxmlArchive::open_path(&path)?;
-            let package = parse_docx(&archive)?;
-            let pages = build_selection_page_models(&archive, &package)?;
-            pages
-                .get(request.page_index as usize)
-                .cloned()
-                .ok_or(ViewerError::InvalidDocument)
-        }
+fn open_archive_from_source(source: DocumentSource) -> Result<OoxmlArchive, ViewerError> {
+    match source {
+        DocumentSource::Path(path) => OoxmlArchive::open_path(&path),
         DocumentSource::BytesBase64(value) => {
             let bytes = base64::engine::general_purpose::STANDARD
                 .decode(value)
                 .map_err(|_| ViewerError::InvalidDocument)?;
-            let archive = OoxmlArchive::open_bytes(bytes)?;
-            let package = parse_docx(&archive)?;
-            let pages = build_selection_page_models(&archive, &package)?;
-            pages
-                .get(request.page_index as usize)
-                .cloned()
-                .ok_or(ViewerError::InvalidDocument)
+            OoxmlArchive::open_bytes(bytes)
         }
     }
+}
+
+fn supports_text_search(kind: DocumentKind) -> bool {
+    matches!(kind, DocumentKind::Docx | DocumentKind::Pptx)
+}
+
+fn supports_text_selection(kind: DocumentKind) -> bool {
+    matches!(kind, DocumentKind::Docx | DocumentKind::Pptx)
 }

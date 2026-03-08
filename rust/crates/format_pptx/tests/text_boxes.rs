@@ -2,7 +2,8 @@ use std::fs;
 use std::io::Write;
 
 use format_pptx::{
-    parse_slide_text_boxes, SlidePlaceholderKind, SlideTextAlignment,
+    parse_slide_text_boxes, SlidePlaceholderKind, SlidePlaceholderReference, SlideTextAlignment,
+    SlideTextVerticalAnchor,
 };
 use tempfile::tempdir;
 use viewer_core::archive::OoxmlArchive;
@@ -51,7 +52,7 @@ fn parses_slide_text_boxes_with_placeholder_bounds_and_runs() {
           </a:xfrm>
         </p:spPr>
         <p:txBody>
-          <a:bodyPr />
+          <a:bodyPr anchor="ctr" />
           <a:lstStyle />
           <a:p>
             <a:pPr algn="ctr" />
@@ -116,15 +117,25 @@ fn parses_slide_text_boxes_with_placeholder_bounds_and_runs() {
     let title = &text_boxes[0];
     assert_eq!(title.shape_id, 2);
     assert_eq!(title.name, "Title 1");
-    assert_eq!(title.placeholder, Some(SlidePlaceholderKind::Title));
+    assert_eq!(
+        title.placeholder,
+        Some(SlidePlaceholderReference {
+            kind: SlidePlaceholderKind::Title,
+            index: None,
+        })
+    );
     assert_eq!(title.bounds.as_ref().expect("bounds").x, 457_200);
     assert_eq!(title.bounds.as_ref().expect("bounds").width, 8_229_600);
+    assert_eq!(title.vertical_anchor, SlideTextVerticalAnchor::Center);
     assert_eq!(title.paragraphs.len(), 1);
-    assert_eq!(title.paragraphs[0].alignment, Some(SlideTextAlignment::Center));
+    assert_eq!(
+        title.paragraphs[0].alignment,
+        Some(SlideTextAlignment::Center)
+    );
     assert_eq!(title.paragraphs[0].runs.len(), 3);
     assert_eq!(title.paragraphs[0].runs[0].text, "Hello");
-    assert!(title.paragraphs[0].runs[0].style.bold);
-    assert!(title.paragraphs[0].runs[0].style.italic);
+    assert_eq!(title.paragraphs[0].runs[0].style.bold, Some(true));
+    assert_eq!(title.paragraphs[0].runs[0].style.italic, Some(true));
     assert_eq!(
         title.paragraphs[0].runs[0].style.font_face.as_deref(),
         Some("Aptos")
@@ -140,12 +151,21 @@ fn parses_slide_text_boxes_with_placeholder_bounds_and_runs() {
         title.paragraphs[0].runs[0].style.font_size_centipoints,
         Some(2400)
     );
-    assert_eq!(title.paragraphs[0].runs[0].style.color.as_deref(), Some("#112233"));
+    match title.paragraphs[0].runs[0].style.fill.as_ref() {
+        Some(format_pptx::ShapeFill::Solid(color)) => assert_eq!(color, "#112233"),
+        other => panic!("expected solid fill, got {other:?}"),
+    }
     assert_eq!(title.paragraphs[0].runs[1].text, "\n");
     assert_eq!(title.paragraphs[0].runs[2].text, "World");
 
     let body = &text_boxes[1];
-    assert_eq!(body.placeholder, Some(SlidePlaceholderKind::Body));
+    assert_eq!(
+        body.placeholder,
+        Some(SlidePlaceholderReference {
+            kind: SlidePlaceholderKind::Body,
+            index: None,
+        })
+    );
     assert!(body.bounds.is_none());
     assert_eq!(body.paragraphs[0].level, Some(1));
     assert_eq!(body.paragraphs[0].runs.len(), 1);
@@ -200,6 +220,58 @@ fn invalid_transform_geometry_fails() {
         parse_slide_text_boxes(&archive, "ppt/slides/slide1.xml").expect_err("invalid xfrm");
 
     assert!(matches!(error, ViewerError::InvalidDocument));
+}
+
+#[test]
+fn text_box_parser_preserves_run_spaces() {
+    let dir = tempdir().expect("tempdir should exist");
+    let path = dir.path().join("text-box-spaces.pptx");
+    create_zip(
+        &path,
+        &[(
+            "ppt/slides/slide1.xml",
+            br#"
+<p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+       xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <p:cSld>
+    <p:spTree>
+      <p:sp>
+        <p:nvSpPr>
+          <p:cNvPr id="2" name="Body 1" />
+          <p:cNvSpPr />
+          <p:nvPr />
+        </p:nvSpPr>
+        <p:spPr>
+          <a:xfrm>
+            <a:off x="0" y="0" />
+            <a:ext cx="4572000" cy="914400" />
+          </a:xfrm>
+        </p:spPr>
+        <p:txBody>
+          <a:bodyPr />
+          <a:lstStyle />
+          <a:p>
+            <a:r><a:t>Need </a:t></a:r>
+            <a:r><a:t>web </a:t></a:r>
+            <a:r><a:t>access</a:t></a:r>
+          </a:p>
+        </p:txBody>
+      </p:sp>
+    </p:spTree>
+  </p:cSld>
+</p:sld>
+"#,
+        )],
+    );
+
+    let archive = OoxmlArchive::open_path(&path).expect("archive should open");
+    let text_boxes =
+        parse_slide_text_boxes(&archive, "ppt/slides/slide1.xml").expect("text boxes should parse");
+
+    let runs = &text_boxes[0].paragraphs[0].runs;
+    assert_eq!(runs[0].text, "Need ");
+    assert_eq!(runs[1].text, "web ");
+    assert_eq!(runs[2].text, "access");
 }
 
 #[test]

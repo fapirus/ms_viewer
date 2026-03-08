@@ -49,7 +49,10 @@ pub struct TextStyle {
     pub font_size: f32,
     pub bold: bool,
     pub italic: bool,
+    pub underline: bool,
     pub color_hex: String,
+    pub gradient_end_color_hex: Option<String>,
+    pub gradient_angle_degrees: Option<f32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -212,6 +215,21 @@ pub struct ImageNode {
     pub content_type: Option<String>,
     pub data_base64: Option<String>,
     pub bounds: Rect,
+    #[serde(default)]
+    pub crop: Option<ImageCropInsets>,
+    #[serde(default)]
+    pub flip_horizontal: bool,
+    #[serde(default)]
+    pub flip_vertical: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ImageCropInsets {
+    pub left: f32,
+    pub top: f32,
+    pub right: f32,
+    pub bottom: f32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -219,8 +237,12 @@ pub struct ImageNode {
 pub struct BoxNode {
     pub bounds: Rect,
     pub fill_color_hex: Option<String>,
+    pub gradient_end_color_hex: Option<String>,
+    pub gradient_angle_degrees: Option<f32>,
     pub stroke_color_hex: Option<String>,
     pub stroke_width: f32,
+    #[serde(default)]
+    pub corner_radius: Option<f32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
