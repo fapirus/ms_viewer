@@ -639,7 +639,12 @@ pub fn build_slide_render_model(
                         .and_then(|stroke| stroke.width_emu)
                         .map(emu_to_points)
                         .unwrap_or(0.0),
-                    corner_radius: shape_corner_radius_points(&shape.geometry, &transform.bounds),
+                    corner_radius: shape_corner_radius_points(
+                        &shape.geometry,
+                        &transform.bounds,
+                        slide_width,
+                        slide_height,
+                    ),
                 }));
             }
             PartContentItem::Image(image) => {
@@ -2694,13 +2699,40 @@ fn image_crop_to_insets(crop: &ImageCrop) -> ImageCropInsets {
     }
 }
 
-fn shape_corner_radius_points(geometry: &BasicShapeGeometry, bounds: &EmuRectangle) -> Option<f32> {
+fn shape_corner_radius_points(
+    geometry: &BasicShapeGeometry,
+    bounds: &EmuRectangle,
+    slide_width: f32,
+    slide_height: f32,
+) -> Option<f32> {
     match geometry {
-        BasicShapeGeometry::Preset(name) if name == "roundRect" => {
+        BasicShapeGeometry::Preset(name)
+            if name == "roundRect"
+                && !is_full_slide_background_panel(bounds, slide_width, slide_height) =>
+        {
             Some(emu_to_points(bounds.width.min(bounds.height)) * 0.16667)
         }
         _ => None,
     }
+}
+
+fn is_full_slide_background_panel(
+    bounds: &EmuRectangle,
+    slide_width: f32,
+    slide_height: f32,
+) -> bool {
+    let rect = rect_from_emu_bounds(bounds);
+    let tolerance = 1.0;
+    rect.x.abs() <= tolerance
+        && rect.y.abs() <= tolerance
+        && (rect.width - slide_width).abs() <= tolerance
+        && (rect.height - slide_height).abs() <= tolerance
+}
+
+fn derive_table_cell_font_size_centipoints(cell_height_emu: i64, margins: &SlideTextInsets) -> u32 {
+    let content_height = (cell_height_emu - margins.top - margins.bottom).max(101_600);
+    let font_size_points = (emu_to_points(content_height) * 0.62).clamp(8.0, 14.0);
+    (font_size_points * 100.0).round() as u32
 }
 
 fn build_table_nodes(
@@ -2797,6 +2829,18 @@ fn build_table_nodes(
                     paragraph_style.default_run_style = table_style.text_style.clone();
                     paragraph_style
                 });
+            let default_table_font_size =
+                derive_table_cell_font_size_centipoints(cell_bounds.height, &cell.margins);
+            for paragraph_style in style_sheet.levels.values_mut() {
+                if paragraph_style
+                    .default_run_style
+                    .font_size_centipoints
+                    .is_none()
+                {
+                    paragraph_style.default_run_style.font_size_centipoints =
+                        Some(default_table_font_size);
+                }
+            }
 
             build_text_nodes(
                 &SlideTextBox {
@@ -2804,7 +2848,7 @@ fn build_table_nodes(
                     name: table.name.clone(),
                     bounds: Some(cell_bounds),
                     insets: cell.margins.clone(),
-                    vertical_anchor: SlideTextVerticalAnchor::Top,
+                    vertical_anchor: SlideTextVerticalAnchor::Center,
                     wrap_none: false,
                     placeholder: None,
                     style_sheet,

@@ -631,10 +631,17 @@
   - Notes:
     - `fixday` slide 1 우하단 표에서 cell fill, border, text run style 일부가 누락된다
     - 표가 읽히는 수준은 넘었지만, 현재는 acceptance를 닫기 어려운 오차다
+    - 기본 table style에 font size가 없을 때 18pt fallback으로 셀 텍스트가 잘리는 문제가 있어, cell height 기반 기본 font size와 vertical centering을 반영했다
   - Tests:
     - table cell fill regression fixture
     - table rich-text run style regression fixture
     - default table style fallback regression fixture
+- [x] PPTX full-slide background panel 곡률 보정
+  - Notes:
+    - `fixday` slide 1의 레이아웃 배경처럼 slide 전체를 덮는 `roundRect`는 그대로 곡률을 주면 PDF보다 과장된 흰 패널이 된다
+    - full-slide background container는 곡률을 제거하고, 실제 콘텐츠용 `roundRect`만 곡률을 유지한다
+  - Tests:
+    - full-slide background round-rect regression fixture
 - [ ] PPTX repaint flicker 완화
   - Notes:
     - `gaplessPlayback` 1차 적용

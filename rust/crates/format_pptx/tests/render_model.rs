@@ -1134,11 +1134,13 @@ fn render_model_applies_default_table_styles_to_fill_and_text() {
     assert!(text_nodes
         .iter()
         .find(|node| node.text == "Header")
-        .is_some_and(|node| node.style.color_hex == "#FFFFFF" && node.style.bold));
+        .is_some_and(|node| {
+            node.style.color_hex == "#FFFFFF" && node.style.bold && node.style.font_size <= 14.0
+        }));
     assert!(text_nodes
         .iter()
         .find(|node| node.text == "Value")
-        .is_some_and(|node| node.style.color_hex == "#111111"));
+        .is_some_and(|node| node.style.color_hex == "#111111" && node.style.font_size <= 14.0));
 }
 
 #[test]
@@ -1455,4 +1457,71 @@ fn render_model_applies_vertical_center_anchor_inside_text_box() {
 
     assert!(text.bounds.y > 135.0);
     assert!(text.bounds.y < 155.0);
+}
+
+#[test]
+fn render_model_does_not_round_full_slide_background_panel() {
+    let dir = tempdir().expect("tempdir should exist");
+    let path = dir.path().join("render-model-full-slide-roundrect.pptx");
+    create_zip(
+        &path,
+        &[(
+            "ppt/slides/slide1.xml",
+            br#"
+<p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+       xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+  <p:cSld>
+    <p:spTree>
+      <p:sp>
+        <p:nvSpPr>
+          <p:cNvPr id="2" name="Background Panel" />
+          <p:cNvSpPr />
+          <p:nvPr />
+        </p:nvSpPr>
+        <p:spPr>
+          <a:xfrm>
+            <a:off x="0" y="0" />
+            <a:ext cx="9144000" cy="6858000" />
+          </a:xfrm>
+          <a:prstGeom prst="roundRect"><a:avLst /></a:prstGeom>
+          <a:solidFill><a:srgbClr val="FFFFFF" /></a:solidFill>
+        </p:spPr>
+      </p:sp>
+    </p:spTree>
+  </p:cSld>
+</p:sld>
+"#,
+        )],
+    );
+
+    let archive = OoxmlArchive::open_path(&path).expect("archive should open");
+    let slide_tree = PptxSlideTree {
+        presentation_part: "ppt/presentation.xml".to_string(),
+        presentation_size: Some(PresentationSize {
+            width_emu: 9_144_000,
+            height_emu: 6_858_000,
+        }),
+        slides: vec![SlideReference {
+            slide_id: 256,
+            relationship_id: "rIdSlide1".to_string(),
+            part_name: "ppt/slides/slide1.xml".to_string(),
+            layout_part_name: None,
+            notes_part_name: None,
+            has_transition: false,
+            ignored_animation_nodes: 0,
+        }],
+        slide_masters: Vec::new(),
+    };
+
+    let page = build_slide_render_model(&archive, &slide_tree, 0).expect("render model");
+    let background = page
+        .nodes
+        .iter()
+        .find_map(|node| match node {
+            RenderNode::Box(node) => Some(node),
+            _ => None,
+        })
+        .expect("background box");
+
+    assert!(background.corner_radius.is_none());
 }
