@@ -361,16 +361,17 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
-        home: Scaffold(
-          body: MsDocumentView(controller: controller),
-        ),
+        home: Scaffold(body: MsDocumentView(controller: controller)),
       ),
     );
     await tester.pumpAndSettle();
 
     expect(find.text('budget.xlsx'), findsOneWidget);
-    expect(find.text('2 pages'), findsOneWidget);
-    expect(find.byType(DocumentPageView), findsOneWidget);
+    expect(find.text('2 sheets'), findsOneWidget);
+    expect(find.text('Sheet 1 / 2'), findsOneWidget);
+    expect(find.byType(SheetViewport), findsOneWidget);
+    expect(find.byKey(const ValueKey('sheet-column-header-1')), findsOneWidget);
+    expect(find.byKey(const ValueKey('sheet-row-header-1')), findsOneWidget);
     expect(find.widgetWithText(OutlinedButton, 'Next'), findsOneWidget);
   });
 
@@ -414,7 +415,7 @@ void main() {
 
     expect(find.text('budget.xlsx'), findsOneWidget);
     expect(find.text('Failed to load sheet preview.'), findsOneWidget);
-    expect(find.byType(DocumentPageView), findsNothing);
+    expect(find.byType(SheetViewport), findsNothing);
   });
 
   testWidgets('xlsx sheet search integration widget test', (tester) async {
@@ -521,7 +522,7 @@ void main() {
     await controller.loadPage(0);
     await tester.pumpAndSettle();
 
-    final pageFinder = find.byType(DocumentPageView);
+    final pageFinder = find.byKey(const ValueKey('sheet-body-canvas'));
     expect(pageFinder, findsOneWidget);
     final pageRect = tester.getRect(pageFinder);
 
@@ -711,10 +712,7 @@ void main() {
                   'italic': false,
                   'colorHex': '#000000',
                 },
-                'range': {
-                  'start': 0,
-                  'end': request.pageIndex == 0 ? 17 : 16,
-                },
+                'range': {'start': 0, 'end': request.pageIndex == 0 ? 17 : 16},
               },
               {
                 'type': 'image',
@@ -824,9 +822,8 @@ void main() {
             ),
           ),
         ),
-        onGetPage: (_) async => _pageModel(
-          _pageJson(pageIndex: 0, text: 'Agenda overview'),
-        ),
+        onGetPage: (_) async =>
+            _pageModel(_pageJson(pageIndex: 0, text: 'Agenda overview')),
         onSearch: (_) async => const platform.SearchDocumentSuccess([
           platform.SearchMatchModel(
             query: 'forecast',

@@ -4,8 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:ms_viewer_platform_interface/ms_viewer_platform_interface.dart';
 
 import '../controller/ms_viewer_controller.dart';
+import '../models/document_descriptor.dart' as document_model;
 import 'document_page_view.dart';
 import 'search_result_list.dart';
+import 'sheet_viewport.dart';
 
 class MsDocumentView extends StatefulWidget {
   const MsDocumentView({
@@ -62,17 +64,22 @@ class _MsDocumentViewState extends State<MsDocumentView> {
         if (document == null) {
           return const Center(child: Text('No document attached'));
         }
-        return _buildReadyState(document.title, document.pageCount);
+        return _buildReadyState(document);
       case ViewerShellStatus.idle:
         final document = widget.controller.document;
         if (document == null) {
           return const Center(child: Text('No document attached'));
         }
-        return _buildReadyState(document.title, document.pageCount);
+        return _buildReadyState(document);
     }
   }
 
-  Widget _buildReadyState(String title, int pageCount) {
+  Widget _buildReadyState(document_model.DocumentDescriptor document) {
+    final title = document.title;
+    final pageCount = document.pageCount;
+    final isSpreadsheet = document.kind == document_model.DocumentKind.xlsx;
+    final collectionLabel = isSpreadsheet ? 'sheets' : 'pages';
+    final currentLabel = isSpreadsheet ? 'Sheet' : 'Page';
     final fetchedPage = widget.controller.currentPage;
     final fallbackPreviewPage = widget.previewPages.isEmpty
         ? null
@@ -86,7 +93,7 @@ class _MsDocumentViewState extends State<MsDocumentView> {
         children: [
           Text(title, style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 8),
-          Text('$pageCount pages'),
+          Text('$pageCount $collectionLabel'),
           const SizedBox(height: 16),
           Row(
             children: [
@@ -108,8 +115,8 @@ class _MsDocumentViewState extends State<MsDocumentView> {
               const SizedBox(width: 12),
               Text(
                 pageCount == 0
-                    ? 'Page 0 / 0'
-                    : 'Page ${(widget.controller.currentPageIndex ?? 0) + 1} / $pageCount',
+                    ? '$currentLabel 0 / 0'
+                    : '$currentLabel ${(widget.controller.currentPageIndex ?? 0) + 1} / $pageCount',
               ),
             ],
           ),
@@ -161,28 +168,11 @@ class _MsDocumentViewState extends State<MsDocumentView> {
                   textAlign: TextAlign.center,
                 ),
               ),
-              ViewerPageStatus.ready when page != null => Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 640),
-                  child: DocumentPageView(
-                    page: page,
-                    highlights: widget.controller.pageHighlights,
-                    onSelectionStart: widget.controller.startSelectionAt,
-                    onSelectionUpdate: widget.controller.updateSelectionAt,
-                  ),
-                ),
+              ViewerPageStatus.ready when page != null => _buildViewerSurface(
+                page,
+                isSpreadsheet,
               ),
-              _ when page != null => Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 640),
-                  child: DocumentPageView(
-                    page: page,
-                    highlights: widget.controller.pageHighlights,
-                    onSelectionStart: widget.controller.startSelectionAt,
-                    onSelectionUpdate: widget.controller.updateSelectionAt,
-                  ),
-                ),
-              ),
+              _ when page != null => _buildViewerSurface(page, isSpreadsheet),
               _ => const Center(
                 child: Text(
                   'Viewer placeholder: render model not loaded',
@@ -192,6 +182,33 @@ class _MsDocumentViewState extends State<MsDocumentView> {
             },
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildViewerSurface(PageRenderModel page, bool isSpreadsheet) {
+    final viewer = isSpreadsheet
+        ? SheetViewport(
+            page: page,
+            highlights: widget.controller.pageHighlights,
+            onSelectionStart: widget.controller.startSelectionAt,
+            onSelectionUpdate: widget.controller.updateSelectionAt,
+          )
+        : DocumentPageView(
+            page: page,
+            highlights: widget.controller.pageHighlights,
+            onSelectionStart: widget.controller.startSelectionAt,
+            onSelectionUpdate: widget.controller.updateSelectionAt,
+          );
+
+    if (isSpreadsheet) {
+      return viewer;
+    }
+
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 640),
+        child: viewer,
       ),
     );
   }

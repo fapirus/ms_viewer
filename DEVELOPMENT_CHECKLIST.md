@@ -882,14 +882,14 @@
     - 최소 재현 fixture 후보를 `fixtures/regression/`에 승격
 
 ### Layout and viewport fidelity
-- [ ] Flutter 전용 2D sheet viewport scaffold 구현
+- [x] Flutter 전용 2D sheet viewport scaffold 구현
   - Scope:
     - 공통 `DocumentPageView` 대신 `XLSX` 전용 viewport shell 도입
     - `TableView` 또는 동등한 2D viewport 기반으로 row/column scrolling 구조 구성
   - Tests:
     - initial viewport widget test
     - 2D scroll smoke test
-- [ ] pinned row/column headers와 corner cell 구현
+- [x] pinned row/column headers와 corner cell 구현
   - Tests:
     - pinned header widget test
     - header/body scroll sync test
