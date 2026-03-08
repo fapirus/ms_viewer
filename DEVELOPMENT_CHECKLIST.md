@@ -852,7 +852,7 @@
   - Tests:
     - sheet window fetch controller test
     - sheet fetch error state widget test
-- [ ] Flutter XLSX search/selection bridge 연결
+- [x] Flutter XLSX search/selection bridge 연결
   - Tests:
     - sheet search integration widget test
     - sheet text selection integration widget test

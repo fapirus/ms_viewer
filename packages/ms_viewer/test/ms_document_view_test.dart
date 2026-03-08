@@ -417,6 +417,127 @@ void main() {
     expect(find.byType(DocumentPageView), findsNothing);
   });
 
+  testWidgets('xlsx sheet search integration widget test', (tester) async {
+    platform.GetSelectionPageRequest? selectionRequest;
+    final controller = MsViewerController(
+      platform: _FakeMsViewerPlatform(
+        onOpen: (_) async => platform.OpenDocumentOpened(
+          const platform.OpenDocumentSuccess(
+            documentId: 'sheet_001',
+            kind: platform.DocumentKind.xlsx,
+            title: 'budget.xlsx',
+            pageCount: 2,
+            capabilities: platform.DocumentCapabilities(
+              search: true,
+              textSelection: true,
+              passwordProtected: false,
+            ),
+          ),
+        ),
+        onGetPage: (_) async =>
+            _pageModel(_pageJson(pageIndex: 0, text: 'Budget summary')),
+        onSearch: (_) async => const platform.SearchDocumentSuccess([
+          platform.SearchMatchModel(
+            query: 'status',
+            pageIndex: 1,
+            start: 0,
+            end: 6,
+            preview: 'status column on detail sheet',
+          ),
+        ]),
+        onGetSelectionPage: (request) async {
+          selectionRequest = request;
+          return platform.GetSelectionPageSuccess(
+            platform.PageRenderModel.fromJson(
+              _pageJson(pageIndex: 1, text: 'status column on detail sheet'),
+            ),
+          );
+        },
+      ),
+    );
+
+    await controller.openDocument(
+      const platform.OpenDocumentRequest(
+        source: platform.OpenDocumentSource.path('/tmp/budget.xlsx'),
+      ),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: MsDocumentView(controller: controller)),
+      ),
+    );
+    await tester.pump();
+
+    await tester.enterText(find.byType(TextField).first, 'status');
+    await tester.tap(find.text('Search'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('status column on detail sheet'), findsOneWidget);
+
+    await tester.tap(find.text('status column on detail sheet'));
+    await tester.pumpAndSettle();
+
+    expect(selectionRequest, isNotNull);
+    expect(selectionRequest!.pageIndex, 1);
+    expect(controller.currentPageIndex, 1);
+    expect(controller.pageHighlights, isNotEmpty);
+  });
+
+  testWidgets('xlsx sheet text selection integration widget test', (
+    tester,
+  ) async {
+    final controller = MsViewerController(
+      platform: _FakeMsViewerPlatform(
+        onOpen: (_) async => platform.OpenDocumentOpened(
+          const platform.OpenDocumentSuccess(
+            documentId: 'sheet_001',
+            kind: platform.DocumentKind.xlsx,
+            title: 'budget.xlsx',
+            pageCount: 1,
+            capabilities: platform.DocumentCapabilities(
+              search: true,
+              textSelection: true,
+              passwordProtected: false,
+            ),
+          ),
+        ),
+        onGetPage: (_) async =>
+            _pageModel(_pageJson(pageIndex: 0, text: 'North Region 420')),
+      ),
+    );
+
+    await controller.openDocument(
+      const platform.OpenDocumentRequest(
+        source: platform.OpenDocumentSource.path('/tmp/budget.xlsx'),
+      ),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: MsDocumentView(controller: controller)),
+      ),
+    );
+    await controller.loadPage(0);
+    await tester.pumpAndSettle();
+
+    final pageFinder = find.byType(DocumentPageView);
+    expect(pageFinder, findsOneWidget);
+    final pageRect = tester.getRect(pageFinder);
+
+    final gesture = await tester.startGesture(
+      Offset(
+        pageRect.left + pageRect.width * 0.18,
+        pageRect.top + pageRect.height * 0.12,
+      ),
+    );
+    await gesture.moveBy(Offset(pageRect.width * 0.4, pageRect.height * 0.05));
+    await tester.pump();
+
+    expect(controller.pageHighlights, isNotEmpty);
+    expect(find.byType(Positioned), findsWidgets);
+  });
+
   testWidgets('search action integration widget test', (tester) async {
     platform.GetSelectionPageRequest? selectionRequest;
     final controller = MsViewerController(
