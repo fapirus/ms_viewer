@@ -36,6 +36,32 @@ pub enum WorksheetVisibility {
     VeryHidden,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct WorksheetGridMetrics {
+    pub part_name: String,
+    pub default_row_height_points: Option<f32>,
+    pub default_column_width: Option<f32>,
+    pub columns: Vec<WorksheetColumnMetric>,
+    pub rows: Vec<WorksheetRowMetric>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct WorksheetColumnMetric {
+    pub min: u32,
+    pub max: u32,
+    pub width: Option<f32>,
+    pub hidden: bool,
+    pub custom_width: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct WorksheetRowMetric {
+    pub index: u32,
+    pub height_points: Option<f32>,
+    pub hidden: bool,
+    pub custom_height: bool,
+}
+
 pub fn parse_xlsx(archive: &OoxmlArchive) -> Result<XlsxWorkbook, ViewerError> {
     let package_relationships = parse_package_relationships(archive)?;
     let workbook_part = package_relationships
@@ -139,6 +165,17 @@ pub fn parse_shared_strings(
     Ok(strings)
 }
 
+pub fn parse_row_column_metrics(
+    archive: &OoxmlArchive,
+    workbook: &XlsxWorkbook,
+) -> Result<Vec<WorksheetGridMetrics>, ViewerError> {
+    workbook
+        .sheets
+        .iter()
+        .map(|sheet| parse_worksheet_grid_metrics(archive, &sheet.part_name))
+        .collect()
+}
+
 fn parse_workbook_relationships(
     archive: &OoxmlArchive,
     workbook_part: &str,
@@ -199,6 +236,91 @@ fn parse_worksheet_dimension(
         .map(ToOwned::to_owned))
 }
 
+fn parse_worksheet_grid_metrics(
+    archive: &OoxmlArchive,
+    worksheet_part: &str,
+) -> Result<WorksheetGridMetrics, ViewerError> {
+    let worksheet_xml = archive.read_part(worksheet_part)?;
+    let worksheet_text =
+        String::from_utf8(worksheet_xml).map_err(|_| ViewerError::InvalidDocument)?;
+    let worksheet_root = parse_document(&worksheet_text)?;
+    if worksheet_root.local_name() != "worksheet" {
+        return Err(ViewerError::InvalidDocument);
+    }
+
+    let (default_row_height_points, default_column_width) = worksheet_root
+        .child("sheetFormatPr")
+        .map(|format| {
+            let default_row_height_points = format
+                .attribute("defaultRowHeight")
+                .map(parse_decimal)
+                .transpose()?;
+            let default_column_width = format
+                .attribute("defaultColWidth")
+                .map(parse_decimal)
+                .transpose()?;
+            Ok((default_row_height_points, default_column_width))
+        })
+        .transpose()?
+        .unwrap_or((None, None));
+
+    let mut columns = Vec::new();
+    if let Some(cols) = worksheet_root.child("cols") {
+        for column in &cols.children {
+            if column.local_name() != "col" {
+                continue;
+            }
+
+            columns.push(WorksheetColumnMetric {
+                min: column
+                    .required_attribute("min")?
+                    .parse::<u32>()
+                    .map_err(|_| ViewerError::InvalidDocument)?,
+                max: column
+                    .required_attribute("max")?
+                    .parse::<u32>()
+                    .map_err(|_| ViewerError::InvalidDocument)?,
+                width: column
+                    .attribute("width")
+                    .map(parse_decimal)
+                    .transpose()?,
+                hidden: matches!(column.attribute("hidden"), Some("1" | "true")),
+                custom_width: matches!(column.attribute("customWidth"), Some("1" | "true")),
+            });
+        }
+    }
+
+    let mut rows = Vec::new();
+    if let Some(sheet_data) = worksheet_root.child("sheetData") {
+        for row in &sheet_data.children {
+            if row.local_name() != "row" {
+                continue;
+            }
+
+            rows.push(WorksheetRowMetric {
+                index: row
+                    .required_attribute("r")?
+                    .parse::<u32>()
+                    .map_err(|_| ViewerError::InvalidDocument)?,
+                height_points: row
+                    .attribute("ht")
+                    .map(parse_decimal)
+                    .transpose()?,
+                hidden: matches!(row.attribute("hidden"), Some("1" | "true")),
+                custom_height: matches!(row.attribute("customHeight"), Some("1" | "true")),
+            });
+        }
+    }
+
+    Ok(WorksheetGridMetrics {
+        part_name: worksheet_part.to_string(),
+        default_row_height_points,
+        default_column_width,
+        columns,
+        rows,
+    })
+}
+
 fn parse_sheet_visibility(state: Option<&str>) -> WorksheetVisibility {
     match state {
         Some("hidden") => WorksheetVisibility::Hidden,
@@ -221,4 +343,8 @@ fn parse_shared_string_item(item: &viewer_core::xml::XmlElement) -> String {
         }
     }
     text
+}
+
+fn parse_decimal(value: &str) -> Result<f32, ViewerError> {
+    value.parse::<f32>().map_err(|_| ViewerError::InvalidDocument)
 }

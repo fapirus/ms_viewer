@@ -728,7 +728,14 @@
     - simple and rich shared strings fixture
     - missing shared strings relationship fixture
     - missing shared strings part fixture
-- [ ] row/column metrics parser 구현
+- [x] row/column metrics parser 구현
+  - Done:
+    - worksheet `sheetFormatPr`의 `defaultRowHeight`, `defaultColWidth` 파싱
+    - `cols/col`의 범위별 width, hidden, customWidth 파싱
+    - `sheetData/row`의 row index, height, hidden, customHeight 파싱
+  - Tests:
+    - default and custom row/column metrics fixture
+    - malformed decimal metric fixture
 - [ ] cell style subset parser 구현
 - [ ] merged cells parser 구현
 - [ ] frozen panes parser 구현
