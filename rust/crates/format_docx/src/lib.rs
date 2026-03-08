@@ -1012,6 +1012,7 @@ pub fn build_selection_page_models(
             height: page.page_box.height,
             nodes,
             selection_anchors: anchors,
+            sheet_viewport: None,
         });
     }
 

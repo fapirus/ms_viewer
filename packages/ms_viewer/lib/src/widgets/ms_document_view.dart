@@ -193,6 +193,7 @@ class _MsDocumentViewState extends State<MsDocumentView> {
             highlights: widget.controller.pageHighlights,
             onSelectionStart: widget.controller.startSelectionAt,
             onSelectionUpdate: widget.controller.updateSelectionAt,
+            onWindowRequest: widget.controller.loadSheetWindow,
           )
         : DocumentPageView(
             page: page,

@@ -36,6 +36,7 @@ class MsViewerController extends ChangeNotifier {
   MsViewerException? pageError;
   viewer_platform.PageRenderModel? currentPage;
   int? currentPageIndex;
+  viewer_platform.SheetWindow _currentSheetWindow = _defaultSheetWindow;
   List<Rect> pageHighlights = const [];
   final DocumentSearchController searchController = DocumentSearchController();
   final SelectionDragController selectionController = SelectionDragController();
@@ -58,6 +59,8 @@ class MsViewerController extends ChangeNotifier {
       (currentPageIndex ?? 0) < pageCount - 1 &&
       pageStatus != ViewerPageStatus.loading;
 
+  viewer_platform.SheetWindow get currentSheetWindow => _currentSheetWindow;
+
   void attachDocument(DocumentDescriptor next) {
     document = next;
     error = null;
@@ -66,6 +69,7 @@ class MsViewerController extends ChangeNotifier {
     pageError = null;
     pageHighlights = const [];
     pageStatus = ViewerPageStatus.idle;
+    _currentSheetWindow = _defaultSheetWindow;
     passwordPromptState = const PasswordPromptState(
       status: PasswordPromptStatus.idle,
     );
@@ -82,6 +86,7 @@ class MsViewerController extends ChangeNotifier {
     pageError = null;
     pageHighlights = const [];
     pageStatus = ViewerPageStatus.idle;
+    _currentSheetWindow = _defaultSheetWindow;
     searchController.clear();
     selectionController.clear();
     passwordPromptState = const PasswordPromptState(
@@ -159,6 +164,15 @@ class MsViewerController extends ChangeNotifier {
       case viewer_platform.GetPageRenderModelSuccess(page: final page):
         currentPage = page;
         currentPageIndex = page.pageIndex;
+        final sheetViewport = page.sheetViewport;
+        if (descriptor.kind == DocumentKind.xlsx && sheetViewport != null) {
+          _currentSheetWindow = viewer_platform.SheetWindow(
+            startRow: sheetViewport.window.startRow,
+            endRow: sheetViewport.window.endRow,
+            startColumn: sheetViewport.window.startColumn,
+            endColumn: sheetViewport.window.endColumn,
+          );
+        }
         pageError = null;
         pageHighlights = const [];
         pageStatus = ViewerPageStatus.ready;
@@ -172,6 +186,14 @@ class MsViewerController extends ChangeNotifier {
     }
 
     notifyListeners();
+  }
+
+  Future<void> loadSheetWindow(viewer_platform.SheetWindow window) async {
+    if (document?.kind != DocumentKind.xlsx) {
+      return;
+    }
+    _currentSheetWindow = window;
+    await loadPage(currentPageIndex ?? 0);
   }
 
   Future<void> goToPreviousPage() async {
@@ -208,7 +230,7 @@ class MsViewerController extends ChangeNotifier {
       source: source,
       documentId: documentId,
       pageIndex: pageIndex,
-      sheetWindow: kind == DocumentKind.xlsx ? _defaultSheetWindow : null,
+      sheetWindow: kind == DocumentKind.xlsx ? _currentSheetWindow : null,
       options: options,
     );
   }

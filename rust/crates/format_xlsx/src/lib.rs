@@ -1,7 +1,10 @@
-use format_shared::{parse_package_relationships, resolve_relationship_target, PackageRelationship};
+use format_shared::{
+    parse_package_relationships, resolve_relationship_target, PackageRelationship,
+};
 use viewer_core::archive::OoxmlArchive;
 use viewer_core::model::{
-    BoxNode, PageRenderModel, Rect, RenderNode, SelectionAnchor, TextNode, TextRange, TextStyle,
+    BoxNode, PageRenderModel, Rect, RenderNode, SelectionAnchor, SheetFrozenPaneModel,
+    SheetViewportModel, SheetWindowModel, TextNode, TextRange, TextStyle,
 };
 use viewer_core::search::{search_pages, SearchMatch, SearchPage};
 use viewer_core::xml::parse_document;
@@ -216,11 +219,17 @@ pub fn parse_xlsx(archive: &OoxmlArchive) -> Result<XlsxWorkbook, ViewerError> {
     let workbook_part = package_relationships
         .iter()
         .find(|relationship| relationship.relationship_type == OFFICE_DOCUMENT_RELATIONSHIP)
-        .map(|relationship| relationship.resolved_target.trim_start_matches('/').to_string())
+        .map(|relationship| {
+            relationship
+                .resolved_target
+                .trim_start_matches('/')
+                .to_string()
+        })
         .ok_or(ViewerError::InvalidDocument)?;
 
     let workbook_xml = archive.read_part(&workbook_part)?;
-    let workbook_text = String::from_utf8(workbook_xml).map_err(|_| ViewerError::InvalidDocument)?;
+    let workbook_text =
+        String::from_utf8(workbook_xml).map_err(|_| ViewerError::InvalidDocument)?;
     let workbook_root = parse_document(&workbook_text)?;
     if workbook_root.local_name() != "workbook" {
         return Err(ViewerError::InvalidDocument);
@@ -231,7 +240,11 @@ pub fn parse_xlsx(archive: &OoxmlArchive) -> Result<XlsxWorkbook, ViewerError> {
         .child("bookViews")
         .and_then(|book_views| book_views.child("workbookView"))
         .and_then(|view| view.attribute("activeTab"))
-        .map(|value| value.parse::<u32>().map_err(|_| ViewerError::InvalidDocument))
+        .map(|value| {
+            value
+                .parse::<u32>()
+                .map_err(|_| ViewerError::InvalidDocument)
+        })
         .transpose()?;
     let date_1904 = workbook_root
         .child("workbookPr")
@@ -241,13 +254,25 @@ pub fn parse_xlsx(archive: &OoxmlArchive) -> Result<XlsxWorkbook, ViewerError> {
     let shared_strings_part = workbook_relationships
         .iter()
         .find(|relationship| relationship.relationship_type == SHARED_STRINGS_RELATIONSHIP)
-        .map(|relationship| relationship.resolved_target.trim_start_matches('/').to_string());
+        .map(|relationship| {
+            relationship
+                .resolved_target
+                .trim_start_matches('/')
+                .to_string()
+        });
     let styles_part = workbook_relationships
         .iter()
         .find(|relationship| relationship.relationship_type == STYLES_RELATIONSHIP)
-        .map(|relationship| relationship.resolved_target.trim_start_matches('/').to_string());
+        .map(|relationship| {
+            relationship
+                .resolved_target
+                .trim_start_matches('/')
+                .to_string()
+        });
 
-    let sheets_root = workbook_root.child("sheets").ok_or(ViewerError::InvalidDocument)?;
+    let sheets_root = workbook_root
+        .child("sheets")
+        .ok_or(ViewerError::InvalidDocument)?;
     let mut sheets = Vec::new();
     for child in &sheets_root.children {
         if child.local_name() != "sheet" {
@@ -270,7 +295,10 @@ pub fn parse_xlsx(archive: &OoxmlArchive) -> Result<XlsxWorkbook, ViewerError> {
             return Err(ViewerError::InvalidDocument);
         }
 
-        let part_name = relationship.resolved_target.trim_start_matches('/').to_string();
+        let part_name = relationship
+            .resolved_target
+            .trim_start_matches('/')
+            .to_string();
         let dimension_ref = parse_worksheet_dimension(archive, &part_name)?;
 
         sheets.push(XlsxWorksheet {
@@ -429,6 +457,7 @@ pub fn build_sheet_render_model(
     let cells_by_sheet = parse_worksheet_cells(archive, workbook, shared_strings)?;
     let metrics_by_sheet = parse_row_column_metrics(archive, workbook)?;
     let merges_by_sheet = parse_merged_cells(archive, workbook)?;
+    let frozen_panes_by_sheet = parse_frozen_panes(archive, workbook)?;
 
     let worksheet_cells = cells_by_sheet
         .iter()
@@ -442,13 +471,18 @@ pub fn build_sheet_render_model(
         .iter()
         .find(|worksheet| worksheet.part_name == sheet.part_name)
         .ok_or(ViewerError::InvalidDocument)?;
+    let frozen_panes = frozen_panes_by_sheet
+        .iter()
+        .find(|worksheet| worksheet.part_name == sheet.part_name)
+        .ok_or(ViewerError::InvalidDocument)?;
 
-    let full_bounds = sheet
-        .dimension_ref
-        .as_deref()
-        .map(parse_dimension_reference)
-        .transpose()?
-        .unwrap_or_else(|| infer_sheet_bounds(worksheet_cells, merges));
+    let full_bounds = resolve_effective_bounds(
+        sheet.dimension_ref.as_deref(),
+        worksheet_cells,
+        metrics,
+        merges,
+        frozen_panes.pane.as_ref(),
+    )?;
 
     render_sheet_model(
         sheet_index as u32,
@@ -457,6 +491,8 @@ pub fn build_sheet_render_model(
         merges,
         styles,
         full_bounds,
+        full_bounds,
+        frozen_panes.pane.as_ref(),
     )
 }
 
@@ -479,6 +515,7 @@ pub fn build_visible_window_render_model(
     let cells_by_sheet = parse_worksheet_cells(archive, workbook, shared_strings)?;
     let metrics_by_sheet = parse_row_column_metrics(archive, workbook)?;
     let merges_by_sheet = parse_merged_cells(archive, workbook)?;
+    let frozen_panes_by_sheet = parse_frozen_panes(archive, workbook)?;
 
     let worksheet_cells = cells_by_sheet
         .iter()
@@ -492,12 +529,18 @@ pub fn build_visible_window_render_model(
         .iter()
         .find(|worksheet| worksheet.part_name == sheet.part_name)
         .ok_or(ViewerError::InvalidDocument)?;
-    let (sheet_start_row, sheet_start_column, sheet_end_row, sheet_end_column) = sheet
-        .dimension_ref
-        .as_deref()
-        .map(parse_dimension_reference)
-        .transpose()?
-        .unwrap_or_else(|| infer_sheet_bounds(worksheet_cells, merges));
+    let frozen_panes = frozen_panes_by_sheet
+        .iter()
+        .find(|worksheet| worksheet.part_name == sheet.part_name)
+        .ok_or(ViewerError::InvalidDocument)?;
+    let (sheet_start_row, sheet_start_column, sheet_end_row, sheet_end_column) =
+        resolve_effective_bounds(
+            sheet.dimension_ref.as_deref(),
+            worksheet_cells,
+            metrics,
+            merges,
+            frozen_panes.pane.as_ref(),
+        )?;
     let render_start_row = window.start_row.max(sheet_start_row);
     let render_start_column = window.start_column.max(sheet_start_column);
     let render_end_row = (window.start_row + window.row_count - 1).min(sheet_end_row);
@@ -518,6 +561,13 @@ pub fn build_visible_window_render_model(
             render_end_row,
             render_end_column,
         ),
+        (
+            sheet_start_row,
+            sheet_start_column,
+            sheet_end_row,
+            sheet_end_column,
+        ),
+        frozen_panes.pane.as_ref(),
     )
 }
 
@@ -631,7 +681,9 @@ fn parse_workbook_relationships(
 }
 
 fn workbook_relationship_part(workbook_part: &str) -> Result<String, ViewerError> {
-    let slash_index = workbook_part.rfind('/').ok_or(ViewerError::InvalidDocument)?;
+    let slash_index = workbook_part
+        .rfind('/')
+        .ok_or(ViewerError::InvalidDocument)?;
     let (directory, file_name) = workbook_part.split_at(slash_index + 1);
     Ok(format!("{directory}_rels/{file_name}.rels"))
 }
@@ -698,10 +750,7 @@ fn parse_worksheet_grid_metrics(
                     .required_attribute("max")?
                     .parse::<u32>()
                     .map_err(|_| ViewerError::InvalidDocument)?,
-                width: column
-                    .attribute("width")
-                    .map(parse_decimal)
-                    .transpose()?,
+                width: column.attribute("width").map(parse_decimal).transpose()?,
                 hidden: matches!(column.attribute("hidden"), Some("1" | "true")),
                 custom_width: matches!(column.attribute("customWidth"), Some("1" | "true")),
             });
@@ -720,10 +769,7 @@ fn parse_worksheet_grid_metrics(
                     .required_attribute("r")?
                     .parse::<u32>()
                     .map_err(|_| ViewerError::InvalidDocument)?,
-                height_points: row
-                    .attribute("ht")
-                    .map(parse_decimal)
-                    .transpose()?,
+                height_points: row.attribute("ht").map(parse_decimal).transpose()?,
                 hidden: matches!(row.attribute("hidden"), Some("1" | "true")),
                 custom_height: matches!(row.attribute("customHeight"), Some("1" | "true")),
             });
@@ -846,6 +892,8 @@ fn render_sheet_model(
     merges: &WorksheetMergedCells,
     styles: &XlsxStyleCatalog,
     render_bounds: (u32, u32, u32, u32),
+    effective_bounds: (u32, u32, u32, u32),
+    frozen_pane: Option<&XlsxFrozenPane>,
 ) -> Result<PageRenderModel, ViewerError> {
     let (start_row, start_column, end_row, end_column) = render_bounds;
 
@@ -857,6 +905,12 @@ fn render_sheet_model(
         .collect();
     let width = column_widths.iter().sum::<f32>();
     let height = row_heights.iter().sum::<f32>();
+    let visible_rows = (start_row..=end_row)
+        .filter(|row| row_heights[(row - start_row) as usize] > 0.0)
+        .collect::<Vec<_>>();
+    let visible_columns = (start_column..=end_column)
+        .filter(|column| column_widths[(column - start_column) as usize] > 0.0)
+        .collect::<Vec<_>>();
 
     let mut nodes = Vec::new();
     let mut selection_anchors = Vec::new();
@@ -873,11 +927,10 @@ fn render_sheet_model(
             if column_width <= 0.0 {
                 continue;
             }
-            if merges
-                .ranges
-                .iter()
-                .any(|range| is_covered_by_merged_range(range, row, column) && !is_merge_origin(range, row, column))
-            {
+            if merges.ranges.iter().any(|range| {
+                is_covered_by_merged_range(range, row, column)
+                    && !is_merge_origin(range, row, column)
+            }) {
                 continue;
             }
 
@@ -909,7 +962,11 @@ fn render_sheet_model(
                 .and_then(|index| styles.cell_formats.get(index as usize));
             let fill_color_hex = style
                 .and_then(|format| styles.fills.get(format.fill_id as usize))
-                .and_then(|fill| fill.foreground_color_hex.clone().or(fill.background_color_hex.clone()));
+                .and_then(|fill| {
+                    fill.foreground_color_hex
+                        .clone()
+                        .or(fill.background_color_hex.clone())
+                });
 
             nodes.push(RenderNode::Box(BoxNode {
                 bounds: cell_rect.clone(),
@@ -959,7 +1016,46 @@ fn render_sheet_model(
         height,
         nodes,
         selection_anchors,
+        sheet_viewport: Some(build_sheet_viewport_model(
+            render_bounds,
+            effective_bounds,
+            frozen_pane,
+            visible_rows,
+            visible_columns,
+        )),
     })
+}
+
+fn build_sheet_viewport_model(
+    render_bounds: (u32, u32, u32, u32),
+    effective_bounds: (u32, u32, u32, u32),
+    frozen_pane: Option<&XlsxFrozenPane>,
+    visible_rows: Vec<u32>,
+    visible_columns: Vec<u32>,
+) -> SheetViewportModel {
+    let frozen_pane = frozen_pane.map(|pane| SheetFrozenPaneModel {
+        frozen_rows: pane.y_split.unwrap_or(0.0).max(0.0).round() as u32,
+        frozen_columns: pane.x_split.unwrap_or(0.0).max(0.0).round() as u32,
+        top_left_cell: pane.top_left_cell.clone(),
+    });
+
+    SheetViewportModel {
+        window: SheetWindowModel {
+            start_row: render_bounds.0,
+            start_column: render_bounds.1,
+            end_row: render_bounds.2,
+            end_column: render_bounds.3,
+        },
+        effective_bounds: SheetWindowModel {
+            start_row: effective_bounds.0,
+            start_column: effective_bounds.1,
+            end_row: effective_bounds.2,
+            end_column: effective_bounds.3,
+        },
+        frozen_pane,
+        visible_rows,
+        visible_columns,
+    }
 }
 
 fn parse_sheet_visibility(state: Option<&str>) -> WorksheetVisibility {
@@ -987,7 +1083,9 @@ fn parse_shared_string_item(item: &viewer_core::xml::XmlElement) -> String {
 }
 
 fn parse_decimal(value: &str) -> Result<f32, ViewerError> {
-    value.parse::<f32>().map_err(|_| ViewerError::InvalidDocument)
+    value
+        .parse::<f32>()
+        .map_err(|_| ViewerError::InvalidDocument)
 }
 
 fn parse_number_formats(
@@ -1010,9 +1108,7 @@ fn parse_number_formats(
     Ok(formats)
 }
 
-fn parse_fonts(
-    fonts: &viewer_core::xml::XmlElement,
-) -> Result<Vec<XlsxFontStyle>, ViewerError> {
+fn parse_fonts(fonts: &viewer_core::xml::XmlElement) -> Result<Vec<XlsxFontStyle>, ViewerError> {
     let mut parsed_fonts = Vec::new();
     for child in &fonts.children {
         if child.local_name() != "font" {
@@ -1038,9 +1134,7 @@ fn parse_fonts(
     Ok(parsed_fonts)
 }
 
-fn parse_fills(
-    fills: &viewer_core::xml::XmlElement,
-) -> Result<Vec<XlsxFillStyle>, ViewerError> {
+fn parse_fills(fills: &viewer_core::xml::XmlElement) -> Result<Vec<XlsxFillStyle>, ViewerError> {
     let mut parsed_fills = Vec::new();
     for child in &fills.children {
         if child.local_name() != "fill" {
@@ -1095,10 +1189,7 @@ fn parse_cell_formats(
                 .map(|format| format.code.clone()),
             font_id,
             fill_id,
-            apply_number_format: matches!(
-                child.attribute("applyNumberFormat"),
-                Some("1" | "true")
-            ),
+            apply_number_format: matches!(child.attribute("applyNumberFormat"), Some("1" | "true")),
             apply_alignment: matches!(child.attribute("applyAlignment"), Some("1" | "true")),
             horizontal_alignment: alignment
                 .and_then(|alignment| alignment.attribute("horizontal"))
@@ -1198,7 +1289,11 @@ fn parse_cell(
     let (row, column) = parse_cell_reference(&reference)?;
     let style_index = cell
         .attribute("s")
-        .map(|value| value.parse::<u32>().map_err(|_| ViewerError::InvalidDocument))
+        .map(|value| {
+            value
+                .parse::<u32>()
+                .map_err(|_| ViewerError::InvalidDocument)
+        })
         .transpose()?;
     let formula = cell.child("f").map(|formula| formula.text.clone());
     let value = parse_cell_value(cell, shared_strings)?;
@@ -1222,7 +1317,12 @@ fn parse_cell_value(
         Some("s") => {
             let shared_index = cell
                 .child("v")
-                .map(|value| value.text.parse::<usize>().map_err(|_| ViewerError::InvalidDocument))
+                .map(|value| {
+                    value
+                        .text
+                        .parse::<usize>()
+                        .map_err(|_| ViewerError::InvalidDocument)
+                })
                 .transpose()?
                 .ok_or(ViewerError::InvalidDocument)?;
             let value = shared_strings
@@ -1298,6 +1398,50 @@ fn infer_sheet_bounds(
     } else {
         (start_row, start_column, end_row, end_column)
     }
+}
+
+fn resolve_effective_bounds(
+    dimension_ref: Option<&str>,
+    worksheet_cells: &WorksheetCells,
+    metrics: &WorksheetGridMetrics,
+    merges: &WorksheetMergedCells,
+    frozen_pane: Option<&XlsxFrozenPane>,
+) -> Result<(u32, u32, u32, u32), ViewerError> {
+    let mut bounds = dimension_ref
+        .map(parse_dimension_reference)
+        .transpose()?
+        .unwrap_or_else(|| infer_sheet_bounds(worksheet_cells, merges));
+
+    bounds = union_sheet_bounds(bounds, infer_sheet_bounds(worksheet_cells, merges));
+
+    for row in &metrics.rows {
+        bounds = union_sheet_bounds(bounds, (row.index, 1, row.index, 1));
+    }
+
+    for column in &metrics.columns {
+        bounds = union_sheet_bounds(bounds, (1, column.min, 1, column.max));
+    }
+
+    if let Some(pane) = frozen_pane {
+        if let Some(reference) = pane.top_left_cell.as_deref() {
+            let (row, column) = parse_cell_reference(reference)?;
+            bounds = union_sheet_bounds(bounds, (1, 1, row, column));
+        }
+    }
+
+    Ok(bounds)
+}
+
+fn union_sheet_bounds(
+    left: (u32, u32, u32, u32),
+    right: (u32, u32, u32, u32),
+) -> (u32, u32, u32, u32) {
+    (
+        left.0.min(right.0),
+        left.1.min(right.1),
+        left.2.max(right.2),
+        left.3.max(right.3),
+    )
 }
 
 fn resolve_column_width(metrics: &WorksheetGridMetrics, column: u32) -> f32 {
@@ -1381,19 +1525,13 @@ fn is_covered_by_merged_range(range: &XlsxMergedCellRange, row: u32, column: u32
         && column <= range.end_column
 }
 
-fn resolve_text_style(
-    styles: &XlsxStyleCatalog,
-    format: Option<&XlsxCellFormat>,
-) -> TextStyle {
-    let font = format
-        .and_then(|format| styles.fonts.get(format.font_id as usize));
+fn resolve_text_style(styles: &XlsxStyleCatalog, format: Option<&XlsxCellFormat>) -> TextStyle {
+    let font = format.and_then(|format| styles.fonts.get(format.font_id as usize));
     TextStyle {
         font_family: font
             .and_then(|font| font.font_name.clone())
             .unwrap_or_else(|| "Calibri".to_string()),
-        font_size: font
-            .and_then(|font| font.font_size_points)
-            .unwrap_or(11.0),
+        font_size: font.and_then(|font| font.font_size_points).unwrap_or(11.0),
         bold: font.map(|font| font.bold).unwrap_or(false),
         italic: font.map(|font| font.italic).unwrap_or(false),
         underline: font.map(|font| font.underline).unwrap_or(false),
@@ -1428,7 +1566,8 @@ fn layout_cell_text(
             cell_rect.x + ((cell_rect.width - estimated_width) / 2.0).max(padding_x)
         }
         XlsxHorizontalAlignment::Right => {
-            (cell_rect.x + cell_rect.width - padding_x - estimated_width).max(cell_rect.x + padding_x)
+            (cell_rect.x + cell_rect.width - padding_x - estimated_width)
+                .max(cell_rect.x + padding_x)
         }
         _ => cell_rect.x + padding_x,
     };
@@ -1505,7 +1644,9 @@ fn format_cell_display_value(value: &Option<XlsxCellValue>) -> Option<String> {
     match value {
         Some(XlsxCellValue::Text(text)) => Some(text.clone()),
         Some(XlsxCellValue::Number(number)) => Some(number.clone()),
-        Some(XlsxCellValue::Boolean(value)) => Some(if *value { "TRUE" } else { "FALSE" }.to_string()),
+        Some(XlsxCellValue::Boolean(value)) => {
+            Some(if *value { "TRUE" } else { "FALSE" }.to_string())
+        }
         Some(XlsxCellValue::Error(error)) => Some(error.clone()),
         None => None,
     }
@@ -1566,7 +1707,9 @@ fn parse_cell_reference(reference: &str) -> Result<(u32, u32), ViewerError> {
     }
 
     let column_index = column_letters_to_index(&column)?;
-    let row_index = row.parse::<u32>().map_err(|_| ViewerError::InvalidDocument)?;
+    let row_index = row
+        .parse::<u32>()
+        .map_err(|_| ViewerError::InvalidDocument)?;
     if row_index == 0 {
         return Err(ViewerError::InvalidDocument);
     }

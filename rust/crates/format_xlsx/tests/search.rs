@@ -172,4 +172,3 @@ fn workbook_search_is_case_insensitive() {
     assert_eq!(matches[0].query, "revenue");
     assert!(matches[0].preview.contains("Quarterly Revenue"));
 }
-

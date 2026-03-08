@@ -1,10 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ms_viewer/ms_viewer.dart';
-import 'package:ms_viewer_platform_interface/ms_viewer_platform_interface.dart';
+import 'package:ms_viewer_platform_interface/ms_viewer_platform_interface.dart'
+    as platform;
 
 void main() {
-  PageRenderModel buildSheetPage({int columns = 2, int rows = 2}) {
+  platform.PageRenderModel buildSheetPage({
+    int columns = 2,
+    int rows = 2,
+    bool includeFrozenPane = false,
+    int startRow = 1,
+    int startColumn = 1,
+    int effectiveEndRow = 40,
+    int effectiveEndColumn = 16,
+  }) {
     final nodes = <Map<String, Object?>>[];
     for (var row = 0; row < rows; row++) {
       for (var column = 0; column < columns; column++) {
@@ -32,12 +41,13 @@ void main() {
         'fontSize': 12.0,
         'bold': true,
         'italic': false,
+        'underline': false,
         'colorHex': '#FFFFFF',
       },
       'range': {'start': 0, 'end': 6},
     });
 
-    return PageRenderModel.fromJson({
+    return platform.PageRenderModel.fromJson({
       'pageIndex': 0,
       'width': columns * 140.0,
       'height': rows * 40.0,
@@ -46,6 +56,30 @@ void main() {
         {'nodeIndex': nodes.length - 1, 'charIndex': 0, 'x': 20.0, 'y': 10.0},
         {'nodeIndex': nodes.length - 1, 'charIndex': 6, 'x': 72.0, 'y': 10.0},
       ],
+      'sheetViewport': {
+        'window': {
+          'startRow': startRow,
+          'endRow': startRow + rows - 1,
+          'startColumn': startColumn,
+          'endColumn': startColumn + columns - 1,
+        },
+        'effectiveBounds': {
+          'startRow': 1,
+          'endRow': effectiveEndRow,
+          'startColumn': 1,
+          'endColumn': effectiveEndColumn,
+        },
+        if (includeFrozenPane)
+          'frozenPane': {
+            'frozenRows': 1,
+            'frozenColumns': 1,
+            'topLeftCell': 'B2',
+          },
+        'visibleRows': [for (var row = 0; row < rows; row++) startRow + row],
+        'visibleColumns': [
+          for (var column = 0; column < columns; column++) startColumn + column,
+        ],
+      },
     });
   }
 
@@ -111,5 +145,99 @@ void main() {
 
     expect(tester.getTopLeft(rowHeader).dy, lessThan(initialRowTop));
     expect(find.byKey(const ValueKey('sheet-corner-cell')), findsOneWidget);
+  });
+
+  testWidgets(
+    'sheet viewport paints frozen pane overlay when metadata exists',
+    (tester) async {
+      final page = buildSheetPage(
+        columns: 6,
+        rows: 12,
+        includeFrozenPane: true,
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: SizedBox(
+                width: 320,
+                height: 240,
+                child: SheetViewport(page: page),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const ValueKey('sheet-frozen-overlay')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('sheet-frozen-vertical-divider')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('sheet-frozen-horizontal-divider')),
+        findsOneWidget,
+      );
+    },
+  );
+
+  testWidgets('sheet viewport requests next visible window near scroll edge', (
+    tester,
+  ) async {
+    platform.SheetWindow? requestedWindow;
+    final page = buildSheetPage(
+      columns: 8,
+      rows: 20,
+      effectiveEndRow: 120,
+      effectiveEndColumn: 24,
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: SizedBox(
+              width: 360,
+              height: 280,
+              child: SheetViewport(
+                page: page,
+                onWindowRequest: (window) async {
+                  requestedWindow = window;
+                },
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final bodyViewport = find.byKey(const ValueKey('sheet-body-viewport'));
+    await tester.drag(
+      bodyViewport,
+      const Offset(-900, -900),
+      warnIfMissed: false,
+    );
+    await tester.pump();
+
+    expect(requestedWindow, isNotNull);
+    expect(
+      requestedWindow!.startRow > 1 || requestedWindow!.startColumn > 1,
+      isTrue,
+    );
+    expect(
+      requestedWindow!.endRow - requestedWindow!.startRow,
+      page.sheetViewport!.window.endRow - page.sheetViewport!.window.startRow,
+    );
+    expect(
+      requestedWindow!.endColumn - requestedWindow!.startColumn,
+      page.sheetViewport!.window.endColumn -
+          page.sheetViewport!.window.startColumn,
+    );
   });
 }

@@ -34,6 +34,7 @@ fn page_render_model_serializes_with_expected_shape() {
             x: 24.0,
             y: 32.0,
         }],
+        sheet_viewport: None,
     };
 
     let value = serde_json::to_value(&model).expect("model should serialize");

@@ -244,6 +244,22 @@ void main() {
               'height': 360.0,
               'nodes': const [],
               'selectionAnchors': const [],
+              'sheetViewport': {
+                'window': {
+                  'startRow': 1,
+                  'endRow': 20,
+                  'startColumn': 1,
+                  'endColumn': 8,
+                },
+                'effectiveBounds': {
+                  'startRow': 1,
+                  'endRow': 120,
+                  'startColumn': 1,
+                  'endColumn': 24,
+                },
+                'visibleRows': [1, 2, 3],
+                'visibleColumns': [1, 2, 3],
+              },
             }),
           );
         },
@@ -266,6 +282,84 @@ void main() {
     expect(capturedPageRequest!.sheetWindow!.endColumn, 8);
     expect(controller.pageStatus, ViewerPageStatus.ready);
     expect(controller.currentPageIndex, 0);
+  });
+
+  test('controller reloads xlsx with requested sheet window', () async {
+    final requests = <platform.GetPageRenderModelRequest>[];
+    final controller = MsViewerController(
+      platform: _FakeMsViewerPlatform(
+        onOpen: (_) async => platform.OpenDocumentOpened(
+          const platform.OpenDocumentSuccess(
+            documentId: 'xlsx_001',
+            kind: platform.DocumentKind.xlsx,
+            title: 'budget.xlsx',
+            pageCount: 2,
+            capabilities: platform.DocumentCapabilities(
+              search: true,
+              textSelection: true,
+              passwordProtected: false,
+            ),
+          ),
+        ),
+        onGetPage: (request) async {
+          requests.add(request);
+          return platform.GetPageRenderModelSuccess(
+            platform.PageRenderModel.fromJson({
+              'pageIndex': 0,
+              'width': 640.0,
+              'height': 360.0,
+              'nodes': const [],
+              'selectionAnchors': const [],
+              'sheetViewport': {
+                'window': {
+                  'startRow': request.sheetWindow!.startRow,
+                  'endRow': request.sheetWindow!.endRow,
+                  'startColumn': request.sheetWindow!.startColumn,
+                  'endColumn': request.sheetWindow!.endColumn,
+                },
+                'effectiveBounds': {
+                  'startRow': 1,
+                  'endRow': 120,
+                  'startColumn': 1,
+                  'endColumn': 24,
+                },
+                'visibleRows': [
+                  for (var row = 0; row < 3; row++)
+                    request.sheetWindow!.startRow + row,
+                ],
+                'visibleColumns': [
+                  for (var column = 0; column < 3; column++)
+                    request.sheetWindow!.startColumn + column,
+                ],
+              },
+            }),
+          );
+        },
+      ),
+    );
+
+    await controller.openDocument(
+      const platform.OpenDocumentRequest(
+        source: platform.OpenDocumentSource.path('/tmp/budget.xlsx'),
+      ),
+    );
+    await controller.loadSheetWindow(
+      const platform.SheetWindow(
+        startRow: 11,
+        endRow: 30,
+        startColumn: 5,
+        endColumn: 12,
+      ),
+    );
+
+    expect(requests, hasLength(2));
+    expect(requests.last.sheetWindow, isNotNull);
+    expect(requests.last.sheetWindow!.startRow, 11);
+    expect(requests.last.sheetWindow!.endRow, 30);
+    expect(requests.last.sheetWindow!.startColumn, 5);
+    expect(requests.last.sheetWindow!.endColumn, 12);
+    expect(controller.currentSheetWindow.startRow, 11);
+    expect(controller.currentSheetWindow.endColumn, 12);
   });
 
   test('controller navigates to next page when requested', () async {

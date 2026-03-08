@@ -897,11 +897,11 @@
   - Tests:
     - merged cell layout regression fixture
     - row height regression fixture
-- [ ] XLSX frozen pane와 visible window virtualization 보정
+- [x] XLSX frozen pane와 visible window virtualization 보정
   - Tests:
     - frozen pane viewport regression fixture
     - large-sheet scroll stability regression fixture
-- [ ] XLSX effective bounds와 overscan 정책 보정
+- [x] XLSX effective bounds와 overscan 정책 보정
   - Scope:
     - `dimension`, actual cells, metrics, merges, frozen panes를 합쳐 effective bounds 계산
     - global max row/column가 아니라 used-range 중심 viewport를 사용

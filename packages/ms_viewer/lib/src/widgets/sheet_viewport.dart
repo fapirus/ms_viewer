@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -13,6 +14,7 @@ class SheetViewport extends StatefulWidget {
     this.onSelectionStart,
     this.onSelectionUpdate,
     this.onSelectionEnd,
+    this.onWindowRequest,
   });
 
   final PageRenderModel page;
@@ -20,6 +22,7 @@ class SheetViewport extends StatefulWidget {
   final ValueChanged<Offset>? onSelectionStart;
   final ValueChanged<Offset>? onSelectionUpdate;
   final VoidCallback? onSelectionEnd;
+  final Future<void> Function(SheetWindow window)? onWindowRequest;
 
   @override
   State<SheetViewport> createState() => _SheetViewportState();
@@ -30,6 +33,8 @@ class _SheetViewportState extends State<SheetViewport> {
   static const double _headerExtent = 36;
   static const Color _headerBackground = Color(0xFFF3F6FA);
   static const Color _headerBorder = Color(0xFFD0D7DE);
+  static const double _windowShiftRatio = 0.5;
+  static const double _requestThreshold = 0.72;
 
   final ScrollController _horizontalBodyController = ScrollController();
   final ScrollController _verticalBodyController = ScrollController();
@@ -38,12 +43,58 @@ class _SheetViewportState extends State<SheetViewport> {
 
   bool _syncingHorizontal = false;
   bool _syncingVertical = false;
+  bool _windowRequestInFlight = false;
+  int _pendingColumnShift = 0;
+  int _pendingRowShift = 0;
+  _SheetViewportMetrics? _latestMetrics;
 
   @override
   void initState() {
     super.initState();
     _horizontalBodyController.addListener(_syncHorizontalOffset);
     _verticalBodyController.addListener(_syncVerticalOffset);
+  }
+
+  @override
+  void didUpdateWidget(covariant SheetViewport oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final oldWindow = oldWidget.page.sheetViewport?.window;
+    final newWindow = widget.page.sheetViewport?.window;
+    if (oldWindow != null &&
+        newWindow != null &&
+        !_sameWindowBounds(oldWindow, newWindow)) {
+      final oldMetrics = _SheetViewportMetrics.fromPage(oldWidget.page);
+      final horizontalAdjustment = oldMetrics.extentForLeadingColumns(
+        _pendingColumnShift,
+      );
+      final verticalAdjustment = oldMetrics.extentForLeadingRows(
+        _pendingRowShift,
+      );
+      _pendingColumnShift = 0;
+      _pendingRowShift = 0;
+      _windowRequestInFlight = false;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) {
+          return;
+        }
+        if (horizontalAdjustment > 0 && _horizontalBodyController.hasClients) {
+          _horizontalBodyController.jumpTo(
+            (_horizontalBodyController.offset - horizontalAdjustment).clamp(
+              0.0,
+              _horizontalBodyController.position.maxScrollExtent,
+            ),
+          );
+        }
+        if (verticalAdjustment > 0 && _verticalBodyController.hasClients) {
+          _verticalBodyController.jumpTo(
+            (_verticalBodyController.offset - verticalAdjustment).clamp(
+              0.0,
+              _verticalBodyController.position.maxScrollExtent,
+            ),
+          );
+        }
+      });
+    }
   }
 
   @override
@@ -68,6 +119,10 @@ class _SheetViewportState extends State<SheetViewport> {
     );
     _horizontalHeaderController.jumpTo(offset);
     _syncingHorizontal = false;
+    _maybeRequestWindow();
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   void _syncVerticalOffset() {
@@ -81,11 +136,86 @@ class _SheetViewportState extends State<SheetViewport> {
     );
     _verticalHeaderController.jumpTo(offset);
     _syncingVertical = false;
+    _maybeRequestWindow();
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  void _maybeRequestWindow() {
+    final callback = widget.onWindowRequest;
+    final sheetViewport = widget.page.sheetViewport;
+    final metrics = _latestMetrics;
+    if (callback == null ||
+        sheetViewport == null ||
+        metrics == null ||
+        _windowRequestInFlight) {
+      return;
+    }
+
+    final currentWindow = sheetViewport.window;
+    final effectiveBounds = sheetViewport.effectiveBounds;
+    final rowCount = currentWindow.endRow - currentWindow.startRow + 1;
+    final columnCount = currentWindow.endColumn - currentWindow.startColumn + 1;
+    var nextStartRow = currentWindow.startRow;
+    var nextStartColumn = currentWindow.startColumn;
+
+    if (_horizontalBodyController.hasClients &&
+        _horizontalBodyController.position.maxScrollExtent > 0 &&
+        _horizontalBodyController.offset >=
+            _horizontalBodyController.position.maxScrollExtent *
+                _requestThreshold &&
+        currentWindow.endColumn < effectiveBounds.endColumn) {
+      final shift = math.max(1, (columnCount * _windowShiftRatio).round());
+      final maxStart = math.max(
+        effectiveBounds.startColumn,
+        effectiveBounds.endColumn - columnCount + 1,
+      );
+      nextStartColumn = math.min(currentWindow.startColumn + shift, maxStart);
+    }
+
+    if (_verticalBodyController.hasClients &&
+        _verticalBodyController.position.maxScrollExtent > 0 &&
+        _verticalBodyController.offset >=
+            _verticalBodyController.position.maxScrollExtent *
+                _requestThreshold &&
+        currentWindow.endRow < effectiveBounds.endRow) {
+      final shift = math.max(1, (rowCount * _windowShiftRatio).round());
+      final maxStart = math.max(
+        effectiveBounds.startRow,
+        effectiveBounds.endRow - rowCount + 1,
+      );
+      nextStartRow = math.min(currentWindow.startRow + shift, maxStart);
+    }
+
+    if (nextStartRow == currentWindow.startRow &&
+        nextStartColumn == currentWindow.startColumn) {
+      return;
+    }
+
+    _windowRequestInFlight = true;
+    _pendingColumnShift = nextStartColumn - currentWindow.startColumn;
+    _pendingRowShift = nextStartRow - currentWindow.startRow;
+    unawaited(
+      callback(
+        SheetWindow(
+          startRow: nextStartRow,
+          endRow: nextStartRow + rowCount - 1,
+          startColumn: nextStartColumn,
+          endColumn: nextStartColumn + columnCount - 1,
+        ),
+      ).catchError((_) {
+        _windowRequestInFlight = false;
+        _pendingColumnShift = 0;
+        _pendingRowShift = 0;
+      }),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final metrics = _SheetViewportMetrics.fromPage(widget.page);
+    _latestMetrics = metrics;
 
     return DecoratedBox(
       decoration: BoxDecoration(
@@ -119,7 +249,7 @@ class _SheetViewportState extends State<SheetViewport> {
                     thickness: 1,
                     color: _headerBorder,
                   ),
-                  Expanded(child: _buildScrollableBody()),
+                  Expanded(child: _buildScrollableBody(metrics)),
                 ],
               ),
             ),
@@ -160,7 +290,7 @@ class _SheetViewportState extends State<SheetViewport> {
                   width: metrics.columns[index].extent,
                   height: _headerExtent,
                   child: _SheetHeaderCell(
-                    label: _columnLabel(index + 1),
+                    label: _columnLabel(metrics.visibleColumns[index]),
                     alignment: Alignment.center,
                   ),
                 ),
@@ -191,7 +321,7 @@ class _SheetViewportState extends State<SheetViewport> {
                   width: _cornerExtent,
                   height: metrics.rows[index].extent,
                   child: _SheetHeaderCell(
-                    label: '${index + 1}',
+                    label: '${metrics.visibleRows[index]}',
                     alignment: Alignment.centerRight,
                     padding: const EdgeInsets.only(right: 12),
                   ),
@@ -203,40 +333,187 @@ class _SheetViewportState extends State<SheetViewport> {
     );
   }
 
-  Widget _buildScrollableBody() {
-    return KeyedSubtree(
-      key: const ValueKey('sheet-body-viewport'),
-      child: Scrollbar(
-        controller: _verticalBodyController,
-        thumbVisibility: true,
-        child: Scrollbar(
-          controller: _horizontalBodyController,
-          thumbVisibility: true,
-          notificationPredicate: (notification) => notification.depth == 1,
-          child: SingleChildScrollView(
+  Widget _buildScrollableBody(_SheetViewportMetrics metrics) {
+    final frozenPane = widget.page.sheetViewport?.frozenPane;
+    final frozenColumnCount = math.min(
+      metrics.columns.length,
+      frozenPane?.frozenColumns ?? 0,
+    );
+    final frozenRowCount = math.min(
+      metrics.rows.length,
+      frozenPane?.frozenRows ?? 0,
+    );
+    final frozenWidth = metrics.extentForLeadingColumns(frozenColumnCount);
+    final frozenHeight = metrics.extentForLeadingRows(frozenRowCount);
+
+    return Stack(
+      children: [
+        KeyedSubtree(
+          key: const ValueKey('sheet-body-viewport'),
+          child: Scrollbar(
             controller: _verticalBodyController,
-            scrollDirection: Axis.vertical,
-            child: SingleChildScrollView(
+            thumbVisibility: true,
+            child: Scrollbar(
               controller: _horizontalBodyController,
-              scrollDirection: Axis.horizontal,
-              child: RenderNodeCanvas(
-                key: const ValueKey('sheet-body-canvas'),
-                page: widget.page,
-                canvasWidth: widget.page.width,
-                canvasHeight: widget.page.height,
-                scaleX: 1,
-                scaleY: 1,
-                highlights: widget.highlights,
-                backgroundColor: Colors.white,
-                clipBehavior: Clip.hardEdge,
-                onSelectionStart: widget.onSelectionStart,
-                onSelectionUpdate: widget.onSelectionUpdate,
-                onSelectionEnd: widget.onSelectionEnd,
+              thumbVisibility: true,
+              notificationPredicate: (notification) => notification.depth == 1,
+              child: SingleChildScrollView(
+                controller: _verticalBodyController,
+                scrollDirection: Axis.vertical,
+                child: SingleChildScrollView(
+                  controller: _horizontalBodyController,
+                  scrollDirection: Axis.horizontal,
+                  child: RenderNodeCanvas(
+                    key: const ValueKey('sheet-body-canvas'),
+                    page: widget.page,
+                    canvasWidth: widget.page.width,
+                    canvasHeight: widget.page.height,
+                    scaleX: 1,
+                    scaleY: 1,
+                    highlights: widget.highlights,
+                    backgroundColor: Colors.white,
+                    clipBehavior: Clip.hardEdge,
+                    onSelectionStart: widget.onSelectionStart,
+                    onSelectionUpdate: widget.onSelectionUpdate,
+                    onSelectionEnd: widget.onSelectionEnd,
+                  ),
+                ),
               ),
             ),
           ),
         ),
-      ),
+        if (frozenColumnCount > 0 || frozenRowCount > 0)
+          IgnorePointer(
+            child: _FrozenPaneOverlay(
+              key: const ValueKey('sheet-frozen-overlay'),
+              page: widget.page,
+              highlights: widget.highlights,
+              horizontalOffset: _horizontalBodyController.hasClients
+                  ? _horizontalBodyController.offset
+                  : 0,
+              verticalOffset: _verticalBodyController.hasClients
+                  ? _verticalBodyController.offset
+                  : 0,
+              frozenWidth: frozenWidth,
+              frozenHeight: frozenHeight,
+              freezeColumns: frozenColumnCount > 0,
+              freezeRows: frozenRowCount > 0,
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _FrozenPaneOverlay extends StatelessWidget {
+  const _FrozenPaneOverlay({
+    super.key,
+    required this.page,
+    required this.highlights,
+    required this.horizontalOffset,
+    required this.verticalOffset,
+    required this.frozenWidth,
+    required this.frozenHeight,
+    required this.freezeColumns,
+    required this.freezeRows,
+  });
+
+  final PageRenderModel page;
+  final List<Rect> highlights;
+  final double horizontalOffset;
+  final double verticalOffset;
+  final double frozenWidth;
+  final double frozenHeight;
+  final bool freezeColumns;
+  final bool freezeRows;
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      children: [
+        if (freezeRows && frozenHeight > 0)
+          Positioned(
+            left: freezeColumns ? frozenWidth : 0,
+            top: 0,
+            right: 0,
+            height: frozenHeight,
+            child: ClipRect(
+              child: Transform.translate(
+                offset: Offset(-horizontalOffset, 0),
+                child: RenderNodeCanvas(
+                  page: page,
+                  canvasWidth: page.width,
+                  canvasHeight: page.height,
+                  scaleX: 1,
+                  scaleY: 1,
+                  highlights: highlights,
+                  backgroundColor: Colors.transparent,
+                ),
+              ),
+            ),
+          ),
+        if (freezeColumns && frozenWidth > 0)
+          Positioned(
+            left: 0,
+            top: freezeRows ? frozenHeight : 0,
+            bottom: 0,
+            width: frozenWidth,
+            child: ClipRect(
+              child: Transform.translate(
+                offset: Offset(0, -verticalOffset),
+                child: RenderNodeCanvas(
+                  page: page,
+                  canvasWidth: page.width,
+                  canvasHeight: page.height,
+                  scaleX: 1,
+                  scaleY: 1,
+                  highlights: highlights,
+                  backgroundColor: Colors.transparent,
+                ),
+              ),
+            ),
+          ),
+        if (freezeColumns && freezeRows && frozenWidth > 0 && frozenHeight > 0)
+          Positioned(
+            left: 0,
+            top: 0,
+            width: frozenWidth,
+            height: frozenHeight,
+            child: ClipRect(
+              child: RenderNodeCanvas(
+                page: page,
+                canvasWidth: page.width,
+                canvasHeight: page.height,
+                scaleX: 1,
+                scaleY: 1,
+                highlights: highlights,
+                backgroundColor: Colors.transparent,
+              ),
+            ),
+          ),
+        if (freezeColumns && frozenWidth > 0)
+          Positioned(
+            left: frozenWidth - 1,
+            top: 0,
+            bottom: 0,
+            child: Container(
+              key: const ValueKey('sheet-frozen-vertical-divider'),
+              width: 1,
+              color: const Color(0xFF9FB1C1),
+            ),
+          ),
+        if (freezeRows && frozenHeight > 0)
+          Positioned(
+            left: 0,
+            top: frozenHeight - 1,
+            right: 0,
+            child: Container(
+              key: const ValueKey('sheet-frozen-horizontal-divider'),
+              height: 1,
+              color: const Color(0xFF9FB1C1),
+            ),
+          ),
+      ],
     );
   }
 }
@@ -276,38 +553,68 @@ class _SheetHeaderCell extends StatelessWidget {
 }
 
 class _SheetViewportMetrics {
-  const _SheetViewportMetrics({required this.columns, required this.rows});
+  const _SheetViewportMetrics({
+    required this.columns,
+    required this.rows,
+    required this.visibleRows,
+    required this.visibleColumns,
+  });
 
   final List<_SheetAxisSegment> columns;
   final List<_SheetAxisSegment> rows;
+  final List<int> visibleRows;
+  final List<int> visibleColumns;
 
   factory _SheetViewportMetrics.fromPage(PageRenderModel page) {
     final boxes = page.nodes.whereType<BoxRenderNodeModel>().toList(
       growable: false,
     );
-    if (boxes.isEmpty) {
-      return _SheetViewportMetrics(
-        columns: [_SheetAxisSegment(start: 0, end: math.max(page.width, 1))],
-        rows: [_SheetAxisSegment(start: 0, end: math.max(page.height, 1))],
-      );
-    }
+    final viewport = page.sheetViewport;
+    final columnSegments = boxes.isEmpty
+        ? [_SheetAxisSegment(start: 0, end: math.max(page.width, 1))]
+        : _extractSegments(
+            boxes.map((box) => box.bounds.x).toList(growable: false),
+            boxes
+                .map((box) => box.bounds.x + box.bounds.width)
+                .toList(growable: false),
+            page.width,
+          );
+    final rowSegments = boxes.isEmpty
+        ? [_SheetAxisSegment(start: 0, end: math.max(page.height, 1))]
+        : _extractSegments(
+            boxes.map((box) => box.bounds.y).toList(growable: false),
+            boxes
+                .map((box) => box.bounds.y + box.bounds.height)
+                .toList(growable: false),
+            page.height,
+          );
 
     return _SheetViewportMetrics(
-      columns: _extractSegments(
-        boxes.map((box) => box.bounds.x).toList(growable: false),
-        boxes
-            .map((box) => box.bounds.x + box.bounds.width)
-            .toList(growable: false),
-        page.width,
+      columns: columnSegments,
+      rows: rowSegments,
+      visibleRows: _visibleIndexes(
+        explicit: viewport?.visibleRows,
+        start: viewport?.window.startRow ?? 1,
+        count: rowSegments.length,
       ),
-      rows: _extractSegments(
-        boxes.map((box) => box.bounds.y).toList(growable: false),
-        boxes
-            .map((box) => box.bounds.y + box.bounds.height)
-            .toList(growable: false),
-        page.height,
+      visibleColumns: _visibleIndexes(
+        explicit: viewport?.visibleColumns,
+        start: viewport?.window.startColumn ?? 1,
+        count: columnSegments.length,
       ),
     );
+  }
+
+  double extentForLeadingColumns(int count) {
+    return columns
+        .take(count.clamp(0, columns.length))
+        .fold(0.0, (sum, segment) => sum + segment.extent);
+  }
+
+  double extentForLeadingRows(int count) {
+    return rows
+        .take(count.clamp(0, rows.length))
+        .fold(0.0, (sum, segment) => sum + segment.extent);
   }
 
   static List<_SheetAxisSegment> _extractSegments(
@@ -343,6 +650,17 @@ class _SheetViewportMetrics {
   static double _normalizeEdge(double value) {
     return (value * 100).roundToDouble() / 100;
   }
+
+  static List<int> _visibleIndexes({
+    required List<int>? explicit,
+    required int start,
+    required int count,
+  }) {
+    if (explicit != null && explicit.length == count) {
+      return explicit;
+    }
+    return List<int>.generate(count, (index) => start + index, growable: false);
+  }
 }
 
 class _SheetAxisSegment {
@@ -352,6 +670,13 @@ class _SheetAxisSegment {
   final double end;
 
   double get extent => end - start;
+}
+
+bool _sameWindowBounds(SheetBoundsModel left, SheetBoundsModel right) {
+  return left.startRow == right.startRow &&
+      left.endRow == right.endRow &&
+      left.startColumn == right.startColumn &&
+      left.endColumn == right.endColumn;
 }
 
 String _columnLabel(int index) {

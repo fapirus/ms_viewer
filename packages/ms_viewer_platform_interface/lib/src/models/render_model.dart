@@ -228,6 +228,7 @@ class PageRenderModel {
     required this.height,
     required this.nodes,
     required this.selectionAnchors,
+    required this.sheetViewport,
   });
 
   final int pageIndex;
@@ -235,10 +236,12 @@ class PageRenderModel {
   final double height;
   final List<RenderNodeModel> nodes;
   final List<SelectionAnchorModel> selectionAnchors;
+  final SheetViewportModel? sheetViewport;
 
   factory PageRenderModel.fromJson(Map<String, Object?> json) {
     final nodesJson = json['nodes'] as List<Object?>? ?? const [];
     final anchorsJson = json['selectionAnchors'] as List<Object?>? ?? const [];
+    final sheetViewportJson = json['sheetViewport'] as Map<String, Object?>?;
 
     return PageRenderModel(
       pageIndex: json['pageIndex'] as int,
@@ -252,6 +255,85 @@ class PageRenderModel {
           .cast<Map<String, Object?>>()
           .map(SelectionAnchorModel.fromJson)
           .toList(),
+      sheetViewport: sheetViewportJson == null
+          ? null
+          : SheetViewportModel.fromJson(sheetViewportJson),
+    );
+  }
+}
+
+class SheetViewportModel {
+  const SheetViewportModel({
+    required this.window,
+    required this.effectiveBounds,
+    required this.frozenPane,
+    required this.visibleRows,
+    required this.visibleColumns,
+  });
+
+  final SheetBoundsModel window;
+  final SheetBoundsModel effectiveBounds;
+  final SheetFrozenPaneModel? frozenPane;
+  final List<int> visibleRows;
+  final List<int> visibleColumns;
+
+  factory SheetViewportModel.fromJson(Map<String, Object?> json) {
+    final frozenPaneJson = json['frozenPane'] as Map<String, Object?>?;
+    return SheetViewportModel(
+      window: SheetBoundsModel.fromJson(json['window'] as Map<String, Object?>),
+      effectiveBounds: SheetBoundsModel.fromJson(
+        json['effectiveBounds'] as Map<String, Object?>,
+      ),
+      frozenPane: frozenPaneJson == null
+          ? null
+          : SheetFrozenPaneModel.fromJson(frozenPaneJson),
+      visibleRows: (json['visibleRows'] as List<Object?>? ?? const [])
+          .cast<int>(),
+      visibleColumns: (json['visibleColumns'] as List<Object?>? ?? const [])
+          .cast<int>(),
+    );
+  }
+}
+
+class SheetBoundsModel {
+  const SheetBoundsModel({
+    required this.startRow,
+    required this.endRow,
+    required this.startColumn,
+    required this.endColumn,
+  });
+
+  final int startRow;
+  final int endRow;
+  final int startColumn;
+  final int endColumn;
+
+  factory SheetBoundsModel.fromJson(Map<String, Object?> json) {
+    return SheetBoundsModel(
+      startRow: json['startRow'] as int,
+      endRow: json['endRow'] as int,
+      startColumn: json['startColumn'] as int,
+      endColumn: json['endColumn'] as int,
+    );
+  }
+}
+
+class SheetFrozenPaneModel {
+  const SheetFrozenPaneModel({
+    required this.frozenRows,
+    required this.frozenColumns,
+    required this.topLeftCell,
+  });
+
+  final int frozenRows;
+  final int frozenColumns;
+  final String? topLeftCell;
+
+  factory SheetFrozenPaneModel.fromJson(Map<String, Object?> json) {
+    return SheetFrozenPaneModel(
+      frozenRows: json['frozenRows'] as int,
+      frozenColumns: json['frozenColumns'] as int,
+      topLeftCell: json['topLeftCell'] as String?,
     );
   }
 }

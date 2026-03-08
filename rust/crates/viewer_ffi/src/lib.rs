@@ -435,9 +435,15 @@ fn open_archive_from_source(source: DocumentSource) -> Result<OoxmlArchive, View
 }
 
 fn supports_text_search(kind: DocumentKind) -> bool {
-    matches!(kind, DocumentKind::Docx | DocumentKind::Pptx | DocumentKind::Xlsx)
+    matches!(
+        kind,
+        DocumentKind::Docx | DocumentKind::Pptx | DocumentKind::Xlsx
+    )
 }
 
 fn supports_text_selection(kind: DocumentKind) -> bool {
-    matches!(kind, DocumentKind::Docx | DocumentKind::Pptx | DocumentKind::Xlsx)
+    matches!(
+        kind,
+        DocumentKind::Docx | DocumentKind::Pptx | DocumentKind::Xlsx
+    )
 }

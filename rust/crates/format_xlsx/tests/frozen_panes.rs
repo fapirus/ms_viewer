@@ -204,4 +204,3 @@ fn invalid_frozen_pane_state_fails() {
 
     assert!(matches!(error, ViewerError::InvalidDocument));
 }
-

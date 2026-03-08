@@ -51,9 +51,9 @@ fn review_fixture_basic_grid_opens_and_supports_render_and_search() {
 
 #[test]
 fn review_fixture_merges_frozen_formulas_support_selection_and_window_render() {
-    let archive = OoxmlArchive::open_path(
-        fixture_path("fixtures/xlsx/xlsx_merges_frozen_formulas.xlsx"),
-    )
+    let archive = OoxmlArchive::open_path(fixture_path(
+        "fixtures/xlsx/xlsx_merges_frozen_formulas.xlsx",
+    ))
     .expect("fixture archive");
     let workbook = parse_xlsx(&archive).expect("workbook");
     let shared_strings = parse_shared_strings(&archive, &workbook).expect("shared strings");

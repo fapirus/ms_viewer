@@ -128,8 +128,14 @@ fn parses_cell_style_subset_from_styles_part() {
     assert_eq!(styles.fonts[1].color_hex.as_deref(), Some("#445566CC"));
     assert_eq!(styles.fills.len(), 2);
     assert_eq!(styles.fills[1].pattern_type.as_deref(), Some("solid"));
-    assert_eq!(styles.fills[1].foreground_color_hex.as_deref(), Some("#ABCDEF"));
-    assert_eq!(styles.fills[1].background_color_hex.as_deref(), Some("#010203"));
+    assert_eq!(
+        styles.fills[1].foreground_color_hex.as_deref(),
+        Some("#ABCDEF")
+    );
+    assert_eq!(
+        styles.fills[1].background_color_hex.as_deref(),
+        Some("#010203")
+    );
     assert_eq!(styles.cell_formats.len(), 2);
     assert_eq!(styles.cell_formats[1].num_fmt_id, 164);
     assert_eq!(

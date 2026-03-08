@@ -188,4 +188,43 @@ void main() {
     final node = page.nodes.single as TextRenderNodeModel;
     expect(node.style.underline, isTrue);
   });
+
+  test('page render model decodes xlsx sheet viewport metadata', () {
+    final page = PageRenderModel.fromJson({
+      'pageIndex': 0,
+      'width': 640.0,
+      'height': 360.0,
+      'nodes': const [],
+      'selectionAnchors': const [],
+      'sheetViewport': {
+        'window': {
+          'startRow': 3,
+          'endRow': 22,
+          'startColumn': 2,
+          'endColumn': 9,
+        },
+        'effectiveBounds': {
+          'startRow': 1,
+          'endRow': 120,
+          'startColumn': 1,
+          'endColumn': 24,
+        },
+        'frozenPane': {
+          'frozenRows': 1,
+          'frozenColumns': 2,
+          'topLeftCell': 'C2',
+        },
+        'visibleRows': [3, 4, 5, 6],
+        'visibleColumns': [2, 3, 4, 5, 6],
+      },
+    });
+
+    expect(page.sheetViewport, isNotNull);
+    expect(page.sheetViewport!.window.startRow, 3);
+    expect(page.sheetViewport!.effectiveBounds.endColumn, 24);
+    expect(page.sheetViewport!.frozenPane!.frozenRows, 1);
+    expect(page.sheetViewport!.frozenPane!.topLeftCell, 'C2');
+    expect(page.sheetViewport!.visibleRows, [3, 4, 5, 6]);
+    expect(page.sheetViewport!.visibleColumns, [2, 3, 4, 5, 6]);
+  });
 }

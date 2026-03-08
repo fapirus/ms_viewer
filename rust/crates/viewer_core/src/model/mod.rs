@@ -262,6 +262,35 @@ pub struct SelectionAnchor {
     pub y: f32,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SheetWindowModel {
+    pub start_row: u32,
+    pub end_row: u32,
+    pub start_column: u32,
+    pub end_column: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SheetFrozenPaneModel {
+    pub frozen_rows: u32,
+    pub frozen_columns: u32,
+    pub top_left_cell: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SheetViewportModel {
+    pub window: SheetWindowModel,
+    pub effective_bounds: SheetWindowModel,
+    pub frozen_pane: Option<SheetFrozenPaneModel>,
+    #[serde(default)]
+    pub visible_rows: Vec<u32>,
+    #[serde(default)]
+    pub visible_columns: Vec<u32>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct PageRenderModel {
@@ -270,4 +299,5 @@ pub struct PageRenderModel {
     pub height: f32,
     pub nodes: Vec<RenderNode>,
     pub selection_anchors: Vec<SelectionAnchor>,
+    pub sheet_viewport: Option<SheetViewportModel>,
 }
