@@ -2,35 +2,70 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_demo/main.dart';
 import 'package:flutter_demo/src/demo_home_page.dart';
-import 'package:flutter/services.dart';
+import 'package:flutter_demo/src/demo_viewer_page.dart';
+import 'package:flutter_test/flutter_test.dart';
 import 'package:ms_viewer_platform_interface/ms_viewer_platform_interface.dart'
     as platform;
 
 void main() {
-  testWidgets('demo app renders fixture browser shell', (tester) async {
+  testWidgets('demo app renders library shell without opening a document', (
+    tester,
+  ) async {
     final fakePlatform = _FakeDemoPlatform();
     await tester.pumpWidget(
-      DemoApp(
-        platform: fakePlatform,
-        assetBundle: _FakeAssetBundle(),
-      ),
+      DemoApp(platform: fakePlatform, assetBundle: _FakeAssetBundle()),
     );
     await tester.pumpAndSettle();
 
     expect(find.text('MS Viewer Demo'), findsOneWidget);
+    expect(find.text('Document Library'), findsOneWidget);
     expect(find.text('Fixtures'), findsOneWidget);
     expect(find.text('Open File'), findsOneWidget);
-    expect(find.text('docx_plain_text.docx'), findsWidgets);
-    expect(find.text('Bundled fixture'), findsWidgets);
+    expect(find.text('docx_plain_text.docx'), findsOneWidget);
+    expect(fakePlatform.openCallCount, 0);
+    expect(fakePlatform.pageCallCount, 0);
+  });
+
+  testWidgets('fixture tap opens viewer route through bytes source', (
+    tester,
+  ) async {
+    final fakePlatform = _FakeDemoPlatform();
+    await tester.pumpWidget(
+      DemoApp(platform: fakePlatform, assetBundle: _FakeAssetBundle()),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('docx_plain_text.docx'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(DemoViewerPage), findsOneWidget);
     expect(fakePlatform.openCallCount, 1);
     expect(fakePlatform.pageCallCount, 1);
     expect(
       fakePlatform.openSourceKinds.single,
       platform.DocumentSourceKind.bytesBase64,
     );
+  });
+
+  testWidgets('viewer route can navigate back to library', (tester) async {
+    final fakePlatform = _FakeDemoPlatform();
+    await tester.pumpWidget(
+      DemoApp(platform: fakePlatform, assetBundle: _FakeAssetBundle()),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('docx_plain_text.docx'));
+    await tester.pumpAndSettle();
+    expect(find.byType(DemoViewerPage), findsOneWidget);
+
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+
+    expect(find.byType(DemoViewerPage), findsNothing);
+    expect(find.text('Document Library'), findsOneWidget);
   });
 
   testWidgets('demo app opens picked docx through path source', (tester) async {
@@ -50,7 +85,8 @@ void main() {
     await tester.tap(find.text('Open File'));
     await tester.pumpAndSettle();
 
-    expect(fakePlatform.openCallCount, 2);
+    expect(find.byType(DemoViewerPage), findsOneWidget);
+    expect(fakePlatform.openCallCount, 1);
     expect(fakePlatform.openSourceKinds.last, platform.DocumentSourceKind.path);
     expect(find.text('picked.docx'), findsWidgets);
   });
@@ -72,7 +108,8 @@ void main() {
     await tester.tap(find.text('Open File'));
     await tester.pumpAndSettle();
 
-    expect(fakePlatform.openCallCount, 2);
+    expect(find.byType(DemoViewerPage), findsOneWidget);
+    expect(fakePlatform.openCallCount, 1);
     expect(fakePlatform.openSourceKinds.last, platform.DocumentSourceKind.path);
     expect(find.text('picked.pptx'), findsWidgets);
   });
@@ -94,12 +131,15 @@ void main() {
     await tester.tap(find.text('Open File'));
     await tester.pumpAndSettle();
 
-    expect(fakePlatform.openCallCount, 2);
+    expect(find.byType(DemoViewerPage), findsOneWidget);
+    expect(fakePlatform.openCallCount, 1);
     expect(fakePlatform.openSourceKinds.last, platform.DocumentSourceKind.path);
     expect(find.text('picked.xlsx'), findsWidgets);
   });
 
-  testWidgets('demo app opens dropped docx through path source', (tester) async {
+  testWidgets('demo app opens dropped docx through path source', (
+    tester,
+  ) async {
     final fakePlatform = _FakeDemoPlatform();
     await tester.pumpWidget(
       MaterialApp(
@@ -116,12 +156,15 @@ void main() {
     await state.handleDroppedPaths(const ['/tmp/dropped.docx']);
     await tester.pumpAndSettle();
 
-    expect(fakePlatform.openCallCount, 2);
+    expect(find.byType(DemoViewerPage), findsOneWidget);
+    expect(fakePlatform.openCallCount, 1);
     expect(fakePlatform.openSourceKinds.last, platform.DocumentSourceKind.path);
     expect(find.text('dropped.docx'), findsWidgets);
   });
 
-  testWidgets('demo app opens dropped pptx through path source', (tester) async {
+  testWidgets('demo app opens dropped pptx through path source', (
+    tester,
+  ) async {
     final fakePlatform = _FakeDemoPlatform();
     await tester.pumpWidget(
       MaterialApp(
@@ -138,12 +181,15 @@ void main() {
     await state.handleDroppedPaths(const ['/tmp/dropped.pptx']);
     await tester.pumpAndSettle();
 
-    expect(fakePlatform.openCallCount, 2);
+    expect(find.byType(DemoViewerPage), findsOneWidget);
+    expect(fakePlatform.openCallCount, 1);
     expect(fakePlatform.openSourceKinds.last, platform.DocumentSourceKind.path);
     expect(find.text('dropped.pptx'), findsWidgets);
   });
 
-  testWidgets('demo app opens dropped xlsx through path source', (tester) async {
+  testWidgets('demo app opens dropped xlsx through path source', (
+    tester,
+  ) async {
     final fakePlatform = _FakeDemoPlatform();
     await tester.pumpWidget(
       MaterialApp(
@@ -160,53 +206,61 @@ void main() {
     await state.handleDroppedPaths(const ['/tmp/dropped.xlsx']);
     await tester.pumpAndSettle();
 
-    expect(fakePlatform.openCallCount, 2);
+    expect(find.byType(DemoViewerPage), findsOneWidget);
+    expect(fakePlatform.openCallCount, 1);
     expect(fakePlatform.openSourceKinds.last, platform.DocumentSourceKind.path);
     expect(find.text('dropped.xlsx'), findsWidgets);
   });
 
-  testWidgets('demo app opens fixture pptx through bytes source', (tester) async {
+  testWidgets('demo app opens fixture pptx through bytes source', (
+    tester,
+  ) async {
     final fakePlatform = _FakeDemoPlatform();
     await tester.pumpWidget(
-      DemoApp(
-        platform: fakePlatform,
-        assetBundle: _FakeAssetBundle(),
-      ),
+      DemoApp(platform: fakePlatform, assetBundle: _FakeAssetBundle()),
     );
     await tester.pumpAndSettle();
 
-    await tester.scrollUntilVisible(
-      find.text('pptx_text_shapes.pptx'),
-      200,
-      scrollable: find.byType(Scrollable).first,
+    final fixtureFinder = find.text('pptx_text_shapes.pptx');
+    await tester.dragUntilVisible(
+      fixtureFinder,
+      find.byType(ListView).first,
+      const Offset(0, -240),
     );
-    await tester.tap(find.text('pptx_text_shapes.pptx'));
+    await tester.pumpAndSettle();
+    await tester.tap(fixtureFinder);
     await tester.pumpAndSettle();
 
-    expect(fakePlatform.openCallCount, 2);
-    expect(fakePlatform.openSourceKinds.last, platform.DocumentSourceKind.bytesBase64);
+    expect(find.byType(DemoViewerPage), findsOneWidget);
+    expect(fakePlatform.openCallCount, 1);
+    expect(
+      fakePlatform.openSourceKinds.last,
+      platform.DocumentSourceKind.bytesBase64,
+    );
     expect(find.text('pptx_text_shapes.pptx'), findsWidgets);
   });
 
-  testWidgets('demo app opens fixture xlsx through bytes source', (tester) async {
+  testWidgets('demo app opens fixture xlsx through bytes source', (
+    tester,
+  ) async {
     final fakePlatform = _FakeDemoPlatform();
     await tester.pumpWidget(
-      DemoApp(
-        platform: fakePlatform,
-        assetBundle: _FakeAssetBundle(),
-      ),
+      DemoApp(platform: fakePlatform, assetBundle: _FakeAssetBundle()),
     );
     await tester.pumpAndSettle();
 
-    await tester.scrollUntilVisible(
-      find.text('xlsx_basic_grid.xlsx'),
-      200,
-      scrollable: find.byType(Scrollable).first,
+    final fixtureFinder = find.text('xlsx_basic_grid.xlsx');
+    await tester.dragUntilVisible(
+      fixtureFinder,
+      find.byType(ListView).first,
+      const Offset(0, -240),
     );
-    await tester.tap(find.text('xlsx_basic_grid.xlsx'));
+    await tester.pumpAndSettle();
+    await tester.tap(fixtureFinder);
     await tester.pumpAndSettle();
 
-    expect(fakePlatform.openCallCount, 2);
+    expect(find.byType(DemoViewerPage), findsOneWidget);
+    expect(fakePlatform.openCallCount, 1);
     expect(
       fakePlatform.openSourceKinds.last,
       platform.DocumentSourceKind.bytesBase64,

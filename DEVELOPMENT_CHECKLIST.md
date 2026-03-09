@@ -875,7 +875,7 @@
 - `DOCX/PPTX/XLSX` 수동 검증 기준을 preview shell이 아니라 document viewer shell 기준으로 바꾼다.
 
 ### Structure
-- [ ] 문서 목록 화면과 뷰어 화면 분리
+- [x] 문서 목록 화면과 뷰어 화면 분리
   - Done when:
     - library screen과 viewer screen이 route 단위로 분리된다
     - 문서 선택 시 viewer route로 이동한다

@@ -1,12 +1,11 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:cross_file/cross_file.dart';
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:ms_viewer/ms_viewer.dart';
 import 'package:ms_viewer_platform_interface/ms_viewer_platform_interface.dart'
     as platform;
@@ -15,6 +14,7 @@ import 'package:path/path.dart' as p;
 import 'demo_document.dart';
 import 'demo_fixture_catalog.dart';
 import 'demo_page_models.dart';
+import 'demo_viewer_page.dart';
 
 typedef DemoFilePicker = Future<List<String>> Function();
 
@@ -37,10 +37,8 @@ class DemoHomePage extends StatefulWidget {
 }
 
 class _DemoHomePageState extends State<DemoHomePage> {
-  late final MsViewerController _controller;
   late final List<DemoDocumentEntry> _fixtures;
   final List<DemoDocumentEntry> _imports = [];
-  DemoDocumentEntry? _selected;
   bool _dragging = false;
 
   bool get _supportsDesktopDrop =>
@@ -53,15 +51,7 @@ class _DemoHomePageState extends State<DemoHomePage> {
   @override
   void initState() {
     super.initState();
-    _controller = MsViewerController(platform: widget.viewerPlatform);
     _fixtures = buildFixtureEntries();
-    unawaited(_selectEntry(_fixtures.first));
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
   }
 
   Future<void> _pickFiles() async {
@@ -76,7 +66,7 @@ class _DemoHomePageState extends State<DemoHomePage> {
     setState(() {
       _imports.insertAll(0, added.reversed);
     });
-    unawaited(_selectEntry(added.first));
+    unawaited(_openViewer(added.first));
   }
 
   Future<void> _openDroppedFiles(List<XFile> files) async {
@@ -97,7 +87,23 @@ class _DemoHomePageState extends State<DemoHomePage> {
       _imports.insertAll(0, added.reversed);
       _dragging = false;
     });
-    await _selectEntry(added.first);
+    unawaited(_openViewer(added.first));
+  }
+
+  Future<void> _openViewer(DemoDocumentEntry entry) async {
+    if (!mounted) {
+      return;
+    }
+
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (context) => DemoViewerPage(
+          entry: entry,
+          viewerPlatform: widget.viewerPlatform,
+          assetBundle: widget.assetBundle,
+        ),
+      ),
+    );
   }
 
   DemoDocumentEntry _importedEntry(String path, DemoDocumentOrigin origin) {
@@ -148,70 +154,8 @@ class _DemoHomePageState extends State<DemoHomePage> {
     );
   }
 
-  Future<void> _selectEntry(DemoDocumentEntry entry) async {
-    setState(() {
-      _selected = entry;
-    });
-
-    if (entry.origin == DemoDocumentOrigin.fixture &&
-        _usesEngineForFixture(entry.kind) &&
-        entry.location != null) {
-      final bytes = await widget.assetBundle.load(entry.location!);
-      final encoded = base64Encode(bytes.buffer.asUint8List());
-      await _controller.openDocument(
-        platform.OpenDocumentRequest(
-          source: platform.OpenDocumentSource.bytesBase64(encoded),
-        ),
-      );
-      return;
-    }
-
-    if (_usesEngineForImportedPath(entry) &&
-        entry.location != null) {
-      await _controller.openDocument(
-        platform.OpenDocumentRequest(
-          source: platform.OpenDocumentSource.path(entry.location!),
-        ),
-      );
-      return;
-    }
-
-    _controller.attachDocument(entry.descriptor);
-  }
-
-  bool _usesEngineForFixture(DocumentKind kind) {
-    return kind == DocumentKind.docx ||
-        kind == DocumentKind.pptx ||
-        kind == DocumentKind.xlsx;
-  }
-
-  bool _usesEngineForPickedImport(DocumentKind kind) {
-    return kind == DocumentKind.docx ||
-        kind == DocumentKind.pptx ||
-        kind == DocumentKind.xlsx;
-  }
-
-  bool _usesEngineForImportedPath(DemoDocumentEntry entry) {
-    if (entry.origin == DemoDocumentOrigin.picked) {
-      return _usesEngineForPickedImport(entry.kind);
-    }
-
-    if (entry.origin == DemoDocumentOrigin.dropped) {
-      return entry.kind == DocumentKind.docx ||
-          entry.kind == DocumentKind.pptx ||
-          entry.kind == DocumentKind.xlsx;
-    }
-
-    return false;
-  }
-
   @override
   Widget build(BuildContext context) {
-    final selected = _selected;
-    if (selected == null) {
-      return const SizedBox.shrink();
-    }
-
     return Scaffold(
       appBar: AppBar(
         title: const Text('MS Viewer Demo'),
@@ -224,99 +168,171 @@ class _DemoHomePageState extends State<DemoHomePage> {
           const SizedBox(width: 16),
         ],
       ),
-      body: LayoutBuilder(
-        builder: (context, constraints) {
-          final wide = constraints.maxWidth >= 960;
-          final rail = _buildSourceRail(context, selected);
-          final preview = _buildPreviewPane(
-            context,
-            selected,
-            scrollable: !wide,
-          );
-
-          if (wide) {
-            return Row(
-              children: [
-                SizedBox(width: 320, child: rail),
-                const VerticalDivider(width: 1),
-                Expanded(child: preview),
-              ],
-            );
-          }
-
-          return Column(
-            children: [
-              SizedBox(height: 320, child: rail),
-              const Divider(height: 1),
-              Expanded(child: preview),
+      body: DecoratedBox(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            colors: [Color(0xFFF8FBFF), Color(0xFFF3F7FC)],
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+          ),
+        ),
+        child: ListView(
+          padding: const EdgeInsets.all(24),
+          children: [
+            _buildLibraryIntro(context),
+            const SizedBox(height: 20),
+            _buildSectionCard(
+              context: context,
+              title: 'Fixtures',
+              description: 'DOCX, PPTX, XLSX 기준 문서를 바로 열어 엔진 상태를 점검합니다.',
+              children: _fixtures.map(_documentTile).toList(growable: false),
+            ),
+            if (_imports.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              _buildSectionCard(
+                context: context,
+                title: 'Imported Files',
+                description: 'Open File 또는 drag & drop으로 추가한 문서입니다.',
+                children: _imports.map(_documentTile).toList(growable: false),
+              ),
             ],
-          );
-        },
+            if (_supportsDesktopDrop) ...[
+              const SizedBox(height: 16),
+              _buildSectionCard(
+                context: context,
+                title: 'Desktop Drop',
+                description: '데스크톱에서는 파일을 끌어다 놓아 바로 열 수 있습니다.',
+                children: [_buildDropZone()],
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildSourceRail(BuildContext context, DemoDocumentEntry selected) {
-    final children = <Widget>[
-      Padding(
-        padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
-        child: Column(
+  Widget _buildLibraryIntro(BuildContext context) {
+    return Card(
+      elevation: 0,
+      color: Colors.white,
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Fixtures', style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 6),
-            Text(
-              'DOCX/PPTX/XLSX review fixtures are bundled here for mid-project checks.',
-              style: Theme.of(context).textTheme.bodySmall,
+            Container(
+              width: 52,
+              height: 52,
+              decoration: BoxDecoration(
+                color: const Color(0xFFDCEBFF),
+                borderRadius: BorderRadius.circular(18),
+              ),
+              alignment: Alignment.center,
+              child: const Icon(
+                Icons.folder_copy_outlined,
+                color: Color(0xFF1D4ED8),
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Document Library',
+                    style: Theme.of(context).textTheme.headlineSmall,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '문서를 선택하면 별도 뷰어 화면에서 열립니다. 이 화면은 fixture, picked, dropped 문서의 진입점만 담당합니다.',
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                ],
+              ),
             ),
           ],
         ),
       ),
-      ..._fixtures.map((entry) => _documentTile(entry, selected)),
-      if (_imports.isNotEmpty) ...[
-        const Divider(height: 24),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
-          child: Text(
-            'Imported Files',
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
-        ),
-        ..._imports.map((entry) => _documentTile(entry, selected)),
-      ],
-      if (_supportsDesktopDrop) const Divider(height: 24),
-      if (_supportsDesktopDrop)
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-          child: _buildDropZone(),
-        ),
-      const SizedBox(height: 16),
-    ];
-
-    return ColoredBox(
-      color: const Color(0xFFF8FBFF),
-      child: ListView(children: children),
     );
   }
 
-  Widget _documentTile(DemoDocumentEntry entry, DemoDocumentEntry selected) {
-    final active = entry.id == selected.id;
+  Widget _buildSectionCard({
+    required BuildContext context,
+    required String title,
+    required String description,
+    required List<Widget> children,
+  }) {
+    return Card(
+      elevation: 0,
+      color: Colors.white,
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(title, style: Theme.of(context).textTheme.titleLarge),
+            const SizedBox(height: 6),
+            Text(description, style: Theme.of(context).textTheme.bodySmall),
+            const SizedBox(height: 16),
+            ...children,
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _documentTile(DemoDocumentEntry entry) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-      child: Card(
-        elevation: active ? 0 : 0,
-        color: active ? const Color(0xFFE0ECFF) : Colors.white,
-        child: ListTile(
-          leading: Icon(
-            _iconForKind(entry.kind),
-            color: const Color(0xFF1D4ED8),
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Material(
+        color: const Color(0xFFF8FBFF),
+        borderRadius: BorderRadius.circular(20),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(20),
+          onTap: () => unawaited(_openViewer(entry)),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  alignment: Alignment.center,
+                  child: Icon(
+                    _iconForKind(entry.kind),
+                    color: const Color(0xFF1D4ED8),
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        entry.title,
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        entry.statusLabel,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ],
+                  ),
+                ),
+                if (entry.requiresPassword)
+                  const Padding(
+                    padding: EdgeInsets.only(right: 8),
+                    child: Icon(Icons.lock_outline, size: 18),
+                  ),
+                const Icon(Icons.chevron_right),
+              ],
+            ),
           ),
-          title: Text(entry.title),
-          subtitle: Text(entry.statusLabel),
-          trailing: entry.requiresPassword
-              ? const Icon(Icons.lock_outline)
-              : null,
-          onTap: () => unawaited(_selectEntry(entry)),
         ),
       ),
     );
@@ -331,8 +347,8 @@ class _DemoHomePageState extends State<DemoHomePage> {
         duration: const Duration(milliseconds: 180),
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: _dragging ? const Color(0xFFDCEBFF) : Colors.white,
-          borderRadius: BorderRadius.circular(16),
+          color: _dragging ? const Color(0xFFDCEBFF) : const Color(0xFFF8FBFF),
+          borderRadius: BorderRadius.circular(20),
           border: Border.all(
             color: _dragging
                 ? const Color(0xFF2563EB)
@@ -347,119 +363,12 @@ class _DemoHomePageState extends State<DemoHomePage> {
             SizedBox(height: 8),
             Text('Desktop Drop'),
             SizedBox(height: 4),
-            Text('Drop docx, pptx, or xlsx files here to preview them.'),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildPreviewPane(
-    BuildContext context,
-    DemoDocumentEntry entry, {
-    required bool scrollable,
-  }) {
-    final previewBody = entry.requiresPassword
-        ? _buildLockedPreview(context)
-        : MsDocumentView(
-            controller: _controller,
-            previewPages: entry.previewPages,
-          );
-
-    final header = Card(
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(entry.title, style: Theme.of(context).textTheme.headlineSmall),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                _metaChip(entry.sourceLabel),
-                _metaChip(entry.statusLabel),
-                ...entry.tags.map(_metaChip),
-              ],
+            Text(
+              'Drop docx, pptx, or xlsx files here to open them in the viewer.',
             ),
-            if (entry.location != null) ...[
-              const SizedBox(height: 12),
-              SelectableText(
-                entry.location!,
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-            ],
-            if (entry.note != null) ...[
-              const SizedBox(height: 12),
-              Text(entry.note!),
-            ],
           ],
         ),
       ),
-    );
-
-    if (scrollable) {
-      return ListView(
-        padding: const EdgeInsets.all(24),
-        children: [
-          header,
-          const SizedBox(height: 16),
-          SizedBox(height: 640, child: previewBody),
-        ],
-      );
-    }
-
-    return Padding(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          header,
-          const SizedBox(height: 16),
-          Expanded(child: previewBody),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildLockedPreview(BuildContext context) {
-    return Card(
-      color: const Color(0xFFF8FAFC),
-      child: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(32),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(
-                Icons.lock_outline,
-                size: 48,
-                color: Color(0xFF1D4ED8),
-              ),
-              const SizedBox(height: 16),
-              Text(
-                'Password required fixture',
-                style: Theme.of(context).textTheme.titleLarge,
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                'This bundled file represents the encrypted DOCX flow. The real password UI is already wired in the viewer shell, and engine-side decryption remains a follow-up task.',
-                textAlign: TextAlign.center,
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _metaChip(String label) {
-    return Chip(
-      label: Text(label),
-      visualDensity: VisualDensity.compact,
-      side: const BorderSide(color: Color(0xFFBFDBFE)),
-      backgroundColor: Colors.white,
     );
   }
 
