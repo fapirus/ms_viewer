@@ -1012,6 +1012,14 @@
   - Tests:
     - xlsx render model regression tests
     - `packages/ms_viewer` 전체 회귀 테스트
+- [x] XLSX engine render hot-path indexing 최적화
+  - Scope:
+    - visible window 렌더에서 cell lookup을 선형 탐색 대신 좌표 인덱스로 바꾼다
+    - row/column 누적 길이는 prefix offset으로 계산해 per-cell 합산 비용을 제거한다
+    - merged range도 visible bounds 기준 lookup으로 줄인다
+  - Tests:
+    - `cargo test --manifest-path rust/Cargo.toml`
+    - `packages/ms_viewer` 전체 회귀 테스트
 - [x] XLSX cell-centric search navigation groundwork
   - Scope:
     - `XLSX` search result는 text offset뿐 아니라 target cell(row/column)을 함께 가진다

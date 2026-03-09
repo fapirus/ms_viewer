@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use format_shared::{
     parse_package_relationships, resolve_relationship_target, PackageRelationship,
 };
@@ -1192,6 +1194,8 @@ fn render_sheet_model(
     let row_heights: Vec<f32> = (start_row..=end_row)
         .map(|row| resolve_row_height(metrics, row))
         .collect();
+    let column_offsets = cumulative_offsets(&column_widths);
+    let row_offsets = cumulative_offsets(&row_heights);
     let width = column_widths.iter().sum::<f32>();
     let height = row_heights.iter().sum::<f32>();
     let visible_rows = (start_row..=end_row)
@@ -1205,34 +1209,31 @@ fn render_sheet_model(
     let mut selection_anchors = Vec::new();
     let mut selection_offset = 0u32;
     let mut sheet_cells = Vec::new();
+    let cell_lookup = worksheet_cells
+        .cells
+        .iter()
+        .map(|cell| ((cell.row, cell.column), cell))
+        .collect::<HashMap<_, _>>();
+    let merge_lookup = VisibleMergeLookup::new(&merges.ranges, render_bounds);
 
     for row in start_row..=end_row {
         let row_height = row_heights[(row - start_row) as usize];
         if row_height <= 0.0 {
             continue;
         }
-        let cell_y = sum_lengths(&row_heights, start_row, row);
+        let cell_y = row_offsets[(row - start_row) as usize];
         for column in start_column..=end_column {
             let column_width = column_widths[(column - start_column) as usize];
             if column_width <= 0.0 {
                 continue;
             }
-            if merges.ranges.iter().any(|range| {
-                is_covered_by_merged_range(range, row, column)
-                    && !is_merge_origin(range, row, column)
-            }) {
+            if merge_lookup.covered_contains(row, column) {
                 continue;
             }
 
-            let cell_x = sum_lengths(&column_widths, start_column, column);
-            let cell = worksheet_cells
-                .cells
-                .iter()
-                .find(|cell| cell.row == row && cell.column == column);
-            let merged_range = merges
-                .ranges
-                .iter()
-                .find(|range| is_merge_origin(range, row, column));
+            let cell_x = column_offsets[(column - start_column) as usize];
+            let cell = cell_lookup.get(&(row, column)).copied();
+            let merged_range = merge_lookup.origin(row, column);
             let span_columns = merged_range
                 .map(|range| range.end_column - range.start_column + 1)
                 .unwrap_or(1);
@@ -1790,14 +1791,14 @@ fn resolve_row_height(metrics: &WorksheetGridMetrics, row: u32) -> f32 {
     points * (96.0 / 72.0)
 }
 
-fn sum_lengths(lengths: &[f32], start_index: u32, current_index: u32) -> f32 {
-    if current_index <= start_index {
-        return 0.0;
+fn cumulative_offsets(lengths: &[f32]) -> Vec<f32> {
+    let mut offsets = Vec::with_capacity(lengths.len());
+    let mut current = 0.0;
+    for length in lengths {
+        offsets.push(current);
+        current += length;
     }
-    lengths
-        .iter()
-        .take((current_index - start_index) as usize)
-        .sum()
+    offsets
 }
 
 fn column_span_width(
@@ -1823,15 +1824,59 @@ fn row_span_height(row_heights: &[f32], start_row: u32, row: u32, span_rows: u32
         .sum()
 }
 
-fn is_merge_origin(range: &XlsxMergedCellRange, row: u32, column: u32) -> bool {
-    range.start_row == row && range.start_column == column
+struct VisibleMergeLookup<'a> {
+    origin_by_cell: HashMap<(u32, u32), &'a XlsxMergedCellRange>,
+    covered_by_cell: HashMap<(u32, u32), &'a XlsxMergedCellRange>,
 }
 
-fn is_covered_by_merged_range(range: &XlsxMergedCellRange, row: u32, column: u32) -> bool {
-    row >= range.start_row
-        && row <= range.end_row
-        && column >= range.start_column
-        && column <= range.end_column
+impl<'a> VisibleMergeLookup<'a> {
+    fn new(
+        ranges: &'a [XlsxMergedCellRange],
+        render_bounds: (u32, u32, u32, u32),
+    ) -> Self {
+        let (start_row, start_column, end_row, end_column) = render_bounds;
+        let mut origin_by_cell = HashMap::new();
+        let mut covered_by_cell = HashMap::new();
+
+        for range in ranges {
+            if range.end_row < start_row
+                || range.start_row > end_row
+                || range.end_column < start_column
+                || range.start_column > end_column
+            {
+                continue;
+            }
+
+            origin_by_cell.insert((range.start_row, range.start_column), range);
+
+            let clipped_start_row = range.start_row.max(start_row);
+            let clipped_end_row = range.end_row.min(end_row);
+            let clipped_start_column = range.start_column.max(start_column);
+            let clipped_end_column = range.end_column.min(end_column);
+
+            for row in clipped_start_row..=clipped_end_row {
+                for column in clipped_start_column..=clipped_end_column {
+                    if row == range.start_row && column == range.start_column {
+                        continue;
+                    }
+                    covered_by_cell.insert((row, column), range);
+                }
+            }
+        }
+
+        Self {
+            origin_by_cell,
+            covered_by_cell,
+        }
+    }
+
+    fn origin(&self, row: u32, column: u32) -> Option<&'a XlsxMergedCellRange> {
+        self.origin_by_cell.get(&(row, column)).copied()
+    }
+
+    fn covered_contains(&self, row: u32, column: u32) -> bool {
+        self.covered_by_cell.contains_key(&(row, column))
+    }
 }
 
 fn resolve_text_style(styles: &XlsxStyleCatalog, format: Option<&XlsxCellFormat>) -> TextStyle {

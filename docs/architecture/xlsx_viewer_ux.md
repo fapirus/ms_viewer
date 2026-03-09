@@ -148,6 +148,11 @@
 - `XLSX`는 open 시점에 workbook/shared strings/styles/cells/metrics/merge/frozen pane까지 한 번 파싱해 캐시한다.
 - 이후 visible window, search, selection 요청은 cached package를 재사용한다.
 - 즉 large-sheet 성능 병목은 "프로세스 재시작 + ZIP/XML 재파싱"이 아니라 실제 viewport diff와 painting 비용으로 좁혀야 한다.
+- visible window render 자체도 hot path 최적화가 필요하다.
+  - cell lookup은 `(row, column)` 인덱스를 사용한다.
+  - row/column pixel offset은 prefix sums로 계산한다.
+  - merged range lookup은 visible bounds 기준으로 줄인다.
+  - tile cache는 그 다음 단계의 상위 최적화다.
 
 ### Flutter painting policy
 - `XLSX` body는 cell마다 개별 widget을 쌓는 방식보다 sheet 전용 painter를 우선 사용한다.
