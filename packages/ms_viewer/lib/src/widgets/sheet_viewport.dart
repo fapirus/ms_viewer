@@ -55,8 +55,8 @@ class _SheetViewportState extends State<SheetViewport> {
   bool _syncingHorizontal = false;
   bool _syncingVertical = false;
   bool _windowRequestInFlight = false;
-  int _pendingColumnShift = 0;
-  int _pendingRowShift = 0;
+  int _pendingPrependedColumns = 0;
+  int _pendingPrependedRows = 0;
   _SheetViewportMetrics? _latestMetrics;
   bool _initialWindowExpansionScheduled = false;
 
@@ -76,20 +76,15 @@ class _SheetViewportState extends State<SheetViewport> {
         newWindow != null &&
         !_sameWindowBounds(oldWindow, newWindow)) {
       _initialWindowExpansionScheduled = false;
-      final oldMetrics = _SheetViewportMetrics.fromPage(oldWidget.page);
       final newMetrics = _SheetViewportMetrics.fromPage(widget.page);
-      final horizontalAdjustment = _pendingColumnShift > 0
-          ? oldMetrics.extentForLeadingColumns(_pendingColumnShift)
-          : _pendingColumnShift < 0
-          ? -newMetrics.extentForLeadingColumns(-_pendingColumnShift)
+      final horizontalAdjustment = _pendingPrependedColumns > 0
+          ? newMetrics.extentForLeadingColumns(_pendingPrependedColumns)
           : 0.0;
-      final verticalAdjustment = _pendingRowShift > 0
-          ? oldMetrics.extentForLeadingRows(_pendingRowShift)
-          : _pendingRowShift < 0
-          ? -newMetrics.extentForLeadingRows(-_pendingRowShift)
+      final verticalAdjustment = _pendingPrependedRows > 0
+          ? newMetrics.extentForLeadingRows(_pendingPrependedRows)
           : 0.0;
-      _pendingColumnShift = 0;
-      _pendingRowShift = 0;
+      _pendingPrependedColumns = 0;
+      _pendingPrependedRows = 0;
       _windowRequestInFlight = false;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) {
@@ -97,7 +92,7 @@ class _SheetViewportState extends State<SheetViewport> {
         }
         if (horizontalAdjustment > 0 && _horizontalBodyController.hasClients) {
           _horizontalBodyController.jumpTo(
-            (_horizontalBodyController.offset - horizontalAdjustment).clamp(
+            (_horizontalBodyController.offset + horizontalAdjustment).clamp(
               0.0,
               _horizontalBodyController.position.maxScrollExtent,
             ),
@@ -105,7 +100,7 @@ class _SheetViewportState extends State<SheetViewport> {
         }
         if (verticalAdjustment > 0 && _verticalBodyController.hasClients) {
           _verticalBodyController.jumpTo(
-            (_verticalBodyController.offset - verticalAdjustment).clamp(
+            (_verticalBodyController.offset + verticalAdjustment).clamp(
               0.0,
               _verticalBodyController.position.maxScrollExtent,
             ),
@@ -175,7 +170,11 @@ class _SheetViewportState extends State<SheetViewport> {
     final rowCount = currentWindow.endRow - currentWindow.startRow + 1;
     final columnCount = currentWindow.endColumn - currentWindow.startColumn + 1;
     var nextStartRow = currentWindow.startRow;
+    var nextEndRow = currentWindow.endRow;
     var nextStartColumn = currentWindow.startColumn;
+    var nextEndColumn = currentWindow.endColumn;
+    var prependedColumns = 0;
+    var prependedRows = 0;
 
     if (_horizontalBodyController.hasClients &&
         _horizontalBodyController.position.maxScrollExtent > 0 &&
@@ -184,13 +183,13 @@ class _SheetViewportState extends State<SheetViewport> {
                 _requestThreshold &&
         currentWindow.endColumn < _excelMaxColumns) {
       final shift = math.max(1, (columnCount * _windowShiftRatio).round());
-      final maxStart = math.max(1, _excelMaxColumns - columnCount + 1);
-      nextStartColumn = math.min(currentWindow.startColumn + shift, maxStart);
+      nextEndColumn = math.min(currentWindow.endColumn + shift, _excelMaxColumns);
     } else if (_horizontalBodyController.hasClients &&
         currentWindow.startColumn > 1 &&
         _horizontalBodyController.offset <= _leadingEdgeThresholdPixels) {
       final shift = math.max(1, (columnCount * _windowShiftRatio).round());
       nextStartColumn = math.max(1, currentWindow.startColumn - shift);
+      prependedColumns = currentWindow.startColumn - nextStartColumn;
     }
 
     if (_verticalBodyController.hasClients &&
@@ -200,35 +199,37 @@ class _SheetViewportState extends State<SheetViewport> {
                 _requestThreshold &&
         currentWindow.endRow < _excelMaxRows) {
       final shift = math.max(1, (rowCount * _windowShiftRatio).round());
-      final maxStart = math.max(1, _excelMaxRows - rowCount + 1);
-      nextStartRow = math.min(currentWindow.startRow + shift, maxStart);
+      nextEndRow = math.min(currentWindow.endRow + shift, _excelMaxRows);
     } else if (_verticalBodyController.hasClients &&
         currentWindow.startRow > 1 &&
         _verticalBodyController.offset <= _leadingEdgeThresholdPixels) {
       final shift = math.max(1, (rowCount * _windowShiftRatio).round());
       nextStartRow = math.max(1, currentWindow.startRow - shift);
+      prependedRows = currentWindow.startRow - nextStartRow;
     }
 
     if (nextStartRow == currentWindow.startRow &&
-        nextStartColumn == currentWindow.startColumn) {
+        nextEndRow == currentWindow.endRow &&
+        nextStartColumn == currentWindow.startColumn &&
+        nextEndColumn == currentWindow.endColumn) {
       return;
     }
 
     _windowRequestInFlight = true;
-    _pendingColumnShift = nextStartColumn - currentWindow.startColumn;
-    _pendingRowShift = nextStartRow - currentWindow.startRow;
+    _pendingPrependedColumns = prependedColumns;
+    _pendingPrependedRows = prependedRows;
     unawaited(
       callback(
         SheetWindow(
           startRow: nextStartRow,
-          endRow: nextStartRow + rowCount - 1,
+          endRow: nextEndRow,
           startColumn: nextStartColumn,
-          endColumn: nextStartColumn + columnCount - 1,
+          endColumn: nextEndColumn,
         ),
       ).catchError((_) {
         _windowRequestInFlight = false;
-        _pendingColumnShift = 0;
-        _pendingRowShift = 0;
+        _pendingPrependedColumns = 0;
+        _pendingPrependedRows = 0;
       }),
     );
   }

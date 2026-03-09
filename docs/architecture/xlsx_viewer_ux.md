@@ -136,6 +136,10 @@
 - full sheet render 금지
 - overscan은 row/column metric 변동을 고려해 보수적으로 유지
 - used range까지만 clamp하지 않고 blank grid도 함께 유지한다
+- trailing edge에 닿으면 window를 뒤로 미는 대신 `endRow/endColumn`을 먼저 늘려 누적 확장한다
+- leading edge에서 이전 영역이 필요하면 `startRow/startColumn`을 앞쪽으로 넓힌다
+- 즉 기본 전략은 `sliding window`보다 `cumulative expanding window`에 가깝다
+- 장기적으로 메모리 상한이 필요해지면 far range prune/LRU를 hardening 단계에서 추가한다
 - 이후 zoom이 들어오면 visible count 계산은 scale factor를 반영하도록 확장한다
 
 ## UX priorities

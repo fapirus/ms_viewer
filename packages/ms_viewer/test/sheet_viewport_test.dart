@@ -228,18 +228,12 @@ void main() {
     await tester.pump();
 
     expect(requestedWindow, isNotNull);
+    expect(requestedWindow!.startRow, page.sheetViewport!.window.startRow);
+    expect(requestedWindow!.startColumn, page.sheetViewport!.window.startColumn);
     expect(
-      requestedWindow!.startRow > 1 || requestedWindow!.startColumn > 1,
+      requestedWindow!.endRow > page.sheetViewport!.window.endRow ||
+          requestedWindow!.endColumn > page.sheetViewport!.window.endColumn,
       isTrue,
-    );
-    expect(
-      requestedWindow!.endRow - requestedWindow!.startRow,
-      page.sheetViewport!.window.endRow - page.sheetViewport!.window.startRow,
-    );
-    expect(
-      requestedWindow!.endColumn - requestedWindow!.startColumn,
-      page.sheetViewport!.window.endColumn -
-          page.sheetViewport!.window.startColumn,
     );
   });
 
@@ -297,6 +291,8 @@ void main() {
                 page.sheetViewport!.window.startColumn,
         isTrue,
       );
+      expect(requestedWindow!.endRow, page.sheetViewport!.window.endRow);
+      expect(requestedWindow!.endColumn, page.sheetViewport!.window.endColumn);
     },
   );
 
