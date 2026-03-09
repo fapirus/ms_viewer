@@ -724,6 +724,26 @@ class _FrozenPaneOverlay extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final splitPage = _filterSheetPageNodes(
+      page,
+      (node) => !_isFrozenBoundaryCrossingNode(
+        node,
+        frozenWidth: frozenWidth,
+        frozenHeight: frozenHeight,
+        freezeColumns: freezeColumns,
+        freezeRows: freezeRows,
+      ),
+    );
+    final crossingPage = _filterSheetPageNodes(
+      page,
+      (node) => _isFrozenBoundaryCrossingNode(
+        node,
+        frozenWidth: frozenWidth,
+        frozenHeight: frozenHeight,
+        freezeColumns: freezeColumns,
+        freezeRows: freezeRows,
+      ),
+    );
     return Stack(
       children: [
         if (freezeRows && frozenHeight > 0)
@@ -736,7 +756,7 @@ class _FrozenPaneOverlay extends StatelessWidget {
               child: Transform.translate(
                 offset: Offset(-horizontalOffset, 0),
                 child: SheetRenderCanvas(
-                  page: page,
+                  page: splitPage,
                   canvasWidth: page.width,
                   canvasHeight: page.height,
                   viewportOffset: Offset(horizontalOffset, 0),
@@ -757,7 +777,7 @@ class _FrozenPaneOverlay extends StatelessWidget {
               child: Transform.translate(
                 offset: Offset(0, -verticalOffset),
                 child: SheetRenderCanvas(
-                  page: page,
+                  page: splitPage,
                   canvasWidth: page.width,
                   canvasHeight: page.height,
                   viewportOffset: Offset(0, verticalOffset),
@@ -776,7 +796,7 @@ class _FrozenPaneOverlay extends StatelessWidget {
             height: frozenHeight,
               child: ClipRect(
                 child: SheetRenderCanvas(
-                  page: page,
+                  page: splitPage,
                   canvasWidth: page.width,
                   canvasHeight: page.height,
                   viewportOffset: Offset.zero,
@@ -786,6 +806,22 @@ class _FrozenPaneOverlay extends StatelessWidget {
                 ),
               ),
             ),
+        if (crossingPage.nodes.isNotEmpty)
+          Positioned.fill(
+            child: IgnorePointer(
+              child: ClipRect(
+                child: SheetRenderCanvas(
+                  page: crossingPage,
+                  canvasWidth: page.width,
+                  canvasHeight: page.height,
+                  viewportOffset: Offset.zero,
+                  viewportSize: viewportSize,
+                  highlights: highlights,
+                  backgroundColor: Colors.transparent,
+                ),
+              ),
+            ),
+          ),
         if (freezeColumns && frozenWidth > 0)
           Positioned(
             left: frozenWidth - 1,
@@ -811,6 +847,63 @@ class _FrozenPaneOverlay extends StatelessWidget {
       ],
     );
   }
+}
+
+PageRenderModel _filterSheetPageNodes(
+  PageRenderModel page,
+  bool Function(RenderNodeModel node) predicate,
+) {
+  return PageRenderModel(
+    pageIndex: page.pageIndex,
+    width: page.width,
+    height: page.height,
+    nodes: page.nodes.where(predicate).toList(growable: false),
+    selectionAnchors: const [],
+    sheetViewport: page.sheetViewport,
+    sheetCells: const [],
+  );
+}
+
+bool _isFrozenBoundaryCrossingNode(
+  RenderNodeModel node, {
+  required double frozenWidth,
+  required double frozenHeight,
+  required bool freezeColumns,
+  required bool freezeRows,
+}) {
+  final bounds = switch (node) {
+    TextRenderNodeModel() => Rect.fromLTWH(
+      node.bounds.x,
+      node.bounds.y,
+      node.bounds.width,
+      node.bounds.height,
+    ),
+    ImageRenderNodeModel() => Rect.fromLTWH(
+      node.bounds.x,
+      node.bounds.y,
+      node.bounds.width,
+      node.bounds.height,
+    ),
+    BoxRenderNodeModel() => Rect.fromLTWH(
+      node.bounds.x,
+      node.bounds.y,
+      node.bounds.width,
+      node.bounds.height,
+    ),
+  };
+
+  final crossesFrozenColumn = freezeColumns &&
+      freezeRows &&
+      bounds.left < frozenWidth &&
+      bounds.right > frozenWidth &&
+      bounds.top < frozenHeight;
+  final crossesFrozenRow = freezeRows &&
+      freezeColumns &&
+      bounds.top < frozenHeight &&
+      bounds.bottom > frozenHeight &&
+      bounds.left < frozenWidth;
+
+  return crossesFrozenColumn || crossesFrozenRow;
 }
 
 class _SheetHeaderCell extends StatelessWidget {
