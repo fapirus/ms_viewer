@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ms_viewer/ms_viewer.dart';
 import 'package:ms_viewer_platform_interface/ms_viewer_platform_interface.dart'
@@ -365,7 +367,121 @@ void main() {
     expect(requests.last.sheetWindow!.endColumn, 12);
     expect(controller.currentSheetWindow.startRow, 11);
     expect(controller.currentSheetWindow.endColumn, 12);
+    expect(controller.pageStatus, ViewerPageStatus.ready);
+    expect(controller.currentPage, isNotNull);
   });
+
+  test(
+    'controller keeps current xlsx page visible while loading next sheet window',
+    () async {
+      final secondWindowCompleter =
+          Completer<platform.GetPageRenderModelResult>();
+      var requestCount = 0;
+      final controller = MsViewerController(
+        platform: _FakeMsViewerPlatform(
+          onOpen: (_) async => platform.OpenDocumentOpened(
+            const platform.OpenDocumentSuccess(
+              documentId: 'xlsx_001',
+              kind: platform.DocumentKind.xlsx,
+              title: 'budget.xlsx',
+              pageCount: 1,
+              capabilities: platform.DocumentCapabilities(
+                search: true,
+                textSelection: true,
+                passwordProtected: false,
+              ),
+            ),
+          ),
+          onGetPage: (request) {
+            requestCount += 1;
+            if (requestCount == 1) {
+              return Future.value(
+                platform.GetPageRenderModelSuccess(
+                  platform.PageRenderModel.fromJson({
+                    'pageIndex': 0,
+                    'width': 640.0,
+                    'height': 360.0,
+                    'nodes': const [],
+                    'selectionAnchors': const [],
+                    'sheetViewport': {
+                      'window': {
+                        'startRow': 1,
+                        'endRow': 40,
+                        'startColumn': 1,
+                        'endColumn': 16,
+                      },
+                      'effectiveBounds': {
+                        'startRow': 1,
+                        'endRow': 120,
+                        'startColumn': 1,
+                        'endColumn': 24,
+                      },
+                      'visibleRows': [1, 2, 3],
+                      'visibleColumns': [1, 2, 3],
+                    },
+                  }),
+                ),
+              );
+            }
+            return secondWindowCompleter.future;
+          },
+        ),
+      );
+
+      await controller.openDocument(
+        const platform.OpenDocumentRequest(
+          source: platform.OpenDocumentSource.path('/tmp/budget.xlsx'),
+        ),
+      );
+
+      final originalPage = controller.currentPage;
+      final loadFuture = controller.loadSheetWindow(
+        const platform.SheetWindow(
+          startRow: 21,
+          endRow: 60,
+          startColumn: 9,
+          endColumn: 24,
+        ),
+      );
+
+      expect(controller.currentPage, same(originalPage));
+      expect(controller.isSheetWindowLoading, isTrue);
+      expect(controller.pageStatus, ViewerPageStatus.ready);
+
+      secondWindowCompleter.complete(
+        platform.GetPageRenderModelSuccess(
+          platform.PageRenderModel.fromJson({
+            'pageIndex': 0,
+            'width': 640.0,
+            'height': 360.0,
+            'nodes': const [],
+            'selectionAnchors': const [],
+            'sheetViewport': {
+              'window': {
+                'startRow': 21,
+                'endRow': 60,
+                'startColumn': 9,
+                'endColumn': 24,
+              },
+              'effectiveBounds': {
+                'startRow': 1,
+                'endRow': 120,
+                'startColumn': 1,
+                'endColumn': 24,
+              },
+              'visibleRows': [21, 22, 23],
+              'visibleColumns': [9, 10, 11],
+            },
+          }),
+        ),
+      );
+      await loadFuture;
+
+      expect(controller.isSheetWindowLoading, isFalse);
+      expect(controller.currentPage, isNot(same(originalPage)));
+      expect(controller.currentSheetWindow.startRow, 21);
+    },
+  );
 
   test('controller navigates to next page when requested', () async {
     final requests = <platform.GetPageRenderModelRequest>[];

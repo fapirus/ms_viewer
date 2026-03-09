@@ -37,8 +37,10 @@ class MsViewerController extends ChangeNotifier {
   viewer_platform.PageRenderModel? currentPage;
   int? currentPageIndex;
   final Map<int, viewer_platform.PageRenderModel> _pageCache = {};
+  final Map<String, viewer_platform.PageRenderModel> _sheetWindowCache = {};
   final Set<int> _loadingPageIndexes = <int>{};
   viewer_platform.SheetWindow _currentSheetWindow = _defaultSheetWindow;
+  bool _sheetWindowLoading = false;
   List<Rect> pageHighlights = const [];
   final DocumentSearchController searchController = DocumentSearchController();
   final SelectionDragController selectionController = SelectionDragController();
@@ -62,6 +64,7 @@ class MsViewerController extends ChangeNotifier {
       pageStatus != ViewerPageStatus.loading;
 
   viewer_platform.SheetWindow get currentSheetWindow => _currentSheetWindow;
+  bool get isSheetWindowLoading => _sheetWindowLoading;
 
   viewer_platform.PageRenderModel? pageForIndex(int pageIndex) {
     return _pageCache[pageIndex];
@@ -75,11 +78,13 @@ class MsViewerController extends ChangeNotifier {
     currentPage = null;
     currentPageIndex = null;
     _pageCache.clear();
+    _sheetWindowCache.clear();
     _loadingPageIndexes.clear();
     pageError = null;
     pageHighlights = const [];
     pageStatus = ViewerPageStatus.idle;
     _currentSheetWindow = _defaultSheetWindow;
+    _sheetWindowLoading = false;
     passwordPromptState = const PasswordPromptState(
       status: PasswordPromptStatus.idle,
     );
@@ -94,11 +99,13 @@ class MsViewerController extends ChangeNotifier {
     currentPage = null;
     currentPageIndex = null;
     _pageCache.clear();
+    _sheetWindowCache.clear();
     _loadingPageIndexes.clear();
     pageError = null;
     pageHighlights = const [];
     pageStatus = ViewerPageStatus.idle;
     _currentSheetWindow = _defaultSheetWindow;
+    _sheetWindowLoading = false;
     searchController.clear();
     selectionController.clear();
     passwordPromptState = const PasswordPromptState(
@@ -124,6 +131,7 @@ class MsViewerController extends ChangeNotifier {
         currentPage = null;
         currentPageIndex = null;
         _pageCache.clear();
+        _sheetWindowCache.clear();
         _loadingPageIndexes.clear();
         pageError = null;
         pageHighlights = const [];
@@ -170,6 +178,7 @@ class MsViewerController extends ChangeNotifier {
     pageError = null;
     pageHighlights = const [];
     pageStatus = ViewerPageStatus.ready;
+    _sheetWindowLoading = false;
     notifyListeners();
   }
 
@@ -200,8 +209,61 @@ class MsViewerController extends ChangeNotifier {
     if (document?.kind != DocumentKind.xlsx) {
       return;
     }
+    final descriptor = document;
+    final lastRequest = _lastRequest;
+    if (descriptor == null || lastRequest == null) {
+      return;
+    }
+
+    final pageIndex = currentPageIndex ?? descriptor.activePageIndex ?? 0;
+    final previousWindow = _currentSheetWindow;
+    if (_sameSheetWindowBounds(previousWindow, window)) {
+      return;
+    }
+
+    final cacheKey = _sheetWindowCacheKey(pageIndex, window);
+    final cachedPage = _sheetWindowCache[cacheKey];
     _currentSheetWindow = window;
-    await loadPage(currentPageIndex ?? 0);
+    if (cachedPage != null) {
+      currentPage = cachedPage;
+      currentPageIndex = cachedPage.pageIndex;
+      _pageCache[cachedPage.pageIndex] = cachedPage;
+      pageError = null;
+      pageStatus = ViewerPageStatus.ready;
+      _sheetWindowLoading = false;
+      notifyListeners();
+      return;
+    }
+
+    _sheetWindowLoading = true;
+    notifyListeners();
+
+    final result = await _platform.getPageRenderModel(
+      _buildPageRequest(
+        source: lastRequest.source,
+        documentId: descriptor.id,
+        pageIndex: pageIndex,
+        options: lastRequest.options,
+        kind: descriptor.kind,
+      ),
+    );
+
+    switch (result) {
+      case viewer_platform.GetPageRenderModelSuccess(page: final page):
+        _cacheXlsxWindowPage(page);
+        currentPage = page;
+        currentPageIndex = page.pageIndex;
+        pageError = null;
+        pageStatus = ViewerPageStatus.ready;
+      case viewer_platform.GetPageRenderModelFailure():
+        _currentSheetWindow = previousWindow;
+        if (currentPage == null) {
+          pageStatus = ViewerPageStatus.error;
+        }
+    }
+
+    _sheetWindowLoading = false;
+    notifyListeners();
   }
 
   Future<void> goToPreviousPage() async {
@@ -438,6 +500,9 @@ class MsViewerController extends ChangeNotifier {
     switch (result) {
       case viewer_platform.GetPageRenderModelSuccess(page: final page):
         _pageCache[page.pageIndex] = page;
+        if (descriptor.kind == DocumentKind.xlsx) {
+          _cacheXlsxWindowPage(page);
+        }
         if (!updateVisibleState) {
           notifyListeners();
         }
@@ -501,8 +566,43 @@ class MsViewerController extends ChangeNotifier {
       ),
     );
   }
+
+  void _cacheXlsxWindowPage(viewer_platform.PageRenderModel page) {
+    final viewport = page.sheetViewport;
+    if (viewport == null) {
+      return;
+    }
+    _sheetWindowCache[
+            _sheetWindowCacheKey(
+              page.pageIndex,
+              viewer_platform.SheetWindow(
+                startRow: viewport.window.startRow,
+                endRow: viewport.window.endRow,
+                startColumn: viewport.window.startColumn,
+                endColumn: viewport.window.endColumn,
+              ),
+            )] =
+        page;
+  }
+
+  String _sheetWindowCacheKey(
+    int pageIndex,
+    viewer_platform.SheetWindow window,
+  ) {
+    return '$pageIndex:${window.startRow}:${window.endRow}:${window.startColumn}:${window.endColumn}';
+  }
 }
 
 bool _rangesOverlap(int aStart, int aEnd, int bStart, int bEnd) {
   return aStart < bEnd && bStart < aEnd;
+}
+
+bool _sameSheetWindowBounds(
+  viewer_platform.SheetWindow a,
+  viewer_platform.SheetWindow b,
+) {
+  return a.startRow == b.startRow &&
+      a.endRow == b.endRow &&
+      a.startColumn == b.startColumn &&
+      a.endColumn == b.endColumn;
 }

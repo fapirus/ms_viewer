@@ -397,29 +397,7 @@ class _MsDocumentViewState extends State<MsDocumentView> {
           ),
         ),
         Expanded(
-          child: switch (widget.controller.pageStatus) {
-            ViewerPageStatus.loading => const Center(
-              child: CircularProgressIndicator(),
-            ),
-            ViewerPageStatus.error => Center(
-              child: Text(
-                widget.controller.pageError?.message ??
-                    'Failed to load sheet preview.',
-                textAlign: TextAlign.center,
-              ),
-            ),
-            ViewerPageStatus.ready when page != null => _buildViewerSurface(
-              page,
-              true,
-            ),
-            _ when page != null => _buildViewerSurface(page, true),
-            _ => const Center(
-              child: Text(
-                'Viewer placeholder: render model not loaded',
-                textAlign: TextAlign.center,
-              ),
-            ),
-          },
+          child: _buildSpreadsheetSurface(page),
         ),
         if (sheetTabs.isNotEmpty)
           Container(
@@ -477,6 +455,69 @@ class _MsDocumentViewState extends State<MsDocumentView> {
         constraints: const BoxConstraints(maxWidth: 640),
         child: viewer,
       ),
+    );
+  }
+
+  Widget _buildSpreadsheetSurface(PageRenderModel? page) {
+    if (page == null) {
+      return switch (widget.controller.pageStatus) {
+        ViewerPageStatus.loading => const Center(
+          child: CircularProgressIndicator(),
+        ),
+        ViewerPageStatus.error => Center(
+          child: Text(
+            widget.controller.pageError?.message ??
+                'Failed to load sheet preview.',
+            textAlign: TextAlign.center,
+          ),
+        ),
+        _ => const Center(
+          child: Text(
+            'Viewer placeholder: render model not loaded',
+            textAlign: TextAlign.center,
+          ),
+        ),
+      };
+    }
+
+    return Stack(
+      children: [
+        _buildViewerSurface(page, true),
+        if (widget.controller.isSheetWindowLoading)
+          Positioned(
+            key: const ValueKey('xlsx-window-loading-indicator'),
+            top: 12,
+            right: 12,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.94),
+                borderRadius: BorderRadius.circular(999),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x14000000),
+                    blurRadius: 12,
+                    offset: Offset(0, 6),
+                  ),
+                ],
+              ),
+              child: const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                    SizedBox(width: 8),
+                    Text('Updating cells'),
+                  ],
+                ),
+              ),
+            ),
+          ),
+      ],
     );
   }
 

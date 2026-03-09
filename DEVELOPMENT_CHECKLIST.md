@@ -979,6 +979,15 @@
   - Tests:
     - open contract sheet tab decode test
     - xlsx tab switch widget test
+- [x] XLSX viewport window continuity와 incremental loading UX 보정
+  - Scope:
+    - visible window 갱신 시 기존 sheet surface를 유지하고 full-screen loading으로 덮지 않는다
+    - scroll edge에서 다음 window뿐 아니라 이전 window도 다시 요청할 수 있다
+    - window 교체 후 scroll continuity를 유지한다
+  - Tests:
+    - controller window continuity test
+    - leading/trailing edge window request widget test
+    - xlsx window loading overlay widget test
 
 ### Acceptance
 - [ ] XLSX visual parity acceptance pass

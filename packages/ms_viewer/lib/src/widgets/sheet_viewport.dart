@@ -35,6 +35,7 @@ class _SheetViewportState extends State<SheetViewport> {
   static const Color _headerBorder = Color(0xFFD0D7DE);
   static const double _windowShiftRatio = 0.5;
   static const double _requestThreshold = 0.72;
+  static const double _leadingEdgeThresholdPixels = 96;
   static const int _minimumVisibleRows = 40;
   static const int _minimumVisibleColumns = 16;
   static const int _initialRowOverscan = 12;
@@ -74,12 +75,17 @@ class _SheetViewportState extends State<SheetViewport> {
         !_sameWindowBounds(oldWindow, newWindow)) {
       _initialWindowExpansionScheduled = false;
       final oldMetrics = _SheetViewportMetrics.fromPage(oldWidget.page);
-      final horizontalAdjustment = oldMetrics.extentForLeadingColumns(
-        _pendingColumnShift,
-      );
-      final verticalAdjustment = oldMetrics.extentForLeadingRows(
-        _pendingRowShift,
-      );
+      final newMetrics = _SheetViewportMetrics.fromPage(widget.page);
+      final horizontalAdjustment = _pendingColumnShift > 0
+          ? oldMetrics.extentForLeadingColumns(_pendingColumnShift)
+          : _pendingColumnShift < 0
+          ? -newMetrics.extentForLeadingColumns(-_pendingColumnShift)
+          : 0.0;
+      final verticalAdjustment = _pendingRowShift > 0
+          ? oldMetrics.extentForLeadingRows(_pendingRowShift)
+          : _pendingRowShift < 0
+          ? -newMetrics.extentForLeadingRows(-_pendingRowShift)
+          : 0.0;
       _pendingColumnShift = 0;
       _pendingRowShift = 0;
       _windowRequestInFlight = false;
@@ -178,6 +184,11 @@ class _SheetViewportState extends State<SheetViewport> {
       final shift = math.max(1, (columnCount * _windowShiftRatio).round());
       final maxStart = math.max(1, _excelMaxColumns - columnCount + 1);
       nextStartColumn = math.min(currentWindow.startColumn + shift, maxStart);
+    } else if (_horizontalBodyController.hasClients &&
+        currentWindow.startColumn > 1 &&
+        _horizontalBodyController.offset <= _leadingEdgeThresholdPixels) {
+      final shift = math.max(1, (columnCount * _windowShiftRatio).round());
+      nextStartColumn = math.max(1, currentWindow.startColumn - shift);
     }
 
     if (_verticalBodyController.hasClients &&
@@ -189,6 +200,11 @@ class _SheetViewportState extends State<SheetViewport> {
       final shift = math.max(1, (rowCount * _windowShiftRatio).round());
       final maxStart = math.max(1, _excelMaxRows - rowCount + 1);
       nextStartRow = math.min(currentWindow.startRow + shift, maxStart);
+    } else if (_verticalBodyController.hasClients &&
+        currentWindow.startRow > 1 &&
+        _verticalBodyController.offset <= _leadingEdgeThresholdPixels) {
+      final shift = math.max(1, (rowCount * _windowShiftRatio).round());
+      nextStartRow = math.max(1, currentWindow.startRow - shift);
     }
 
     if (nextStartRow == currentWindow.startRow &&

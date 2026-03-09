@@ -448,6 +448,146 @@ void main() {
     expect(find.byType(SheetViewport), findsNothing);
   });
 
+  testWidgets(
+    'xlsx keeps current viewport visible while window update is in flight',
+    (tester) async {
+      final secondWindowCompleter =
+          Completer<platform.GetPageRenderModelResult>();
+      var pageRequestCount = 0;
+      final controller = MsViewerController(
+        platform: _FakeMsViewerPlatform(
+          onOpen: (_) async => platform.OpenDocumentOpened(
+            const platform.OpenDocumentSuccess(
+              documentId: 'sheet_001',
+              kind: platform.DocumentKind.xlsx,
+              title: 'budget.xlsx',
+              pageCount: 1,
+              capabilities: platform.DocumentCapabilities(
+                search: true,
+                textSelection: true,
+                passwordProtected: false,
+              ),
+            ),
+          ),
+          onGetPage: (request) {
+            pageRequestCount += 1;
+            final pageJson = {
+              'pageIndex': 0,
+              'width': 280.0,
+              'height': 160.0,
+              'nodes': [
+                {
+                  'type': 'box',
+                  'bounds': {
+                    'x': 0.0,
+                    'y': 0.0,
+                    'width': 140.0,
+                    'height': 40.0,
+                  },
+                  'fillColorHex': '#1F4E78',
+                  'strokeColorHex': '#D0D7DE',
+                  'strokeWidth': 1.0,
+                },
+              ],
+              'selectionAnchors': const [],
+              'sheetViewport': {
+                'window': {
+                  'startRow': request.sheetWindow!.startRow,
+                  'endRow': request.sheetWindow!.endRow,
+                  'startColumn': request.sheetWindow!.startColumn,
+                  'endColumn': request.sheetWindow!.endColumn,
+                },
+                'effectiveBounds': {
+                  'startRow': 1,
+                  'endRow': 240,
+                  'startColumn': 1,
+                  'endColumn': 48,
+                },
+                'visibleRows': [1, 2, 3],
+                'visibleColumns': [1, 2, 3],
+              },
+            };
+            if (pageRequestCount == 1) {
+              return Future.value(
+                platform.GetPageRenderModelSuccess(
+                  platform.PageRenderModel.fromJson(pageJson),
+                ),
+              );
+            }
+            return secondWindowCompleter.future;
+          },
+        ),
+      );
+
+      await controller.openDocument(
+        const platform.OpenDocumentRequest(
+          source: platform.OpenDocumentSource.path('/tmp/budget.xlsx'),
+        ),
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(body: MsDocumentView(controller: controller)),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      unawaited(
+        controller.loadSheetWindow(
+          const platform.SheetWindow(
+            startRow: 21,
+            endRow: 60,
+            startColumn: 9,
+            endColumn: 24,
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(find.byType(SheetViewport), findsOneWidget);
+      expect(find.byKey(const ValueKey('xlsx-window-loading-indicator')), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('xlsx-sheet-shell')),
+          matching: find.byType(CircularProgressIndicator),
+        ),
+        findsOneWidget,
+      );
+
+      secondWindowCompleter.complete(
+        platform.GetPageRenderModelSuccess(
+          platform.PageRenderModel.fromJson({
+            'pageIndex': 0,
+            'width': 280.0,
+            'height': 160.0,
+            'nodes': const [],
+            'selectionAnchors': const [],
+            'sheetViewport': {
+              'window': {
+                'startRow': 21,
+                'endRow': 60,
+                'startColumn': 9,
+                'endColumn': 24,
+              },
+              'effectiveBounds': {
+                'startRow': 1,
+                'endRow': 240,
+                'startColumn': 1,
+                'endColumn': 48,
+              },
+              'visibleRows': [21, 22, 23],
+              'visibleColumns': [9, 10, 11],
+            },
+          }),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const ValueKey('xlsx-window-loading-indicator')), findsNothing);
+      expect(find.byType(SheetViewport), findsOneWidget);
+    },
+  );
+
   testWidgets('xlsx sheet search integration widget test', (tester) async {
     platform.GetSelectionPageRequest? selectionRequest;
     final controller = MsViewerController(

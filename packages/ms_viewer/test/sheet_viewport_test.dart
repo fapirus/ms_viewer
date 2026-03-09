@@ -242,6 +242,63 @@ void main() {
   });
 
   testWidgets(
+    'sheet viewport requests previous visible window near leading edge',
+    (tester) async {
+      platform.SheetWindow? requestedWindow;
+      final page = buildSheetPage(
+        columns: 16,
+        rows: 40,
+        startRow: 41,
+        startColumn: 9,
+        effectiveEndRow: 120,
+        effectiveEndColumn: 24,
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: SizedBox(
+                width: 360,
+                height: 280,
+                child: SheetViewport(
+                  page: page,
+                  onWindowRequest: (window) async {
+                    requestedWindow = window;
+                  },
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final bodyViewport = find.byKey(const ValueKey('sheet-body-viewport'));
+      await tester.drag(
+        bodyViewport,
+        const Offset(-900, -900),
+        warnIfMissed: false,
+      );
+      await tester.pumpAndSettle();
+      await tester.drag(
+        bodyViewport,
+        const Offset(1800, 1800),
+        warnIfMissed: false,
+      );
+      await tester.pump();
+
+      expect(requestedWindow, isNotNull);
+      expect(
+        requestedWindow!.startRow < page.sheetViewport!.window.startRow ||
+            requestedWindow!.startColumn <
+                page.sheetViewport!.window.startColumn,
+        isTrue,
+      );
+    },
+  );
+
+  testWidgets(
     'sheet viewport expands initial visible window to minimum cell count',
     (tester) async {
       platform.SheetWindow? requestedWindow;
