@@ -896,7 +896,7 @@
   - Tests:
     - docx continuous scroll widget test
     - page stack smoke test
-- [ ] PPTX continuous slide scroll viewer 적용
+- [x] PPTX continuous slide scroll viewer 적용
   - Scope:
     - engine slide index는 유지
     - Flutter UI는 slide button paging 대신 vertical slide list로 전환

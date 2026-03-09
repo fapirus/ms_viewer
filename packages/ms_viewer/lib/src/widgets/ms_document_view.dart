@@ -78,9 +78,19 @@ class _MsDocumentViewState extends State<MsDocumentView> {
     final title = document.title;
     final pageCount = document.pageCount;
     final isSpreadsheet = document.kind == document_model.DocumentKind.xlsx;
+    final isContinuousPptx = document.kind == document_model.DocumentKind.pptx;
     final isContinuousDocx = document.kind == document_model.DocumentKind.docx;
-    final collectionLabel = isSpreadsheet ? 'sheets' : 'pages';
-    final currentLabel = isSpreadsheet ? 'Sheet' : 'Page';
+    final isContinuousPagedDocument = isContinuousDocx || isContinuousPptx;
+    final collectionLabel = isSpreadsheet
+        ? 'sheets'
+        : isContinuousPptx
+        ? 'slides'
+        : 'pages';
+    final currentLabel = isSpreadsheet
+        ? 'Sheet'
+        : isContinuousPptx
+        ? 'Slide'
+        : 'Page';
     final fetchedPage = widget.controller.currentPage;
     final fallbackPreviewPage = widget.previewPages.isEmpty
         ? null
@@ -96,7 +106,7 @@ class _MsDocumentViewState extends State<MsDocumentView> {
           const SizedBox(height: 8),
           Text('$pageCount $collectionLabel'),
           const SizedBox(height: 16),
-          if (!isContinuousDocx) ...[
+          if (!isContinuousPagedDocument) ...[
             Row(
               children: [
                 OutlinedButton.icon(
@@ -160,8 +170,11 @@ class _MsDocumentViewState extends State<MsDocumentView> {
           ],
           const SizedBox(height: 16),
           Expanded(
-            child: isContinuousDocx
-                ? _buildContinuousDocxSurface(pageCount)
+            child: isContinuousPagedDocument
+                ? _buildContinuousPagedSurface(
+                    pageCount,
+                    isPptx: isContinuousPptx,
+                  )
                 : switch (widget.controller.pageStatus) {
                     ViewerPageStatus.loading => const Center(
                       child: CircularProgressIndicator(),
@@ -192,9 +205,11 @@ class _MsDocumentViewState extends State<MsDocumentView> {
     );
   }
 
-  Widget _buildContinuousDocxSurface(int pageCount) {
+  Widget _buildContinuousPagedSurface(int pageCount, {required bool isPptx}) {
     if (pageCount == 0) {
-      return const Center(child: Text('No pages available.'));
+      return Center(
+        child: Text(isPptx ? 'No slides available.' : 'No pages available.'),
+      );
     }
     if (widget.controller.pageStatus == ViewerPageStatus.error &&
         widget.controller.currentPage == null) {
@@ -208,7 +223,7 @@ class _MsDocumentViewState extends State<MsDocumentView> {
     }
 
     return ListView.separated(
-      key: const ValueKey('docx-page-stack'),
+      key: ValueKey(isPptx ? 'pptx-slide-stack' : 'docx-page-stack'),
       padding: const EdgeInsets.only(bottom: 24),
       itemCount: pageCount,
       separatorBuilder: (_, __) => const SizedBox(height: 20),
@@ -216,19 +231,19 @@ class _MsDocumentViewState extends State<MsDocumentView> {
         final page = widget.controller.pageForIndex(index);
         if (page == null) {
           unawaited(widget.controller.ensurePageLoaded(index));
-          return _buildDocxPagePlaceholder(index);
+          return _buildPagedPlaceholder(index, isPptx: isPptx);
         }
 
         return Center(
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 640),
+            constraints: BoxConstraints(maxWidth: isPptx ? 920 : 640),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Padding(
                   padding: const EdgeInsets.only(bottom: 8),
                   child: Text(
-                    'Page ${index + 1}',
+                    '${isPptx ? 'Slide' : 'Page'} ${index + 1}',
                     style: Theme.of(context).textTheme.bodySmall,
                     textAlign: TextAlign.right,
                   ),
@@ -255,12 +270,12 @@ class _MsDocumentViewState extends State<MsDocumentView> {
     );
   }
 
-  Widget _buildDocxPagePlaceholder(int index) {
+  Widget _buildPagedPlaceholder(int index, {required bool isPptx}) {
     return Center(
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 640),
+        constraints: BoxConstraints(maxWidth: isPptx ? 920 : 640),
         child: AspectRatio(
-          aspectRatio: 595 / 842,
+          aspectRatio: isPptx ? 720 / 540 : 595 / 842,
           child: DecoratedBox(
             decoration: BoxDecoration(
               color: Colors.white,
@@ -277,7 +292,7 @@ class _MsDocumentViewState extends State<MsDocumentView> {
                     child: CircularProgressIndicator(strokeWidth: 2.4),
                   ),
                   const SizedBox(height: 12),
-                  Text('Loading page ${index + 1}'),
+                  Text('Loading ${isPptx ? 'slide' : 'page'} ${index + 1}'),
                 ],
               ),
             ),

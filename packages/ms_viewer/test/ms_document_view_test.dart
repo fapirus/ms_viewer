@@ -657,9 +657,7 @@ void main() {
     expect(find.byType(Positioned), findsWidgets);
   });
 
-  testWidgets('view renders pptx slide preview and navigation shell', (
-    tester,
-  ) async {
+  testWidgets('view renders pptx continuous slide stack', (tester) async {
     final controller = MsViewerController(
       platform: _FakeMsViewerPlatform(
         onOpen: (_) async => platform.OpenDocumentOpened(
@@ -750,15 +748,23 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('deck.pptx'), findsOneWidget);
-    expect(find.text('2 pages'), findsOneWidget);
-    expect(find.text('Page 1 / 2'), findsOneWidget);
+    expect(find.text('2 slides'), findsOneWidget);
+    expect(find.byKey(const ValueKey('pptx-slide-stack')), findsOneWidget);
     expect(find.byType(DocumentPageView), findsOneWidget);
     expect(find.byType(Image), findsOneWidget);
+    expect(find.widgetWithText(OutlinedButton, 'Next'), findsNothing);
 
-    await tester.tap(find.widgetWithText(OutlinedButton, 'Next'));
+    await tester.scrollUntilVisible(
+      find.text('Slide 2'),
+      300,
+      scrollable: find.descendant(
+        of: find.byKey(const ValueKey('pptx-slide-stack')),
+        matching: find.byType(Scrollable),
+      ),
+    );
     await tester.pumpAndSettle();
 
-    expect(find.text('Page 2 / 2'), findsOneWidget);
+    expect(find.text('Slide 2'), findsOneWidget);
   });
 
   testWidgets('view shows pptx slide fetch error state', (tester) async {
