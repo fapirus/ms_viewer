@@ -173,7 +173,8 @@ fn builds_sheet_render_model_from_cells_metrics_and_merges() {
     assert!(text_nodes.iter().any(|node| node.text == "inline"));
     assert!(text_nodes.iter().any(|node| node.text == "TRUE"));
     assert!(text_nodes.iter().any(|node| node.text == "#DIV/0!"));
-    assert_eq!(box_nodes.len(), 5);
+    assert_eq!(render_model.sheet_cells.len(), 5);
+    assert_eq!(box_nodes.len(), 1);
 
     let merged_header_box = box_nodes
         .iter()
@@ -415,7 +416,8 @@ fn visible_window_render_model_keeps_blank_grid_for_sparse_sheet() {
         .iter()
         .filter(|node| matches!(node, RenderNode::Box(_)))
         .count();
-    assert_eq!(box_nodes, 240);
+    assert_eq!(render_model.sheet_cells.len(), 240);
+    assert_eq!(box_nodes, 0);
 }
 
 #[test]
@@ -500,7 +502,8 @@ fn hidden_rows_and_columns_do_not_consume_sheet_space() {
         })
         .collect();
 
-    assert_eq!(box_nodes.len(), 1);
+    assert_eq!(render_model.sheet_cells.len(), 1);
+    assert!(box_nodes.is_empty());
     assert_eq!(text_nodes.len(), 1);
     assert_eq!(text_nodes[0].text, "visible");
     assert!((render_model.width - excel_column_width_to_pixels(12.0)).abs() < 0.1);
@@ -577,13 +580,9 @@ fn merged_cells_use_spanned_column_widths_and_row_heights() {
         build_sheet_render_model(&archive, &workbook, &[], &styles, 0).expect("render model");
 
     let merged_box = render_model
-        .nodes
-        .iter()
-        .find_map(|node| match node {
-            RenderNode::Box(node) => Some(node),
-            _ => None,
-        })
-        .expect("merged cell box should exist");
+        .sheet_cells
+        .first()
+        .expect("merged cell metadata should exist");
     let merged_text = render_model
         .nodes
         .iter()

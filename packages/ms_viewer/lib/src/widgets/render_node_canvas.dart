@@ -249,6 +249,28 @@ class _SheetNodePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+    final defaultCellFill = Paint()
+      ..style = PaintingStyle.fill
+      ..color = Colors.white;
+    final defaultCellStroke = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1
+      ..color = const Color(0xFFD0D7DE);
+
+    for (final cell in page.sheetCells) {
+      final rect = Rect.fromLTWH(
+        cell.bounds.x,
+        cell.bounds.y,
+        cell.bounds.width,
+        cell.bounds.height,
+      );
+      if (!rect.overlaps(visibleRect)) {
+        continue;
+      }
+      canvas.drawRect(rect, defaultCellFill);
+      canvas.drawRect(rect, defaultCellStroke);
+    }
+
     for (final node in page.nodes) {
       switch (node) {
         case TextRenderNodeModel():

@@ -154,6 +154,10 @@
 - blank/default cell까지 전부 widget tree에 올리면 large-sheet scroll에서 rebuild/paint 비용이 급격히 커진다.
 - 따라서 row/column header 외 본문은 가능한 한 적은 widget 수로 유지하고, 보이는 rect에 겹치는 node만 paint/cull한다.
 - viewport size가 커지면 scroll edge를 기다리지 않고 minimum visible window를 다시 평가해 빈 영역이 남지 않게 한다.
+- blank/default cell box를 매 cell마다 render node로 보내지 않는다.
+  - 기본 grid/stroke/background는 Flutter sheet painter가 그린다.
+  - Rust는 non-empty text/image와 실제 배경색이 필요한 cell만 sparse node로 보낸다.
+  - 즉 `sheetCells`는 geometry/selection용 메타데이터, `nodes`는 sparse visual payload라는 역할 분리를 유지한다.
 
 ### Interaction policy
 - `XLSX`는 `DOCX/PPTX`처럼 문자 range selection을 기본 interaction으로 두지 않는다.

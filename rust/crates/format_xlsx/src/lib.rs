@@ -1263,15 +1263,17 @@ fn render_sheet_model(
                         .or(fill.background_color_hex.clone())
                 });
 
-            nodes.push(RenderNode::Box(BoxNode {
-                bounds: cell_rect.clone(),
-                fill_color_hex,
-                gradient_end_color_hex: None,
-                gradient_angle_degrees: None,
-                stroke_color_hex: Some("#D0D7DE".to_string()),
-                stroke_width: 1.0,
-                corner_radius: None,
-            }));
+            if fill_color_hex.is_some() {
+                nodes.push(RenderNode::Box(BoxNode {
+                    bounds: cell_rect.clone(),
+                    fill_color_hex,
+                    gradient_end_color_hex: None,
+                    gradient_angle_degrees: None,
+                    stroke_color_hex: None,
+                    stroke_width: 0.0,
+                    corner_radius: None,
+                }));
+            }
 
             if let Some(cell) = cell {
                 if let Some(display_text) = format_cell_display_value(&cell.value, style, date_1904)

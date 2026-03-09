@@ -1004,6 +1004,14 @@
   - Tests:
     - `sheet_viewport` re-expand on resize widget test
     - `packages/ms_viewer` 전체 회귀 테스트
+- [x] XLSX sparse sheet render contract 적용
+  - Scope:
+    - blank/default cell box를 render node로 모두 보내지 않는다
+    - 기본 grid/stroke/background는 Flutter sheet painter가 그리고, Rust는 sparse visual node만 보낸다
+    - `sheetCells`는 geometry/highlight metadata로 유지한다
+  - Tests:
+    - xlsx render model regression tests
+    - `packages/ms_viewer` 전체 회귀 테스트
 - [x] XLSX cell-centric search navigation groundwork
   - Scope:
     - `XLSX` search result는 text offset뿐 아니라 target cell(row/column)을 함께 가진다
