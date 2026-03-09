@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:ms_viewer_platform_interface/ms_viewer_platform_interface.dart';
 
 import '../controller/ms_viewer_controller.dart';
@@ -27,18 +28,21 @@ class MsDocumentView extends StatefulWidget {
 class _MsDocumentViewState extends State<MsDocumentView> {
   late final TextEditingController _passwordController;
   late final TextEditingController _searchController;
+  late final FocusNode _sheetFocusNode;
 
   @override
   void initState() {
     super.initState();
     _passwordController = TextEditingController();
     _searchController = TextEditingController();
+    _sheetFocusNode = FocusNode(debugLabel: 'xlsx-sheet-focus');
   }
 
   @override
   void dispose() {
     _passwordController.dispose();
     _searchController.dispose();
+    _sheetFocusNode.dispose();
     super.dispose();
   }
 
@@ -441,13 +445,25 @@ class _MsDocumentViewState extends State<MsDocumentView> {
 
   Widget _buildViewerSurface(PageRenderModel page, bool isSpreadsheet) {
     final viewer = isSpreadsheet
-        ? SheetViewport(
-            page: page,
-            highlights: widget.controller.pageHighlights,
-            onCellTap: widget.controller.selectSheetCellAt,
-            onSelectionStart: widget.controller.startSelectionAt,
-            onSelectionUpdate: widget.controller.updateSelectionAt,
-            onWindowRequest: widget.controller.loadSheetWindow,
+        ? Focus(
+            focusNode: _sheetFocusNode,
+            autofocus: true,
+            onKeyEvent: _handleSpreadsheetKeyEvent,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: _sheetFocusNode.requestFocus,
+              child: SheetViewport(
+                page: page,
+                highlights: widget.controller.pageHighlights,
+                onCellTap: (pagePosition) {
+                  _sheetFocusNode.requestFocus();
+                  widget.controller.selectSheetCellAt(pagePosition);
+                },
+                onSelectionStart: widget.controller.startSelectionAt,
+                onSelectionUpdate: widget.controller.updateSelectionAt,
+                onWindowRequest: widget.controller.loadSheetWindow,
+              ),
+            ),
           )
         : DocumentPageView(
             page: page,
@@ -529,6 +545,41 @@ class _MsDocumentViewState extends State<MsDocumentView> {
           ),
       ],
     );
+  }
+
+  KeyEventResult _handleSpreadsheetKeyEvent(
+    FocusNode node,
+    KeyEvent event,
+  ) {
+    if (event is! KeyDownEvent) {
+      return KeyEventResult.ignored;
+    }
+
+    if (event.logicalKey == LogicalKeyboardKey.arrowLeft) {
+      unawaited(
+        widget.controller.moveActiveSheetCell(rowDelta: 0, columnDelta: -1),
+      );
+      return KeyEventResult.handled;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.arrowRight) {
+      unawaited(
+        widget.controller.moveActiveSheetCell(rowDelta: 0, columnDelta: 1),
+      );
+      return KeyEventResult.handled;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
+      unawaited(
+        widget.controller.moveActiveSheetCell(rowDelta: -1, columnDelta: 0),
+      );
+      return KeyEventResult.handled;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
+      unawaited(
+        widget.controller.moveActiveSheetCell(rowDelta: 1, columnDelta: 0),
+      );
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
   }
 
   void _submitSearch(String query) {

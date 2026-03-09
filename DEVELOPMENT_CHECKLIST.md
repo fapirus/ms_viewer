@@ -1044,6 +1044,14 @@
   - Tests:
     - xlsx controller active cell selection test
     - xlsx active cell widget integration test
+- [x] XLSX 방향키 active cell 이동
+  - Scope:
+    - sheet viewport가 focus를 받을 때 화살표 키로 active cell을 이동한다
+    - active cell이 viewport 밖으로 나가면 sheet window가 그 셀을 따라간다
+    - keyboard navigation은 search/active cell 모델과 같은 상태를 사용한다
+  - Tests:
+    - xlsx controller keyboard movement test
+    - xlsx active cell keyboard widget integration test
 - [x] XLSX viewport pointer scroll routing 보정
   - Scope:
     - sheet viewport가 wheel/trackpad scroll 신호를 직접 소비해 body scroll controller에만 전달한다

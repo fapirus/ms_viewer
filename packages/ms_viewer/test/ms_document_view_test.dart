@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ms_viewer/ms_viewer.dart';
 import 'package:ms_viewer_platform_interface/ms_viewer_platform_interface.dart'
@@ -443,7 +444,7 @@ void main() {
     expect(find.text('Detail · 2 sheets'), findsOneWidget);
   });
 
-  testWidgets('xlsx sheet tap selects active cell and shows label', (
+  testWidgets('xlsx sheet tap selects active cell and arrow key moves it', (
     tester,
   ) async {
     final controller = MsViewerController(
@@ -480,6 +481,16 @@ void main() {
                 'bounds': {
                   'x': 140.0,
                   'y': 0.0,
+                  'width': 140.0,
+                  'height': 40.0,
+                },
+              },
+              {
+                'row': 2,
+                'column': 2,
+                'bounds': {
+                  'x': 140.0,
+                  'y': 40.0,
                   'width': 140.0,
                   'height': 40.0,
                 },
@@ -526,6 +537,11 @@ void main() {
     expect(find.byKey(const ValueKey('xlsx-active-cell-label')), findsOneWidget);
     expect(find.text('Cell B1'), findsOneWidget);
     expect(controller.pageHighlights, isNotEmpty);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Cell B2'), findsOneWidget);
   });
 
   testWidgets('view shows xlsx sheet fetch error state', (tester) async {

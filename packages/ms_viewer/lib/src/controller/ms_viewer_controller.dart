@@ -486,6 +486,43 @@ class MsViewerController extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> moveActiveSheetCell({
+    required int rowDelta,
+    required int columnDelta,
+  }) async {
+    if (document?.kind != DocumentKind.xlsx) {
+      return;
+    }
+    final page = currentPage;
+    final pageIndex = currentPageIndex;
+    if (page == null || pageIndex == null) {
+      return;
+    }
+
+    final anchorCell =
+        activeSheetCell ??
+        _firstVisibleSheetCell(page) ??
+        const SearchSheetCell(row: 1, column: 1);
+    final effectiveBounds = page.sheetViewport?.effectiveBounds;
+    final maxRow = effectiveBounds?.endRow ?? 1_048_576;
+    final maxColumn = effectiveBounds?.endColumn ?? 16_384;
+    final nextCell = SearchSheetCell(
+      row: (anchorCell.row + rowDelta).clamp(1, maxRow),
+      column: (anchorCell.column + columnDelta).clamp(1, maxColumn),
+    );
+
+    _activeSheetCell = nextCell;
+    _activeSheetCellPageIndex = pageIndex;
+
+    if (!_sheetCellInWindow(_currentSheetWindow, nextCell)) {
+      await loadSheetWindow(_buildWindowAroundSheetCell(nextCell));
+      return;
+    }
+
+    _applySearchHighlightOnly();
+    notifyListeners();
+  }
+
   Future<void> _syncSearchHighlights() async {
     final result = searchController.currentResult;
     if (result == null) {
@@ -1078,6 +1115,22 @@ class MsViewerController extends ChangeNotifier {
       startColumn: startColumn,
       endColumn: endColumn,
     );
+  }
+
+  SearchSheetCell? _firstVisibleSheetCell(viewer_platform.PageRenderModel page) {
+    if (page.sheetCells.isEmpty) {
+      return null;
+    }
+    final cells = [...page.sheetCells]
+      ..sort((a, b) {
+        final rowCompare = a.row.compareTo(b.row);
+        if (rowCompare != 0) {
+          return rowCompare;
+        }
+        return a.column.compareTo(b.column);
+      });
+    final first = cells.first;
+    return SearchSheetCell(row: first.row, column: first.column);
   }
 }
 
