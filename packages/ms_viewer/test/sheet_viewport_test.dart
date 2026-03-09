@@ -582,4 +582,34 @@ void main() {
       );
     },
   );
+
+  testWidgets(
+    'sheet viewport accepts focused cell rect without breaking layout',
+    (tester) async {
+      final page = buildSheetPage(columns: 12, rows: 80);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: SizedBox(
+                width: 320,
+                height: 240,
+                child: SheetViewport(
+                  page: page,
+                  focusRect: const Rect.fromLTWH(420, 860, 140, 40),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.byKey(const ValueKey('sheet-body-viewport')), findsOneWidget);
+      expect(find.byKey(const ValueKey('sheet-column-header-1')), findsOneWidget);
+      expect(find.byKey(const ValueKey('sheet-row-header-1')), findsOneWidget);
+    },
+  );
 }

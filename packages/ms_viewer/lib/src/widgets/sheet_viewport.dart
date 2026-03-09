@@ -12,6 +12,7 @@ class SheetViewport extends StatefulWidget {
     super.key,
     required this.page,
     this.highlights = const [],
+    this.focusRect,
     this.onCellTap,
     this.onSelectionStart,
     this.onSelectionUpdate,
@@ -21,6 +22,7 @@ class SheetViewport extends StatefulWidget {
 
   final PageRenderModel page;
   final List<Rect> highlights;
+  final Rect? focusRect;
   final ValueChanged<Offset>? onCellTap;
   final ValueChanged<Offset>? onSelectionStart;
   final ValueChanged<Offset>? onSelectionUpdate;
@@ -63,6 +65,7 @@ class _SheetViewportState extends State<SheetViewport> {
   _SheetViewportMetrics? _latestMetrics;
   bool _initialWindowExpansionScheduled = false;
   Size? _lastBodyViewportSize;
+  Rect? _lastEnsuredFocusRect;
 
   @override
   void initState() {
@@ -80,6 +83,7 @@ class _SheetViewportState extends State<SheetViewport> {
         newWindow != null &&
         !_sameWindowBounds(oldWindow, newWindow)) {
       _initialWindowExpansionScheduled = false;
+      _lastEnsuredFocusRect = null;
       final newMetrics = _SheetViewportMetrics.fromPage(widget.page);
       final horizontalAdjustment = _pendingPrependedColumns > 0
           ? newMetrics.extentForLeadingColumns(_pendingPrependedColumns)
@@ -111,6 +115,10 @@ class _SheetViewportState extends State<SheetViewport> {
           );
         }
       });
+    }
+    if (widget.focusRect != null &&
+        (oldWidget.focusRect == null || oldWidget.focusRect != widget.focusRect)) {
+      _lastEnsuredFocusRect = null;
     }
   }
 
@@ -281,6 +289,71 @@ class _SheetViewportState extends State<SheetViewport> {
     });
   }
 
+  void _ensureRectVisible(Rect rect) {
+    final viewportSize = _lastBodyViewportSize;
+    if (viewportSize == null ||
+        !_horizontalBodyController.hasClients ||
+        !_verticalBodyController.hasClients) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) {
+          return;
+        }
+        _ensureRectVisible(rect);
+      });
+      return;
+    }
+
+    var nextHorizontalOffset = _horizontalBodyController.offset;
+    var nextVerticalOffset = _verticalBodyController.offset;
+
+    if (rect.left < nextHorizontalOffset) {
+      nextHorizontalOffset = rect.left;
+    } else if (rect.right > nextHorizontalOffset + viewportSize.width) {
+      nextHorizontalOffset = rect.right - viewportSize.width;
+    }
+
+    if (rect.top < nextVerticalOffset) {
+      nextVerticalOffset = rect.top;
+    } else if (rect.bottom > nextVerticalOffset + viewportSize.height) {
+      nextVerticalOffset = rect.bottom - viewportSize.height;
+    }
+
+    nextHorizontalOffset = nextHorizontalOffset.clamp(
+      0.0,
+      _horizontalBodyController.position.maxScrollExtent,
+    );
+    nextVerticalOffset = nextVerticalOffset.clamp(
+      0.0,
+      _verticalBodyController.position.maxScrollExtent,
+    );
+
+    if ((nextHorizontalOffset - _horizontalBodyController.offset).abs() > 0.5) {
+      _horizontalBodyController.jumpTo(nextHorizontalOffset);
+      if (_horizontalHeaderController.hasClients) {
+        _horizontalHeaderController.jumpTo(
+          nextHorizontalOffset.clamp(
+            0.0,
+            _horizontalHeaderController.position.maxScrollExtent,
+          ),
+        );
+      }
+    }
+    if ((nextVerticalOffset - _verticalBodyController.offset).abs() > 0.5) {
+      _verticalBodyController.jumpTo(nextVerticalOffset);
+      if (_verticalHeaderController.hasClients) {
+        _verticalHeaderController.jumpTo(
+          nextVerticalOffset.clamp(
+            0.0,
+            _verticalHeaderController.position.maxScrollExtent,
+          ),
+        );
+      }
+    }
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final metrics = _SheetViewportMetrics.fromPage(widget.page);
@@ -289,6 +362,7 @@ class _SheetViewportState extends State<SheetViewport> {
     return LayoutBuilder(
       builder: (context, constraints) {
         _scheduleMinimumWindowExpansion(constraints.biggest, metrics);
+        _scheduleFocusFollow();
         return Listener(
           behavior: HitTestBehavior.opaque,
           onPointerSignal: _handlePointerSignal,
@@ -335,6 +409,24 @@ class _SheetViewportState extends State<SheetViewport> {
         );
       },
     );
+  }
+
+  void _scheduleFocusFollow() {
+    final focusRect = widget.focusRect;
+    if (focusRect == null || focusRect == _lastEnsuredFocusRect) {
+      return;
+    }
+    _lastEnsuredFocusRect = focusRect;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      final currentFocusRect = widget.focusRect;
+      if (currentFocusRect == null) {
+        return;
+      }
+      _ensureRectVisible(currentFocusRect);
+    });
   }
 
   void _scheduleMinimumWindowExpansion(

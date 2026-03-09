@@ -444,6 +444,9 @@ class _MsDocumentViewState extends State<MsDocumentView> {
   }
 
   Widget _buildViewerSurface(PageRenderModel page, bool isSpreadsheet) {
+    final activeCellRect = isSpreadsheet
+        ? _activeSpreadsheetCellRect(page)
+        : null;
     final viewer = isSpreadsheet
         ? Focus(
             focusNode: _sheetFocusNode,
@@ -455,6 +458,7 @@ class _MsDocumentViewState extends State<MsDocumentView> {
               child: SheetViewport(
                 page: page,
                 highlights: widget.controller.pageHighlights,
+                focusRect: activeCellRect,
                 onCellTap: (pagePosition) {
                   _sheetFocusNode.requestFocus();
                   widget.controller.selectSheetCellAt(pagePosition);
@@ -545,6 +549,24 @@ class _MsDocumentViewState extends State<MsDocumentView> {
           ),
       ],
     );
+  }
+
+  Rect? _activeSpreadsheetCellRect(PageRenderModel page) {
+    final activeCell = widget.controller.activeSheetCell;
+    if (activeCell == null) {
+      return null;
+    }
+    for (final cell in page.sheetCells) {
+      if (cell.row == activeCell.row && cell.column == activeCell.column) {
+        return Rect.fromLTWH(
+          cell.bounds.x,
+          cell.bounds.y,
+          cell.bounds.width,
+          cell.bounds.height,
+        );
+      }
+    }
+    return null;
   }
 
   KeyEventResult _handleSpreadsheetKeyEvent(
