@@ -22,3 +22,17 @@ class SearchSheetCell {
   final int row;
   final int column;
 }
+
+class SearchSheetRange {
+  const SearchSheetRange({
+    required this.startRow,
+    required this.endRow,
+    required this.startColumn,
+    required this.endColumn,
+  });
+
+  final int startRow;
+  final int endRow;
+  final int startColumn;
+  final int endColumn;
+}

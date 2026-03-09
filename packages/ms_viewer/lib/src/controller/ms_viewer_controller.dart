@@ -50,6 +50,9 @@ class MsViewerController extends ChangeNotifier {
   List<Rect> pageHighlights = const [];
   SearchSheetCell? _activeSheetCell;
   int? _activeSheetCellPageIndex;
+  SearchSheetCell? _sheetRangeAnchorCell;
+  SearchSheetCell? _sheetRangeExtentCell;
+  int? _sheetRangePageIndex;
   final DocumentSearchController searchController = DocumentSearchController();
   final SelectionDragController selectionController = SelectionDragController();
   PasswordPromptState passwordPromptState = const PasswordPromptState(
@@ -75,6 +78,29 @@ class MsViewerController extends ChangeNotifier {
   bool get isSheetWindowLoading => _sheetWindowLoading;
   SearchSheetCell? get activeSheetCell =>
       _activeSheetCellPageIndex == currentPageIndex ? _activeSheetCell : null;
+  SearchSheetRange? get activeSheetRange =>
+      _sheetRangePageIndex == currentPageIndex &&
+              _sheetRangeAnchorCell != null &&
+              _sheetRangeExtentCell != null
+          ? SearchSheetRange(
+              startRow: math.min(
+                _sheetRangeAnchorCell!.row,
+                _sheetRangeExtentCell!.row,
+              ),
+              endRow: math.max(
+                _sheetRangeAnchorCell!.row,
+                _sheetRangeExtentCell!.row,
+              ),
+              startColumn: math.min(
+                _sheetRangeAnchorCell!.column,
+                _sheetRangeExtentCell!.column,
+              ),
+              endColumn: math.max(
+                _sheetRangeAnchorCell!.column,
+                _sheetRangeExtentCell!.column,
+              ),
+            )
+          : null;
   String? get activeSheetCellLabel {
     final cell = activeSheetCell;
     if (cell == null) {
@@ -103,6 +129,9 @@ class MsViewerController extends ChangeNotifier {
     pageHighlights = const [];
     _activeSheetCell = null;
     _activeSheetCellPageIndex = null;
+    _sheetRangeAnchorCell = null;
+    _sheetRangeExtentCell = null;
+    _sheetRangePageIndex = null;
     pageStatus = ViewerPageStatus.idle;
     _currentSheetWindow = _defaultSheetWindow;
     _sheetWindowLoading = false;
@@ -128,6 +157,9 @@ class MsViewerController extends ChangeNotifier {
     pageHighlights = const [];
     _activeSheetCell = null;
     _activeSheetCellPageIndex = null;
+    _sheetRangeAnchorCell = null;
+    _sheetRangeExtentCell = null;
+    _sheetRangePageIndex = null;
     pageStatus = ViewerPageStatus.idle;
     _currentSheetWindow = _defaultSheetWindow;
     _sheetWindowLoading = false;
@@ -164,6 +196,9 @@ class MsViewerController extends ChangeNotifier {
         pageHighlights = const [];
         _activeSheetCell = null;
         _activeSheetCellPageIndex = null;
+        _sheetRangeAnchorCell = null;
+        _sheetRangeExtentCell = null;
+        _sheetRangePageIndex = null;
         pageStatus = ViewerPageStatus.idle;
         searchController.clear();
         selectionController.clear();
@@ -481,6 +516,9 @@ class MsViewerController extends ChangeNotifier {
       column: selectedCell.column,
     );
     _activeSheetCellPageIndex = pageIndex;
+    _sheetRangeAnchorCell = _activeSheetCell;
+    _sheetRangeExtentCell = _activeSheetCell;
+    _sheetRangePageIndex = pageIndex;
     selectionController.clear();
     _applySearchHighlightOnly();
     notifyListeners();
@@ -489,6 +527,7 @@ class MsViewerController extends ChangeNotifier {
   Future<void> moveActiveSheetCell({
     required int rowDelta,
     required int columnDelta,
+    bool expandRange = false,
   }) async {
     if (document?.kind != DocumentKind.xlsx) {
       return;
@@ -512,6 +551,15 @@ class MsViewerController extends ChangeNotifier {
 
     _activeSheetCell = nextCell;
     _activeSheetCellPageIndex = pageIndex;
+    if (expandRange) {
+      _sheetRangeAnchorCell ??= anchorCell;
+      _sheetRangeExtentCell = nextCell;
+      _sheetRangePageIndex = pageIndex;
+    } else {
+      _sheetRangeAnchorCell = nextCell;
+      _sheetRangeExtentCell = nextCell;
+      _sheetRangePageIndex = pageIndex;
+    }
 
     if (!_sheetCellInWindow(_currentSheetWindow, nextCell)) {
       await loadSheetWindow(_buildWindowAroundSheetCell(nextCell));
@@ -650,6 +698,25 @@ class MsViewerController extends ChangeNotifier {
     }
 
     final highlights = <Rect>[];
+    final activeRange = activeSheetRange;
+    if (activeRange != null) {
+      for (final cell in page.sheetCells) {
+        if (cell.row >= activeRange.startRow &&
+            cell.row <= activeRange.endRow &&
+            cell.column >= activeRange.startColumn &&
+            cell.column <= activeRange.endColumn) {
+          final bounds = Rect.fromLTWH(
+            cell.bounds.x,
+            cell.bounds.y,
+            cell.bounds.width,
+            cell.bounds.height,
+          );
+          if (!highlights.contains(bounds)) {
+            highlights.add(bounds);
+          }
+        }
+      }
+    }
 
     final activeCell = activeSheetCell;
     if (activeCell != null) {

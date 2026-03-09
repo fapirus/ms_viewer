@@ -544,6 +544,105 @@ void main() {
     expect(find.text('Cell B2'), findsOneWidget);
   });
 
+  testWidgets('xlsx active cell range state can expand from controller', (
+    tester,
+  ) async {
+    final controller = MsViewerController(
+      platform: _FakeMsViewerPlatform(
+        onOpen: (_) async => platform.OpenDocumentOpened(
+          const platform.OpenDocumentSuccess(
+            documentId: 'sheet_001',
+            kind: platform.DocumentKind.xlsx,
+            title: 'budget.xlsx',
+            pageCount: 1,
+            capabilities: platform.DocumentCapabilities(
+              search: true,
+              textSelection: true,
+              passwordProtected: false,
+            ),
+          ),
+        ),
+        onGetPage: (_) async => platform.GetPageRenderModelSuccess(
+          platform.PageRenderModel.fromJson({
+            'pageIndex': 0,
+            'width': 280.0,
+            'height': 160.0,
+            'nodes': const [],
+            'selectionAnchors': const [],
+            'sheetCells': [
+              {
+                'row': 1,
+                'column': 2,
+                'bounds': {
+                  'x': 140.0,
+                  'y': 0.0,
+                  'width': 140.0,
+                  'height': 40.0,
+                },
+              },
+              {
+                'row': 2,
+                'column': 2,
+                'bounds': {
+                  'x': 140.0,
+                  'y': 40.0,
+                  'width': 140.0,
+                  'height': 40.0,
+                },
+              },
+            ],
+            'sheetViewport': {
+              'window': {
+                'startRow': 1,
+                'endRow': 48,
+                'startColumn': 1,
+                'endColumn': 16,
+              },
+              'effectiveBounds': {
+                'startRow': 1,
+                'endRow': 120,
+                'startColumn': 1,
+                'endColumn': 24,
+              },
+              'visibleRows': [1, 2],
+              'visibleColumns': [2],
+            },
+          }),
+        ),
+      ),
+    );
+
+    await controller.openDocument(
+      const platform.OpenDocumentRequest(
+        source: platform.OpenDocumentSource.path('/tmp/budget.xlsx'),
+      ),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: MsDocumentView(controller: controller)),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final bodyCanvas = find.byKey(const ValueKey('sheet-body-canvas'));
+    await tester.tapAt(tester.getTopLeft(bodyCanvas) + const Offset(170, 20));
+    await tester.pumpAndSettle();
+
+    await controller.moveActiveSheetCell(
+      rowDelta: 1,
+      columnDelta: 0,
+      expandRange: true,
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Cell B2'), findsOneWidget);
+    expect(controller.activeSheetRange, isNotNull);
+    expect(controller.activeSheetRange!.startRow, 1);
+    expect(controller.activeSheetRange!.endRow, 2);
+    expect(controller.pageHighlights.length, greaterThanOrEqualTo(2));
+  });
+
   testWidgets('view shows xlsx sheet fetch error state', (tester) async {
     final controller = MsViewerController(
       platform: _FakeMsViewerPlatform(

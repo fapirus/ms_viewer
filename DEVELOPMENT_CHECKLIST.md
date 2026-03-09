@@ -1052,6 +1052,14 @@
   - Tests:
     - xlsx controller keyboard movement test
     - xlsx active cell keyboard widget integration test
+- [x] XLSX multi-cell range selection 기본 구조
+  - Scope:
+    - active cell과 별도로 sheet range anchor/extent 상태를 유지한다
+    - `Shift + 방향키`는 active cell을 움직이면서 range를 확장한다
+    - range는 cell rect 집합으로 하이라이트된다
+  - Tests:
+    - xlsx controller range expansion test
+    - xlsx range state widget integration test
 - [x] XLSX viewport pointer scroll routing 보정
   - Scope:
     - sheet viewport가 wheel/trackpad scroll 신호를 직접 소비해 body scroll controller에만 전달한다

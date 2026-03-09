@@ -185,7 +185,7 @@
   - `Shift + 방향키` 기반 range 확장
   - search jump 이후 active cell focus 유지
   를 수용할 수 있어야 한다.
-  - 현재 구현 범위는 `화살표 키 기반 active cell 이동`까지다.
+  - 현재 구현 범위는 `화살표 키 기반 active cell 이동`과 `Shift + 방향키 기반 기본 range 확장`까지다.
 
 ## UX priorities
 

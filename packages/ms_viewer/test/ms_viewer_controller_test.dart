@@ -721,6 +721,94 @@ void main() {
     },
   );
 
+  test('controller expands xlsx selection range with shift-like movement', () async {
+    final controller = MsViewerController(
+      platform: _FakeMsViewerPlatform(
+        onOpen: (_) async => platform.OpenDocumentOpened(
+          const platform.OpenDocumentSuccess(
+            documentId: 'xlsx_001',
+            kind: platform.DocumentKind.xlsx,
+            title: 'budget.xlsx',
+            pageCount: 1,
+            capabilities: platform.DocumentCapabilities(
+              search: true,
+              textSelection: true,
+              passwordProtected: false,
+            ),
+          ),
+        ),
+        onGetPage: (_) async => platform.GetPageRenderModelSuccess(
+          platform.PageRenderModel.fromJson({
+            'pageIndex': 0,
+            'width': 280.0,
+            'height': 160.0,
+            'nodes': const [],
+            'selectionAnchors': const [],
+            'sheetCells': [
+              {
+                'row': 1,
+                'column': 2,
+                'bounds': {
+                  'x': 140.0,
+                  'y': 0.0,
+                  'width': 140.0,
+                  'height': 40.0,
+                },
+              },
+              {
+                'row': 2,
+                'column': 2,
+                'bounds': {
+                  'x': 140.0,
+                  'y': 40.0,
+                  'width': 140.0,
+                  'height': 40.0,
+                },
+              },
+            ],
+            'sheetViewport': {
+              'window': {
+                'startRow': 1,
+                'endRow': 48,
+                'startColumn': 1,
+                'endColumn': 16,
+              },
+              'effectiveBounds': {
+                'startRow': 1,
+                'endRow': 120,
+                'startColumn': 1,
+                'endColumn': 24,
+              },
+              'visibleRows': [1, 2],
+              'visibleColumns': [2],
+            },
+          }),
+        ),
+      ),
+    );
+
+    await controller.openDocument(
+      const platform.OpenDocumentRequest(
+        source: platform.OpenDocumentSource.path('/tmp/budget.xlsx'),
+      ),
+    );
+    controller.selectSheetCellAt(const Offset(170, 20));
+
+    await controller.moveActiveSheetCell(
+      rowDelta: 1,
+      columnDelta: 0,
+      expandRange: true,
+    );
+
+    expect(controller.activeSheetCell?.row, 2);
+    expect(controller.activeSheetRange, isNotNull);
+    expect(controller.activeSheetRange!.startRow, 1);
+    expect(controller.activeSheetRange!.endRow, 2);
+    expect(controller.activeSheetRange!.startColumn, 2);
+    expect(controller.activeSheetRange!.endColumn, 2);
+    expect(controller.pageHighlights.length, greaterThanOrEqualTo(2));
+  });
+
   test('controller navigates to next page when requested', () async {
     final requests = <platform.GetPageRenderModelRequest>[];
     final controller = MsViewerController(

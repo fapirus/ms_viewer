@@ -576,28 +576,45 @@ class _MsDocumentViewState extends State<MsDocumentView> {
     if (event is! KeyDownEvent) {
       return KeyEventResult.ignored;
     }
+    final expandRange = HardwareKeyboard.instance.isShiftPressed;
 
     if (event.logicalKey == LogicalKeyboardKey.arrowLeft) {
       unawaited(
-        widget.controller.moveActiveSheetCell(rowDelta: 0, columnDelta: -1),
+        widget.controller.moveActiveSheetCell(
+          rowDelta: 0,
+          columnDelta: -1,
+          expandRange: expandRange,
+        ),
       );
       return KeyEventResult.handled;
     }
     if (event.logicalKey == LogicalKeyboardKey.arrowRight) {
       unawaited(
-        widget.controller.moveActiveSheetCell(rowDelta: 0, columnDelta: 1),
+        widget.controller.moveActiveSheetCell(
+          rowDelta: 0,
+          columnDelta: 1,
+          expandRange: expandRange,
+        ),
       );
       return KeyEventResult.handled;
     }
     if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
       unawaited(
-        widget.controller.moveActiveSheetCell(rowDelta: -1, columnDelta: 0),
+        widget.controller.moveActiveSheetCell(
+          rowDelta: -1,
+          columnDelta: 0,
+          expandRange: expandRange,
+        ),
       );
       return KeyEventResult.handled;
     }
     if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
       unawaited(
-        widget.controller.moveActiveSheetCell(rowDelta: 1, columnDelta: 0),
+        widget.controller.moveActiveSheetCell(
+          rowDelta: 1,
+          columnDelta: 0,
+          expandRange: expandRange,
+        ),
       );
       return KeyEventResult.handled;
     }
