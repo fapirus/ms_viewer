@@ -988,6 +988,14 @@
     - controller window continuity test
     - leading/trailing edge window request widget test
     - xlsx window loading overlay widget test
+- [x] XLSX demo engine persistent process와 parsed workbook cache 적용
+  - Scope:
+    - demo app이 `cargo run`을 매 요청마다 다시 띄우지 않고 persistent `viewer_cli serve` 프로세스를 재사용한다
+    - `XLSX`는 open 이후 parsed workbook/package를 캐시해서 window/search/selection 요청 때 재파싱하지 않는다
+    - large-sheet scroll 시 CPU spike와 freeze를 줄이는 방향으로 request overhead를 낮춘다
+  - Tests:
+    - `viewer_cli` cache path를 포함한 `cargo test --manifest-path rust/Cargo.toml`
+    - `ms_viewer`/`flutter_demo` 회귀 테스트
 
 ### Acceptance
 - [ ] XLSX visual parity acceptance pass

@@ -159,6 +159,17 @@ pub struct XlsxVisibleWindow {
     pub column_count: u32,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct ParsedXlsxPackage {
+    pub workbook: XlsxWorkbook,
+    pub shared_strings: Vec<String>,
+    pub styles: XlsxStyleCatalog,
+    pub worksheet_cells: Vec<WorksheetCells>,
+    pub metrics: Vec<WorksheetGridMetrics>,
+    pub merges: Vec<WorksheetMergedCells>,
+    pub frozen_panes: Vec<WorksheetFrozenPanes>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct XlsxNumberFormat {
     pub id: u32,
@@ -445,6 +456,26 @@ pub fn parse_worksheet_cells(
         .collect()
 }
 
+pub fn parse_xlsx_package(archive: &OoxmlArchive) -> Result<ParsedXlsxPackage, ViewerError> {
+    let workbook = parse_xlsx(archive)?;
+    let shared_strings = parse_shared_strings(archive, &workbook)?;
+    let styles = parse_cell_style_subset(archive, &workbook)?;
+    let worksheet_cells = parse_worksheet_cells(archive, &workbook, &shared_strings)?;
+    let metrics = parse_row_column_metrics(archive, &workbook)?;
+    let merges = parse_merged_cells(archive, &workbook)?;
+    let frozen_panes = parse_frozen_panes(archive, &workbook)?;
+
+    Ok(ParsedXlsxPackage {
+        workbook,
+        shared_strings,
+        styles,
+        worksheet_cells,
+        metrics,
+        merges,
+        frozen_panes,
+    })
+}
+
 pub fn build_sheet_render_model(
     archive: &OoxmlArchive,
     workbook: &XlsxWorkbook,
@@ -493,6 +524,57 @@ pub fn build_sheet_render_model(
         merges,
         styles,
         workbook.date_1904,
+        full_bounds,
+        full_bounds,
+        frozen_panes.pane.as_ref(),
+    )
+}
+
+pub fn build_sheet_render_model_from_package(
+    package: &ParsedXlsxPackage,
+    sheet_index: usize,
+) -> Result<PageRenderModel, ViewerError> {
+    let sheet = package
+        .workbook
+        .sheets
+        .get(sheet_index)
+        .ok_or(ViewerError::InvalidDocument)?;
+    let worksheet_cells = package
+        .worksheet_cells
+        .iter()
+        .find(|worksheet| worksheet.part_name == sheet.part_name)
+        .ok_or(ViewerError::InvalidDocument)?;
+    let metrics = package
+        .metrics
+        .iter()
+        .find(|worksheet| worksheet.part_name == sheet.part_name)
+        .ok_or(ViewerError::InvalidDocument)?;
+    let merges = package
+        .merges
+        .iter()
+        .find(|worksheet| worksheet.part_name == sheet.part_name)
+        .ok_or(ViewerError::InvalidDocument)?;
+    let frozen_panes = package
+        .frozen_panes
+        .iter()
+        .find(|worksheet| worksheet.part_name == sheet.part_name)
+        .ok_or(ViewerError::InvalidDocument)?;
+
+    let full_bounds = resolve_effective_bounds(
+        sheet.dimension_ref.as_deref(),
+        worksheet_cells,
+        metrics,
+        merges,
+        frozen_panes.pane.as_ref(),
+    )?;
+
+    render_sheet_model(
+        sheet_index as u32,
+        worksheet_cells,
+        metrics,
+        merges,
+        &package.styles,
+        package.workbook.date_1904,
         full_bounds,
         full_bounds,
         frozen_panes.pane.as_ref(),
@@ -557,6 +639,77 @@ pub fn build_visible_window_render_model(
         merges,
         styles,
         workbook.date_1904,
+        (
+            render_start_row,
+            render_start_column,
+            render_end_row,
+            render_end_column,
+        ),
+        (
+            sheet_start_row,
+            sheet_start_column,
+            sheet_end_row,
+            sheet_end_column,
+        ),
+        frozen_panes.pane.as_ref(),
+    )
+}
+
+pub fn build_visible_window_render_model_from_package(
+    package: &ParsedXlsxPackage,
+    sheet_index: usize,
+    window: &XlsxVisibleWindow,
+) -> Result<PageRenderModel, ViewerError> {
+    if window.row_count == 0 || window.column_count == 0 {
+        return Err(ViewerError::InvalidDocument);
+    }
+
+    let sheet = package
+        .workbook
+        .sheets
+        .get(sheet_index)
+        .ok_or(ViewerError::InvalidDocument)?;
+    let worksheet_cells = package
+        .worksheet_cells
+        .iter()
+        .find(|worksheet| worksheet.part_name == sheet.part_name)
+        .ok_or(ViewerError::InvalidDocument)?;
+    let metrics = package
+        .metrics
+        .iter()
+        .find(|worksheet| worksheet.part_name == sheet.part_name)
+        .ok_or(ViewerError::InvalidDocument)?;
+    let merges = package
+        .merges
+        .iter()
+        .find(|worksheet| worksheet.part_name == sheet.part_name)
+        .ok_or(ViewerError::InvalidDocument)?;
+    let frozen_panes = package
+        .frozen_panes
+        .iter()
+        .find(|worksheet| worksheet.part_name == sheet.part_name)
+        .ok_or(ViewerError::InvalidDocument)?;
+    let (sheet_start_row, sheet_start_column, sheet_end_row, sheet_end_column) =
+        resolve_effective_bounds(
+            sheet.dimension_ref.as_deref(),
+            worksheet_cells,
+            metrics,
+            merges,
+            frozen_panes.pane.as_ref(),
+        )?;
+    let (render_start_row, render_start_column, render_end_row, render_end_column) =
+        normalize_window_bounds(window)?;
+    if render_start_row > render_end_row || render_start_column > render_end_column {
+        return Err(ViewerError::InvalidDocument);
+    }
+
+    render_sheet_model(
+        sheet_index as u32,
+        worksheet_cells,
+        metrics,
+        merges,
+        &package.styles,
+        package.workbook.date_1904,
         (
             render_start_row,
             render_start_column,
@@ -659,6 +812,59 @@ pub fn search_workbook(
     query: &str,
 ) -> Result<Vec<SearchMatch>, ViewerError> {
     let pages = build_search_pages(archive, workbook, shared_strings, styles)?;
+    Ok(search_pages(&pages, query))
+}
+
+pub fn search_workbook_from_package(
+    package: &ParsedXlsxPackage,
+    query: &str,
+) -> Result<Vec<SearchMatch>, ViewerError> {
+    let mut pages = Vec::new();
+
+    for (sheet_index, sheet) in package.workbook.sheets.iter().enumerate() {
+        let worksheet = package
+            .worksheet_cells
+            .iter()
+            .find(|worksheet| worksheet.part_name == sheet.part_name)
+            .ok_or(ViewerError::InvalidDocument)?;
+        let mut sorted_cells = worksheet.cells.iter().collect::<Vec<_>>();
+        sorted_cells.sort_by_key(|cell| (cell.row, cell.column));
+
+        let mut current_row = None;
+        let mut row_values = Vec::new();
+        let mut lines = Vec::new();
+        for cell in sorted_cells {
+            if current_row != Some(cell.row) {
+                if !row_values.is_empty() {
+                    lines.push(row_values.join("\t"));
+                    row_values.clear();
+                }
+                current_row = Some(cell.row);
+            }
+
+            let style = cell
+                .style_index
+                .and_then(|index| package.styles.cell_formats.get(index as usize));
+            if let Some(display_text) = format_cell_display_value(
+                &cell.value,
+                style,
+                package.workbook.date_1904,
+            ) {
+                if !display_text.trim().is_empty() {
+                    row_values.push(display_text);
+                }
+            }
+        }
+        if !row_values.is_empty() {
+            lines.push(row_values.join("\t"));
+        }
+
+        pages.push(SearchPage {
+            page_index: sheet_index as u32,
+            text: lines.join("\n"),
+        });
+    }
+
     Ok(search_pages(&pages, query))
 }
 

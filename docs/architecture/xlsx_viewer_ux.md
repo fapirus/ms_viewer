@@ -142,6 +142,13 @@
 - 장기적으로 메모리 상한이 필요해지면 far range prune/LRU를 hardening 단계에서 추가한다
 - 이후 zoom이 들어오면 visible count 계산은 scale factor를 반영하도록 확장한다
 
+### Demo engine performance policy
+- desktop demo bridge는 request마다 `cargo run`을 다시 호출하지 않는다.
+- `viewer_cli`는 persistent `serve` 프로세스로 떠 있고 stdin/stdout JSON 프로토콜로 요청을 직렬 처리한다.
+- `XLSX`는 open 시점에 workbook/shared strings/styles/cells/metrics/merge/frozen pane까지 한 번 파싱해 캐시한다.
+- 이후 visible window, search, selection 요청은 cached package를 재사용한다.
+- 즉 large-sheet 성능 병목은 "프로세스 재시작 + ZIP/XML 재파싱"이 아니라 실제 viewport diff와 painting 비용으로 좁혀야 한다.
+
 ## UX priorities
 
 ### P0
