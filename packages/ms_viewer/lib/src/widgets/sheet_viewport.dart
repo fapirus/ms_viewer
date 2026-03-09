@@ -39,6 +39,8 @@ class _SheetViewportState extends State<SheetViewport> {
   static const int _minimumVisibleColumns = 10;
   static const double _targetRowPixels = 30;
   static const double _targetColumnPixels = 108;
+  static const int _excelMaxRows = 1048576;
+  static const int _excelMaxColumns = 16384;
 
   final ScrollController _horizontalBodyController = ScrollController();
   final ScrollController _verticalBodyController = ScrollController();
@@ -160,7 +162,6 @@ class _SheetViewportState extends State<SheetViewport> {
     }
 
     final currentWindow = sheetViewport.window;
-    final effectiveBounds = sheetViewport.effectiveBounds;
     final rowCount = currentWindow.endRow - currentWindow.startRow + 1;
     final columnCount = currentWindow.endColumn - currentWindow.startColumn + 1;
     var nextStartRow = currentWindow.startRow;
@@ -171,12 +172,9 @@ class _SheetViewportState extends State<SheetViewport> {
         _horizontalBodyController.offset >=
             _horizontalBodyController.position.maxScrollExtent *
                 _requestThreshold &&
-        currentWindow.endColumn < effectiveBounds.endColumn) {
+        currentWindow.endColumn < _excelMaxColumns) {
       final shift = math.max(1, (columnCount * _windowShiftRatio).round());
-      final maxStart = math.max(
-        effectiveBounds.startColumn,
-        effectiveBounds.endColumn - columnCount + 1,
-      );
+      final maxStart = math.max(1, _excelMaxColumns - columnCount + 1);
       nextStartColumn = math.min(currentWindow.startColumn + shift, maxStart);
     }
 
@@ -185,12 +183,9 @@ class _SheetViewportState extends State<SheetViewport> {
         _verticalBodyController.offset >=
             _verticalBodyController.position.maxScrollExtent *
                 _requestThreshold &&
-        currentWindow.endRow < effectiveBounds.endRow) {
+        currentWindow.endRow < _excelMaxRows) {
       final shift = math.max(1, (rowCount * _windowShiftRatio).round());
-      final maxStart = math.max(
-        effectiveBounds.startRow,
-        effectiveBounds.endRow - rowCount + 1,
-      );
+      final maxStart = math.max(1, _excelMaxRows - rowCount + 1);
       nextStartRow = math.min(currentWindow.startRow + shift, maxStart);
     }
 
@@ -281,7 +276,6 @@ class _SheetViewportState extends State<SheetViewport> {
     }
 
     final currentWindow = viewport.window;
-    final effectiveBounds = viewport.effectiveBounds;
     final desiredRowCount = math.max(
       _minimumVisibleRows,
       ((viewportSize.height - _headerExtent) / _targetRowPixels).ceil(),
@@ -294,11 +288,11 @@ class _SheetViewportState extends State<SheetViewport> {
     final currentColumnCount =
         currentWindow.endColumn - currentWindow.startColumn + 1;
     final targetEndRow = math.min(
-      effectiveBounds.endRow,
+      _excelMaxRows,
       currentWindow.startRow + desiredRowCount - 1,
     );
     final targetEndColumn = math.min(
-      effectiveBounds.endColumn,
+      _excelMaxColumns,
       currentWindow.startColumn + desiredColumnCount - 1,
     );
 

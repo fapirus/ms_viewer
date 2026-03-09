@@ -926,10 +926,13 @@
     - `XLSX`가 page viewer가 아니라 sheet viewport라는 점이 `PROJECT_PLAN.md`와 동기화된다
   - Output:
     - row/column header, 2D scroll, frozen pane, visible window 정책 확정
-- [ ] issue 기반 XLSX 시각 회귀 분류 규칙 정리
+- [x] issue 기반 XLSX 시각 회귀 분류 규칙 정리
   - Scope:
     - column width, row height, merged cell, frozen pane, large-sheet viewport 차이를 `issue/` 기준으로 분류
     - 최소 재현 fixture 후보를 `fixtures/regression/`에 승격
+  - Done:
+    - `docs/qa/XLSX_VISUAL_TRIAGE.md`에 `template-a`, `template-b` 차이를 정리했다
+    - blank grid 문제와 drawing/chart backlog를 분리했다
 
 ### Layout and viewport fidelity
 - [x] Flutter 전용 2D sheet viewport scaffold 구현
@@ -945,6 +948,7 @@
     - viewport 크기에 따라 초기 visible window를 한 번 확장한다
   - Tests:
     - minimum visible window expansion widget test
+    - sparse sheet blank-grid regression test
 - [x] pinned row/column headers와 corner cell 구현
   - Tests:
     - pinned header widget test
@@ -992,6 +996,14 @@
   - Scope:
     - `DOCX/PPTX/XLSX` phase에서 미룬 품질/성능/호환성 debt를 전수 검토
     - 중복 항목 정리와 우선순위 재배치
+- [ ] XLSX worksheet drawing/image support
+  - Scope:
+    - `xdr:wsDr` 기반 drawing/image anchor parse
+    - worksheet image placement와 기본 crop/size 반영
+- [ ] XLSX chart placeholder/render support
+  - Scope:
+    - chart part 연결
+    - 최소 placeholder 또는 chart preview 렌더 전략 확정
   - Output:
     - `PROJECT_PLAN.md`와 이 문서의 hardening backlog 동기화
 - [ ] password flow end-to-end polish

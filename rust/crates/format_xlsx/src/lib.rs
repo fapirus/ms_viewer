@@ -18,6 +18,8 @@ const STYLES_RELATIONSHIP: &str =
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles";
 const WORKSHEET_RELATIONSHIP: &str =
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet";
+const EXCEL_MAX_ROWS: u32 = 1_048_576;
+const EXCEL_MAX_COLUMNS: u32 = 16_384;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct XlsxWorkbook {
@@ -542,10 +544,8 @@ pub fn build_visible_window_render_model(
             merges,
             frozen_panes.pane.as_ref(),
         )?;
-    let render_start_row = window.start_row.max(sheet_start_row);
-    let render_start_column = window.start_column.max(sheet_start_column);
-    let render_end_row = (window.start_row + window.row_count - 1).min(sheet_end_row);
-    let render_end_column = (window.start_column + window.column_count - 1).min(sheet_end_column);
+    let (render_start_row, render_start_column, render_end_row, render_end_column) =
+        normalize_window_bounds(window)?;
     if render_start_row > render_end_row || render_start_column > render_end_column {
         return Err(ViewerError::InvalidDocument);
     }
@@ -571,6 +571,31 @@ pub fn build_visible_window_render_model(
         ),
         frozen_panes.pane.as_ref(),
     )
+}
+
+fn normalize_window_bounds(
+    window: &XlsxVisibleWindow,
+) -> Result<(u32, u32, u32, u32), ViewerError> {
+    if window.start_row == 0
+        || window.start_column == 0
+        || window.start_row > EXCEL_MAX_ROWS
+        || window.start_column > EXCEL_MAX_COLUMNS
+    {
+        return Err(ViewerError::InvalidDocument);
+    }
+
+    let end_row = window
+        .start_row
+        .checked_add(window.row_count.saturating_sub(1))
+        .ok_or(ViewerError::InvalidDocument)?
+        .min(EXCEL_MAX_ROWS);
+    let end_column = window
+        .start_column
+        .checked_add(window.column_count.saturating_sub(1))
+        .ok_or(ViewerError::InvalidDocument)?
+        .min(EXCEL_MAX_COLUMNS);
+
+    Ok((window.start_row, window.start_column, end_row, end_column))
 }
 
 pub fn build_search_pages(

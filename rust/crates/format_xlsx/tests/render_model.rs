@@ -316,6 +316,109 @@ fn visible_window_render_model_limits_rows_and_columns() {
 }
 
 #[test]
+fn visible_window_render_model_keeps_blank_grid_for_sparse_sheet() {
+    let dir = tempdir().expect("tempdir should exist");
+    let path = dir.path().join("sheet-sparse-window.xlsx");
+    create_zip(
+        &path,
+        &[
+            (
+                "_rels/.rels",
+                br#"
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>
+"#,
+            ),
+            (
+                "xl/workbook.xml",
+                br#"
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+          xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets>
+    <sheet name="Sheet1" sheetId="1" r:id="rIdSheet1"/>
+  </sheets>
+</workbook>
+"#,
+            ),
+            (
+                "xl/_rels/workbook.xml.rels",
+                br#"
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdSheet1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+  <Relationship Id="rIdStyles" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+</Relationships>
+"#,
+            ),
+            (
+                "xl/styles.xml",
+                br#"
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <fonts count="1"><font><name val="Calibri"/><sz val="11"/></font></fonts>
+  <fills count="2">
+    <fill><patternFill patternType="none"/></fill>
+    <fill><patternFill patternType="gray125"/></fill>
+  </fills>
+  <cellXfs count="1"><xf numFmtId="0" fontId="0" fillId="0"/></cellXfs>
+</styleSheet>
+"#,
+            ),
+            (
+                "xl/worksheets/sheet1.xml",
+                br#"
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <dimension ref="A1"/>
+  <sheetFormatPr defaultRowHeight="15" defaultColWidth="8.43"/>
+  <sheetData>
+    <row r="1">
+      <c r="A1" t="inlineStr"><is><t>Hello</t></is></c>
+    </row>
+  </sheetData>
+</worksheet>
+"#,
+            ),
+        ],
+    );
+
+    let archive = OoxmlArchive::open_path(&path).expect("archive should open");
+    let workbook = parse_xlsx(&archive).expect("xlsx should parse");
+    let shared_strings = parse_shared_strings(&archive, &workbook).expect("shared strings");
+    let styles = parse_cell_style_subset(&archive, &workbook).expect("styles");
+    let render_model = build_visible_window_render_model(
+        &archive,
+        &workbook,
+        &shared_strings,
+        &styles,
+        0,
+        &XlsxVisibleWindow {
+            start_row: 1,
+            start_column: 1,
+            row_count: 24,
+            column_count: 10,
+        },
+    )
+    .expect("window render model");
+
+    let viewport = render_model
+        .sheet_viewport
+        .as_ref()
+        .expect("sheet viewport metadata");
+    assert_eq!(viewport.window.end_row, 24);
+    assert_eq!(viewport.window.end_column, 10);
+    assert_eq!(viewport.visible_rows.len(), 24);
+    assert_eq!(viewport.visible_columns.len(), 10);
+    assert!(render_model.width > 600.0);
+    assert!(render_model.height > 400.0);
+
+    let box_nodes = render_model
+        .nodes
+        .iter()
+        .filter(|node| matches!(node, RenderNode::Box(_)))
+        .count();
+    assert_eq!(box_nodes, 240);
+}
+
+#[test]
 fn hidden_rows_and_columns_do_not_consume_sheet_space() {
     let dir = tempdir().expect("tempdir should exist");
     let path = dir.path().join("sheet-hidden-metrics.xlsx");
