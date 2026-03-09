@@ -644,6 +644,83 @@ void main() {
     expect(controller.pageHighlights, isNotEmpty);
   });
 
+  test(
+    'controller does not clamp xlsx keyboard movement to effective bounds',
+    () async {
+      final requests = <platform.GetPageRenderModelRequest>[];
+      final controller = MsViewerController(
+        platform: _FakeMsViewerPlatform(
+          onOpen: (_) async => platform.OpenDocumentOpened(
+            const platform.OpenDocumentSuccess(
+              documentId: 'xlsx_001',
+              kind: platform.DocumentKind.xlsx,
+              title: 'budget.xlsx',
+              pageCount: 1,
+              capabilities: platform.DocumentCapabilities(
+                search: true,
+                textSelection: true,
+                passwordProtected: false,
+              ),
+            ),
+          ),
+          onGetPage: (request) async {
+            requests.add(request);
+            return platform.GetPageRenderModelSuccess(
+              platform.PageRenderModel.fromJson({
+                'pageIndex': 0,
+                'width': 280.0,
+                'height': 160.0,
+                'nodes': const [],
+                'selectionAnchors': const [],
+                'sheetCells': [
+                  {
+                    'row': 60,
+                    'column': 2,
+                    'bounds': {
+                      'x': 140.0,
+                      'y': 0.0,
+                      'width': 140.0,
+                      'height': 40.0,
+                    },
+                  },
+                ],
+                'sheetViewport': {
+                  'window': {
+                    'startRow': request.sheetWindow!.startRow,
+                    'endRow': request.sheetWindow!.endRow,
+                    'startColumn': request.sheetWindow!.startColumn,
+                    'endColumn': request.sheetWindow!.endColumn,
+                  },
+                  'effectiveBounds': {
+                    'startRow': 1,
+                    'endRow': 44,
+                    'startColumn': 1,
+                    'endColumn': 24,
+                  },
+                  'visibleRows': [60],
+                  'visibleColumns': [2],
+                },
+              }),
+            );
+          },
+        ),
+      );
+
+      await controller.openDocument(
+        const platform.OpenDocumentRequest(
+          source: platform.OpenDocumentSource.path('/tmp/budget.xlsx'),
+        ),
+      );
+      controller.selectSheetCellAt(const Offset(170, 20));
+
+      await controller.moveActiveSheetCell(rowDelta: 1, columnDelta: 0);
+
+      expect(controller.activeSheetCell?.row, 61);
+      expect(requests.last.sheetWindow, isNotNull);
+      expect(requests.last.sheetWindow!.startRow, greaterThanOrEqualTo(49));
+    },
+  );
+
   test('controller navigates to next page when requested', () async {
     final requests = <platform.GetPageRenderModelRequest>[];
     final controller = MsViewerController(

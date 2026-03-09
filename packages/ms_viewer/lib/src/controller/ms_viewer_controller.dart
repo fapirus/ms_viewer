@@ -503,9 +503,8 @@ class MsViewerController extends ChangeNotifier {
         activeSheetCell ??
         _firstVisibleSheetCell(page) ??
         const SearchSheetCell(row: 1, column: 1);
-    final effectiveBounds = page.sheetViewport?.effectiveBounds;
-    final maxRow = effectiveBounds?.endRow ?? 1_048_576;
-    final maxColumn = effectiveBounds?.endColumn ?? 16_384;
+    const maxRow = 1_048_576;
+    const maxColumn = 16_384;
     final nextCell = SearchSheetCell(
       row: (anchorCell.row + rowDelta).clamp(1, maxRow),
       column: (anchorCell.column + columnDelta).clamp(1, maxColumn),
