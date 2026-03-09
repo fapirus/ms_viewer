@@ -769,8 +769,17 @@ class _SheetViewportMetrics {
     final boxes = page.nodes.whereType<BoxRenderNodeModel>().toList(
       growable: false,
     );
+    final sheetCells = page.sheetCells;
     final viewport = page.sheetViewport;
-    final columnSegments = boxes.isEmpty
+    final columnSegments = sheetCells.isNotEmpty
+        ? _extractSegments(
+            sheetCells.map((cell) => cell.bounds.x).toList(growable: false),
+            sheetCells
+                .map((cell) => cell.bounds.x + cell.bounds.width)
+                .toList(growable: false),
+            page.width,
+          )
+        : boxes.isEmpty
         ? [_SheetAxisSegment(start: 0, end: math.max(page.width, 1))]
         : _extractSegments(
             boxes.map((box) => box.bounds.x).toList(growable: false),
@@ -779,7 +788,15 @@ class _SheetViewportMetrics {
                 .toList(growable: false),
             page.width,
           );
-    final rowSegments = boxes.isEmpty
+    final rowSegments = sheetCells.isNotEmpty
+        ? _extractSegments(
+            sheetCells.map((cell) => cell.bounds.y).toList(growable: false),
+            sheetCells
+                .map((cell) => cell.bounds.y + cell.bounds.height)
+                .toList(growable: false),
+            page.height,
+          )
+        : boxes.isEmpty
         ? [_SheetAxisSegment(start: 0, end: math.max(page.height, 1))]
         : _extractSegments(
             boxes.map((box) => box.bounds.y).toList(growable: false),

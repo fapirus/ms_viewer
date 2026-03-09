@@ -60,6 +60,20 @@ void main() {
         {'nodeIndex': nodes.length - 1, 'charIndex': 0, 'x': 20.0, 'y': 10.0},
         {'nodeIndex': nodes.length - 1, 'charIndex': 6, 'x': 72.0, 'y': 10.0},
       ],
+      'sheetCells': [
+        for (var row = 0; row < rows; row++)
+          for (var column = 0; column < columns; column++)
+            {
+              'row': startRow + row,
+              'column': startColumn + column,
+              'bounds': {
+                'x': column * cellWidth,
+                'y': row * cellHeight,
+                'width': cellWidth,
+                'height': cellHeight,
+              },
+            },
+      ],
       'sheetViewport': {
         'window': {
           'startRow': startRow,
@@ -111,6 +125,81 @@ void main() {
     expect(find.byKey(const ValueKey('sheet-row-header-1')), findsOneWidget);
     expect(find.byKey(const ValueKey('sheet-body-canvas')), findsOneWidget);
   });
+
+  testWidgets(
+    'sheet viewport derives headers from sheet cell metadata when sparse nodes are used',
+    (tester) async {
+      final page = platform.PageRenderModel.fromJson({
+        'pageIndex': 0,
+        'width': 280.0,
+        'height': 160.0,
+        'nodes': [
+          {
+            'type': 'text',
+            'text': 'Budget',
+            'bounds': {'x': 20.0, 'y': 10.0, 'width': 80.0, 'height': 18.0},
+            'style': {
+              'fontFamily': 'Calibri',
+              'fontSize': 12.0,
+              'bold': true,
+              'italic': false,
+              'underline': false,
+              'colorHex': '#000000',
+            },
+            'range': {'start': 0, 'end': 6},
+          },
+        ],
+        'selectionAnchors': const [],
+        'sheetCells': [
+          for (var row = 0; row < 4; row++)
+            for (var column = 0; column < 4; column++)
+              {
+                'row': row + 1,
+                'column': column + 1,
+                'bounds': {
+                  'x': column * 70.0,
+                  'y': row * 40.0,
+                  'width': 70.0,
+                  'height': 40.0,
+                },
+              },
+        ],
+        'sheetViewport': {
+          'window': {
+            'startRow': 1,
+            'endRow': 4,
+            'startColumn': 1,
+            'endColumn': 4,
+          },
+          'effectiveBounds': {
+            'startRow': 1,
+            'endRow': 40,
+            'startColumn': 1,
+            'endColumn': 16,
+          },
+          'visibleRows': [1, 2, 3, 4],
+          'visibleColumns': [1, 2, 3, 4],
+        },
+      });
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Padding(
+              padding: const EdgeInsets.all(24),
+              child: SheetViewport(page: page),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('A'), findsOneWidget);
+      expect(find.text('B'), findsOneWidget);
+      expect(find.text('1'), findsOneWidget);
+      expect(find.text('4'), findsOneWidget);
+    },
+  );
 
   testWidgets('sheet viewport keeps headers pinned while body scrolls in 2D', (
     tester,
