@@ -68,6 +68,26 @@ void main() {
     expect(find.text('Document Library'), findsOneWidget);
   });
 
+  testWidgets('viewer screen owns chrome actions and search field', (
+    tester,
+  ) async {
+    final fakePlatform = _FakeDemoPlatform();
+    await tester.pumpWidget(
+      DemoApp(platform: fakePlatform, assetBundle: _FakeAssetBundle()),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Search in document'), findsNothing);
+
+    await tester.tap(find.text('docx_plain_text.docx'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(DemoViewerPage), findsOneWidget);
+    expect(find.text('Open File'), findsOneWidget);
+    expect(find.text('Search in document'), findsOneWidget);
+    expect(find.text('Bundled fixture'), findsOneWidget);
+  });
+
   testWidgets('demo app opens picked docx through path source', (tester) async {
     final fakePlatform = _FakeDemoPlatform();
     await tester.pumpWidget(

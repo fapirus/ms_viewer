@@ -8,6 +8,7 @@ import 'package:ms_viewer_platform_interface/ms_viewer_platform_interface.dart'
     as platform;
 
 import 'demo_document.dart';
+import 'demo_file_access.dart';
 
 class DemoViewerPage extends StatefulWidget {
   const DemoViewerPage({
@@ -15,11 +16,13 @@ class DemoViewerPage extends StatefulWidget {
     required this.entry,
     required this.viewerPlatform,
     required this.assetBundle,
+    this.pickFiles = pickDemoFiles,
   });
 
   final DemoDocumentEntry entry;
   final platform.MsViewerPlatform viewerPlatform;
   final AssetBundle assetBundle;
+  final DemoFilePicker pickFiles;
 
   @override
   State<DemoViewerPage> createState() => _DemoViewerPageState();
@@ -97,13 +100,103 @@ class _DemoViewerPageState extends State<DemoViewerPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(widget.entry.title)),
-      body: widget.entry.requiresPassword
-          ? _buildLockedPreview(context)
-          : MsDocumentView(
-              controller: _controller,
-              previewPages: widget.entry.previewPages,
+      appBar: AppBar(
+        title: Text(widget.entry.title),
+        actions: [
+          FilledButton.icon(
+            onPressed: _openReplacementFile,
+            icon: const Icon(Icons.upload_file),
+            label: const Text('Open File'),
+          ),
+          const SizedBox(width: 16),
+        ],
+      ),
+      body: DecoratedBox(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            colors: [Color(0xFFF8FBFF), Color(0xFFF3F7FC)],
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+          ),
+        ),
+        child: Column(
+          children: [
+            _buildViewerChrome(context),
+            Expanded(
+              child: widget.entry.requiresPassword
+                  ? _buildLockedPreview(context)
+                  : MsDocumentView(
+                      controller: _controller,
+                      previewPages: widget.entry.previewPages,
+                    ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openReplacementFile() async {
+    final paths = await widget.pickFiles();
+    if (paths.isEmpty || !mounted) {
+      return;
+    }
+
+    final replacement = buildImportedEntry(
+      paths.first,
+      DemoDocumentOrigin.picked,
+    );
+
+    await Navigator.of(context).pushReplacement(
+      MaterialPageRoute<void>(
+        builder: (context) => DemoViewerPage(
+          entry: replacement,
+          viewerPlatform: widget.viewerPlatform,
+          assetBundle: widget.assetBundle,
+          pickFiles: widget.pickFiles,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildViewerChrome(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
+      child: Card(
+        elevation: 0,
+        color: Colors.white,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  _metaChip(widget.entry.sourceLabel),
+                  _metaChip(widget.entry.statusLabel),
+                  ...widget.entry.tags.map(_metaChip),
+                ],
+              ),
+              if (widget.entry.location != null) ...[
+                const SizedBox(height: 10),
+                SelectableText(
+                  widget.entry.location!,
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ],
+              if (widget.entry.note != null) ...[
+                const SizedBox(height: 10),
+                Text(
+                  widget.entry.note!,
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -128,6 +221,15 @@ class _DemoViewerPageState extends State<DemoViewerPage> {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _metaChip(String label) {
+    return Chip(
+      label: Text(label),
+      visualDensity: VisualDensity.compact,
+      side: const BorderSide(color: Color(0xFFBFDBFE)),
+      backgroundColor: Colors.white,
     );
   }
 }

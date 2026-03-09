@@ -2,28 +2,24 @@ import 'dart:async';
 
 import 'package:cross_file/cross_file.dart';
 import 'package:desktop_drop/desktop_drop.dart';
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:ms_viewer/ms_viewer.dart';
 import 'package:ms_viewer_platform_interface/ms_viewer_platform_interface.dart'
     as platform;
-import 'package:path/path.dart' as p;
 
 import 'demo_document.dart';
+import 'demo_file_access.dart';
 import 'demo_fixture_catalog.dart';
-import 'demo_page_models.dart';
 import 'demo_viewer_page.dart';
-
-typedef DemoFilePicker = Future<List<String>> Function();
 
 class DemoHomePage extends StatefulWidget {
   const DemoHomePage({
     super.key,
     required this.viewerPlatform,
     required this.assetBundle,
-    this.pickFiles = _defaultPickFiles,
+    this.pickFiles = pickDemoFiles,
     this.supportsDesktopDropOverride,
   });
 
@@ -107,51 +103,7 @@ class _DemoHomePageState extends State<DemoHomePage> {
   }
 
   DemoDocumentEntry _importedEntry(String path, DemoDocumentOrigin origin) {
-    final extension = p.extension(path).replaceFirst('.', '').toLowerCase();
-    final title = p.basename(path);
-    final kind = switch (extension) {
-      'pptx' => DocumentKind.pptx,
-      'xlsx' => DocumentKind.xlsx,
-      _ => DocumentKind.docx,
-    };
-    final note = switch ((origin, extension)) {
-      (DemoDocumentOrigin.picked, 'docx') =>
-        'External DOCX file. Real engine open is wired in the desktop demo.',
-      (DemoDocumentOrigin.picked, 'pptx') =>
-        'External PPTX file. Real engine open is wired in the desktop demo.',
-      (DemoDocumentOrigin.picked, 'xlsx') =>
-        'External XLSX file. Real engine open is wired in the desktop demo.',
-      (DemoDocumentOrigin.dropped, 'docx') =>
-        'External DOCX file. Real engine open is wired in the desktop demo.',
-      (DemoDocumentOrigin.dropped, 'pptx') =>
-        'External PPTX file. Real engine open is wired in the desktop demo.',
-      (DemoDocumentOrigin.dropped, 'xlsx') =>
-        'External XLSX file. Real engine open is wired in the desktop demo.',
-      (_, 'xlsx') =>
-        'External XLSX file. Real engine open will be wired in the desktop demo.',
-      (_, 'pptx') =>
-        'External PPTX file. Real engine open will be wired in the desktop demo.',
-      (_, 'docx') =>
-        'External DOCX file. Real engine open is wired in the desktop demo.',
-      _ => 'Unknown document type.',
-    };
-
-    return DemoDocumentEntry(
-      id: '${origin.name}:$path',
-      title: title,
-      kind: kind,
-      origin: origin,
-      previewPages: [
-        buildImportedPreviewPage(title: title, extension: extension),
-      ],
-      tags: [extension.isEmpty ? 'file' : extension, origin.name],
-      sourceLabel: origin == DemoDocumentOrigin.picked
-          ? 'Picked file'
-          : 'Dropped file',
-      statusLabel: 'Ready',
-      location: path,
-      note: note,
-    );
+    return buildImportedEntry(path, origin);
   }
 
   @override
@@ -379,20 +331,4 @@ class _DemoHomePageState extends State<DemoHomePage> {
       DocumentKind.xlsx => Icons.table_chart_outlined,
     };
   }
-}
-
-Future<List<String>> _defaultPickFiles() async {
-  final result = await FilePicker.platform.pickFiles(
-    allowMultiple: true,
-    type: FileType.custom,
-    allowedExtensions: const ['docx', 'pptx', 'xlsx'],
-  );
-  if (result == null) {
-    return const [];
-  }
-
-  return result.files
-      .map((file) => file.path)
-      .whereType<String>()
-      .toList(growable: false);
 }

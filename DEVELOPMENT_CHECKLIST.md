@@ -882,7 +882,7 @@
   - Tests:
     - library -> viewer navigation widget test
     - back navigation widget test
-- [ ] viewer 전용 chrome 구성
+- [x] viewer 전용 chrome 구성
   - Scope:
     - title, back, search, open file를 viewer 화면 기준으로 재배치
     - preview shell 성격의 보조 메타 패널 제거
