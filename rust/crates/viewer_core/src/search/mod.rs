@@ -9,12 +9,21 @@ pub struct SearchPage {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+pub struct SheetCellMatch {
+    pub row: u32,
+    pub column: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub struct SearchMatch {
     pub query: String,
     pub page_index: u32,
     pub start: usize,
     pub end: usize,
     pub preview: String,
+    #[serde(default)]
+    pub sheet_cell: Option<SheetCellMatch>,
 }
 
 pub fn search_pages(pages: &[SearchPage], query: &str) -> Vec<SearchMatch> {
@@ -39,6 +48,7 @@ pub fn search_pages(pages: &[SearchPage], query: &str) -> Vec<SearchMatch> {
                 start,
                 end,
                 preview: build_preview(&page.text, start, end),
+                sheet_cell: None,
             });
             offset = end;
         }

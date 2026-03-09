@@ -333,6 +333,12 @@ class MsViewerController extends ChangeNotifier {
                   start: match.start,
                   end: match.end,
                   preview: match.preview,
+                  sheetCell: match.sheetCell == null
+                      ? null
+                      : SearchSheetCell(
+                          row: match.sheetCell!.row,
+                          column: match.sheetCell!.column,
+                        ),
                 ),
               )
               .toList(growable: false),
@@ -416,7 +422,16 @@ class MsViewerController extends ChangeNotifier {
       return;
     }
 
-    if (currentPageIndex != result.pageIndex) {
+    final descriptor = document;
+    if (descriptor?.kind == DocumentKind.xlsx && result.sheetCell != null) {
+      if (currentPageIndex != result.pageIndex) {
+        await loadPage(result.pageIndex);
+      }
+      final sheetCell = result.sheetCell!;
+      if (!_sheetCellInWindow(_currentSheetWindow, sheetCell)) {
+        await loadSheetWindow(_buildWindowAroundSheetCell(sheetCell));
+      }
+    } else if (currentPageIndex != result.pageIndex) {
       await loadSelectionPage(result.pageIndex);
     }
     _applySearchHighlightOnly();
@@ -429,6 +444,26 @@ class MsViewerController extends ChangeNotifier {
         result == null ||
         currentPageIndex != result.pageIndex) {
       pageHighlights = const [];
+      return;
+    }
+
+    if (document?.kind == DocumentKind.xlsx && result.sheetCell != null) {
+      pageHighlights = page.sheetCells
+          .where(
+            (cell) =>
+                cell.row == result.sheetCell!.row &&
+                cell.column == result.sheetCell!.column,
+          )
+          .map(
+            (cell) => Rect.fromLTWH(
+              cell.bounds.x,
+              cell.bounds.y,
+              cell.bounds.width,
+              cell.bounds.height,
+            ),
+          )
+          .toList(growable: false);
+      _applySelectionHighlights();
       return;
     }
 
@@ -590,6 +625,36 @@ class MsViewerController extends ChangeNotifier {
     viewer_platform.SheetWindow window,
   ) {
     return '$pageIndex:${window.startRow}:${window.endRow}:${window.startColumn}:${window.endColumn}';
+  }
+
+  bool _sheetCellInWindow(
+    viewer_platform.SheetWindow window,
+    SearchSheetCell cell,
+  ) {
+    return cell.row >= window.startRow &&
+        cell.row <= window.endRow &&
+        cell.column >= window.startColumn &&
+        cell.column <= window.endColumn;
+  }
+
+  viewer_platform.SheetWindow _buildWindowAroundSheetCell(SearchSheetCell cell) {
+    const maxRows = 1_048_576;
+    const maxColumns = 16_384;
+    final rowCount = _currentSheetWindow.endRow - _currentSheetWindow.startRow + 1;
+    final columnCount =
+        _currentSheetWindow.endColumn - _currentSheetWindow.startColumn + 1;
+    final halfRows = rowCount ~/ 2;
+    final halfColumns = columnCount ~/ 2;
+    final startRow = (cell.row - halfRows).clamp(1, maxRows);
+    final startColumn = (cell.column - halfColumns).clamp(1, maxColumns);
+    final endRow = (startRow + rowCount - 1).clamp(1, maxRows);
+    final endColumn = (startColumn + columnCount - 1).clamp(1, maxColumns);
+    return viewer_platform.SheetWindow(
+      startRow: startRow,
+      endRow: endRow,
+      startColumn: startColumn,
+      endColumn: endColumn,
+    );
   }
 }
 

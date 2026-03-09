@@ -189,12 +189,15 @@ void main() {
         'start': 0,
         'end': 5,
         'preview': 'Hello DOCX render',
+        'sheetCell': {'row': 3, 'column': 2},
       },
     ]);
 
     expect(result, isA<SearchDocumentSuccess>());
     final success = result as SearchDocumentSuccess;
     expect(success.matches.single.pageIndex, 0);
+    expect(success.matches.single.sheetCell?.row, 3);
+    expect(success.matches.single.sheetCell?.column, 2);
   });
 
   test('search document result decodes error response', () {

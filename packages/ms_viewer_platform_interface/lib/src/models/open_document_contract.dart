@@ -292,6 +292,7 @@ class SearchMatchModel {
     required this.start,
     required this.end,
     required this.preview,
+    required this.sheetCell,
   });
 
   final String query;
@@ -299,14 +300,33 @@ class SearchMatchModel {
   final int start;
   final int end;
   final String preview;
+  final SearchSheetCellModel? sheetCell;
 
   factory SearchMatchModel.fromJson(Map<String, Object?> json) {
+    final sheetCellJson = json['sheetCell'] as Map<String, Object?>?;
     return SearchMatchModel(
       query: json['query'] as String,
       pageIndex: json['pageIndex'] as int,
       start: json['start'] as int,
       end: json['end'] as int,
       preview: json['preview'] as String,
+      sheetCell: sheetCellJson == null
+          ? null
+          : SearchSheetCellModel.fromJson(sheetCellJson),
+    );
+  }
+}
+
+class SearchSheetCellModel {
+  const SearchSheetCellModel({required this.row, required this.column});
+
+  final int row;
+  final int column;
+
+  factory SearchSheetCellModel.fromJson(Map<String, Object?> json) {
+    return SearchSheetCellModel(
+      row: json['row'] as int,
+      column: json['column'] as int,
     );
   }
 }

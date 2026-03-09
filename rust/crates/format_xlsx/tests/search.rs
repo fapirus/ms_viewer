@@ -175,6 +175,11 @@ fn workbook_search_is_case_insensitive() {
     assert_eq!(matches[0].page_index, 0);
     assert_eq!(matches[0].query, "revenue");
     assert!(matches[0].preview.contains("Quarterly Revenue"));
+    assert_eq!(matches[0].sheet_cell.as_ref().map(|cell| cell.row), Some(1));
+    assert_eq!(
+        matches[0].sheet_cell.as_ref().map(|cell| cell.column),
+        Some(1)
+    );
 }
 
 #[test]

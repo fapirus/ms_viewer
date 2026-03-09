@@ -229,6 +229,7 @@ class PageRenderModel {
     required this.nodes,
     required this.selectionAnchors,
     required this.sheetViewport,
+    required this.sheetCells,
   });
 
   final int pageIndex;
@@ -237,11 +238,13 @@ class PageRenderModel {
   final List<RenderNodeModel> nodes;
   final List<SelectionAnchorModel> selectionAnchors;
   final SheetViewportModel? sheetViewport;
+  final List<SheetCellModel> sheetCells;
 
   factory PageRenderModel.fromJson(Map<String, Object?> json) {
     final nodesJson = json['nodes'] as List<Object?>? ?? const [];
     final anchorsJson = json['selectionAnchors'] as List<Object?>? ?? const [];
     final sheetViewportJson = json['sheetViewport'] as Map<String, Object?>?;
+    final sheetCellsJson = json['sheetCells'] as List<Object?>? ?? const [];
 
     return PageRenderModel(
       pageIndex: json['pageIndex'] as int,
@@ -258,6 +261,30 @@ class PageRenderModel {
       sheetViewport: sheetViewportJson == null
           ? null
           : SheetViewportModel.fromJson(sheetViewportJson),
+      sheetCells: sheetCellsJson
+          .cast<Map<String, Object?>>()
+          .map(SheetCellModel.fromJson)
+          .toList(),
+    );
+  }
+}
+
+class SheetCellModel {
+  const SheetCellModel({
+    required this.row,
+    required this.column,
+    required this.bounds,
+  });
+
+  final int row;
+  final int column;
+  final RectModel bounds;
+
+  factory SheetCellModel.fromJson(Map<String, Object?> json) {
+    return SheetCellModel(
+      row: json['row'] as int,
+      column: json['column'] as int,
+      bounds: RectModel.fromJson(json['bounds'] as Map<String, Object?>),
     );
   }
 }

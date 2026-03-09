@@ -155,6 +155,15 @@
 - 따라서 row/column header 외 본문은 가능한 한 적은 widget 수로 유지하고, 보이는 rect에 겹치는 node만 paint/cull한다.
 - viewport size가 커지면 scroll edge를 기다리지 않고 minimum visible window를 다시 평가해 빈 영역이 남지 않게 한다.
 
+### Interaction policy
+- `XLSX`는 `DOCX/PPTX`처럼 문자 range selection을 기본 interaction으로 두지 않는다.
+- search 결과는 `sheet + cell(row/column)` 기준으로 반환하는 편이 맞다.
+- search 결과 선택 시:
+  - 해당 sheet를 연다
+  - target cell이 현재 window 밖이면 viewport를 그 셀 중심으로 재요청한다
+  - target cell rect를 highlight한다
+- drag selection도 장기적으로는 text range가 아니라 cell range selection으로 전환한다.
+
 ## UX priorities
 
 ### P0
@@ -165,6 +174,7 @@
 - frozen panes
 - merged cell placement
 - large-sheet virtualization
+- cell-centric search and selection
 
 ### P1
 - active cell highlight

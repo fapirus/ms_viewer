@@ -217,6 +217,13 @@ void main() {
         'visibleRows': [3, 4, 5, 6],
         'visibleColumns': [2, 3, 4, 5, 6],
       },
+      'sheetCells': [
+        {
+          'row': 3,
+          'column': 2,
+          'bounds': {'x': 0.0, 'y': 0.0, 'width': 120.0, 'height': 24.0},
+        },
+      ],
     });
 
     expect(page.sheetViewport, isNotNull);
@@ -226,5 +233,7 @@ void main() {
     expect(page.sheetViewport!.frozenPane!.topLeftCell, 'C2');
     expect(page.sheetViewport!.visibleRows, [3, 4, 5, 6]);
     expect(page.sheetViewport!.visibleColumns, [2, 3, 4, 5, 6]);
+    expect(page.sheetCells.single.row, 3);
+    expect(page.sheetCells.single.column, 2);
   });
 }

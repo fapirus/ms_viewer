@@ -3,10 +3,10 @@ use format_shared::{
 };
 use viewer_core::archive::OoxmlArchive;
 use viewer_core::model::{
-    BoxNode, PageRenderModel, Rect, RenderNode, SelectionAnchor, SheetFrozenPaneModel,
-    SheetViewportModel, SheetWindowModel, TextNode, TextRange, TextStyle,
+    BoxNode, PageRenderModel, Rect, RenderNode, SelectionAnchor, SheetCellModel,
+    SheetFrozenPaneModel, SheetViewportModel, SheetWindowModel, TextNode, TextRange, TextStyle,
 };
-use viewer_core::search::{search_pages, SearchMatch, SearchPage};
+use viewer_core::search::{SearchMatch, SearchPage, SheetCellMatch};
 use viewer_core::xml::parse_document;
 use viewer_core::ViewerError;
 
@@ -811,15 +811,67 @@ pub fn search_workbook(
     styles: &XlsxStyleCatalog,
     query: &str,
 ) -> Result<Vec<SearchMatch>, ViewerError> {
-    let pages = build_search_pages(archive, workbook, shared_strings, styles)?;
-    Ok(search_pages(&pages, query))
+    let trimmed_query = query.trim();
+    if trimmed_query.is_empty() {
+        return Ok(Vec::new());
+    }
+    let normalized_query = trimmed_query.to_lowercase();
+    let worksheet_cells = parse_worksheet_cells(archive, workbook, shared_strings)?;
+    let mut matches = Vec::new();
+
+    for (sheet_index, sheet) in workbook.sheets.iter().enumerate() {
+        let worksheet = worksheet_cells
+            .iter()
+            .find(|worksheet| worksheet.part_name == sheet.part_name)
+            .ok_or(ViewerError::InvalidDocument)?;
+
+        for cell in &worksheet.cells {
+            let style = cell
+                .style_index
+                .and_then(|index| styles.cell_formats.get(index as usize));
+            let Some(display_text) =
+                format_cell_display_value(&cell.value, style, workbook.date_1904)
+            else {
+                continue;
+            };
+            if display_text.trim().is_empty() {
+                continue;
+            }
+
+            let normalized_text = display_text.to_lowercase();
+            let mut offset = 0usize;
+            while let Some(found) = normalized_text[offset..].find(&normalized_query) {
+                let start = offset + found;
+                let end = start + normalized_query.len();
+                matches.push(SearchMatch {
+                    query: trimmed_query.to_string(),
+                    page_index: sheet_index as u32,
+                    start,
+                    end,
+                    preview: build_cell_preview(&sheet.name, cell.row, cell.column, &display_text),
+                    sheet_cell: Some(SheetCellMatch {
+                        row: cell.row,
+                        column: cell.column,
+                    }),
+                });
+                offset = end;
+            }
+        }
+    }
+
+    Ok(matches)
 }
 
 pub fn search_workbook_from_package(
     package: &ParsedXlsxPackage,
     query: &str,
 ) -> Result<Vec<SearchMatch>, ViewerError> {
-    let mut pages = Vec::new();
+    let trimmed_query = query.trim();
+    if trimmed_query.is_empty() {
+        return Ok(Vec::new());
+    }
+    let normalized_query = trimmed_query.to_lowercase();
+    let mut matches = Vec::new();
 
     for (sheet_index, sheet) in package.workbook.sheets.iter().enumerate() {
         let worksheet = package
@@ -827,45 +879,41 @@ pub fn search_workbook_from_package(
             .iter()
             .find(|worksheet| worksheet.part_name == sheet.part_name)
             .ok_or(ViewerError::InvalidDocument)?;
-        let mut sorted_cells = worksheet.cells.iter().collect::<Vec<_>>();
-        sorted_cells.sort_by_key(|cell| (cell.row, cell.column));
-
-        let mut current_row = None;
-        let mut row_values = Vec::new();
-        let mut lines = Vec::new();
-        for cell in sorted_cells {
-            if current_row != Some(cell.row) {
-                if !row_values.is_empty() {
-                    lines.push(row_values.join("\t"));
-                    row_values.clear();
-                }
-                current_row = Some(cell.row);
-            }
-
+        for cell in &worksheet.cells {
             let style = cell
                 .style_index
                 .and_then(|index| package.styles.cell_formats.get(index as usize));
-            if let Some(display_text) = format_cell_display_value(
-                &cell.value,
-                style,
-                package.workbook.date_1904,
-            ) {
-                if !display_text.trim().is_empty() {
-                    row_values.push(display_text);
-                }
+            let Some(display_text) =
+                format_cell_display_value(&cell.value, style, package.workbook.date_1904)
+            else {
+                continue;
+            };
+            if display_text.trim().is_empty() {
+                continue;
+            }
+
+            let normalized_text = display_text.to_lowercase();
+            let mut offset = 0usize;
+            while let Some(found) = normalized_text[offset..].find(&normalized_query) {
+                let start = offset + found;
+                let end = start + normalized_query.len();
+                matches.push(SearchMatch {
+                    query: trimmed_query.to_string(),
+                    page_index: sheet_index as u32,
+                    start,
+                    end,
+                    preview: build_cell_preview(&sheet.name, cell.row, cell.column, &display_text),
+                    sheet_cell: Some(SheetCellMatch {
+                        row: cell.row,
+                        column: cell.column,
+                    }),
+                });
+                offset = end;
             }
         }
-        if !row_values.is_empty() {
-            lines.push(row_values.join("\t"));
-        }
-
-        pages.push(SearchPage {
-            page_index: sheet_index as u32,
-            text: lines.join("\n"),
-        });
     }
 
-    Ok(search_pages(&pages, query))
+    Ok(matches)
 }
 
 pub fn build_selection_sheet_models(
@@ -1156,6 +1204,7 @@ fn render_sheet_model(
     let mut nodes = Vec::new();
     let mut selection_anchors = Vec::new();
     let mut selection_offset = 0u32;
+    let mut sheet_cells = Vec::new();
 
     for row in start_row..=end_row {
         let row_height = row_heights[(row - start_row) as usize];
@@ -1198,6 +1247,11 @@ fn render_sheet_model(
                 width: cell_width,
                 height: cell_height,
             };
+            sheet_cells.push(SheetCellModel {
+                row,
+                column,
+                bounds: cell_rect.clone(),
+            });
             let style = cell
                 .and_then(|cell| cell.style_index)
                 .and_then(|index| styles.cell_formats.get(index as usize));
@@ -1265,7 +1319,18 @@ fn render_sheet_model(
             visible_rows,
             visible_columns,
         )),
+        sheet_cells,
     })
+}
+
+fn build_cell_preview(sheet_name: &str, row: u32, column: u32, display_text: &str) -> String {
+    format!(
+        "{}!{}{}  {}",
+        sheet_name,
+        column_index_to_letters(column),
+        row,
+        display_text.replace('\n', " ").trim()
+    )
 }
 
 fn build_sheet_viewport_model(
@@ -2217,4 +2282,19 @@ fn column_letters_to_index(column: &str) -> Result<u32, ViewerError> {
             .ok_or(ViewerError::InvalidDocument)?;
     }
     Ok(value)
+}
+
+fn column_index_to_letters(mut column: u32) -> String {
+    if column == 0 {
+        return String::new();
+    }
+
+    let mut letters = String::new();
+    while column > 0 {
+        let remainder = ((column - 1) % 26) as u8;
+        letters.push((b'A' + remainder) as char);
+        column = (column - 1) / 26;
+    }
+
+    letters.chars().rev().collect()
 }

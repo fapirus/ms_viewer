@@ -279,6 +279,14 @@ pub struct SheetFrozenPaneModel {
     pub top_left_cell: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SheetCellModel {
+    pub row: u32,
+    pub column: u32,
+    pub bounds: Rect,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct SheetViewportModel {
@@ -300,4 +308,6 @@ pub struct PageRenderModel {
     pub nodes: Vec<RenderNode>,
     pub selection_anchors: Vec<SelectionAnchor>,
     pub sheet_viewport: Option<SheetViewportModel>,
+    #[serde(default)]
+    pub sheet_cells: Vec<SheetCellModel>,
 }

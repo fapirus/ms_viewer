@@ -589,7 +589,7 @@ void main() {
   );
 
   testWidgets('xlsx sheet search integration widget test', (tester) async {
-    platform.GetSelectionPageRequest? selectionRequest;
+    final pageRequests = <platform.GetPageRenderModelRequest>[];
     final controller = MsViewerController(
       platform: _FakeMsViewerPlatform(
         onOpen: (_) async => platform.OpenDocumentOpened(
@@ -605,8 +605,26 @@ void main() {
             ),
           ),
         ),
-        onGetPage: (_) async =>
-            _pageModel(_pageJson(pageIndex: 0, text: 'Budget summary')),
+        onGetPage: (request) async {
+          pageRequests.add(request);
+          if (request.pageIndex == 1) {
+            return _pageModel(
+              _pageJson(
+                pageIndex: 1,
+                text: 'status column on detail sheet',
+                sheetWindow: request.sheetWindow,
+                sheetCell: const {'row': 8, 'column': 2},
+              ),
+            );
+          }
+          return _pageModel(
+            _pageJson(
+              pageIndex: 0,
+              text: 'Budget summary',
+              sheetWindow: request.sheetWindow,
+            ),
+          );
+        },
         onSearch: (_) async => const platform.SearchDocumentSuccess([
           platform.SearchMatchModel(
             query: 'status',
@@ -614,16 +632,9 @@ void main() {
             start: 0,
             end: 6,
             preview: 'status column on detail sheet',
+            sheetCell: platform.SearchSheetCellModel(row: 8, column: 2),
           ),
         ]),
-        onGetSelectionPage: (request) async {
-          selectionRequest = request;
-          return platform.GetSelectionPageSuccess(
-            platform.PageRenderModel.fromJson(
-              _pageJson(pageIndex: 1, text: 'status column on detail sheet'),
-            ),
-          );
-        },
       ),
     );
 
@@ -649,8 +660,10 @@ void main() {
     await tester.tap(find.text('status column on detail sheet'));
     await tester.pumpAndSettle();
 
-    expect(selectionRequest, isNotNull);
-    expect(selectionRequest!.pageIndex, 1);
+    expect(
+      pageRequests.where((request) => request.pageIndex == 1),
+      isNotEmpty,
+    );
     expect(controller.currentPageIndex, 1);
     expect(controller.pageHighlights, isNotEmpty);
   });
@@ -735,6 +748,7 @@ void main() {
             start: 0,
             end: 6,
             preview: 'needle on third page',
+            sheetCell: null,
           ),
         ]),
         onGetSelectionPage: (request) async {
@@ -999,6 +1013,7 @@ void main() {
             start: 0,
             end: 8,
             preview: 'forecast on closing slide',
+            sheetCell: null,
           ),
         ]),
         onGetSelectionPage: (request) async {
@@ -1218,7 +1233,12 @@ platform.GetPageRenderModelSuccess _pageModel(Map<String, Object?> json) {
   );
 }
 
-Map<String, Object?> _pageJson({required int pageIndex, required String text}) {
+Map<String, Object?> _pageJson({
+  required int pageIndex,
+  required String text,
+  platform.SheetWindow? sheetWindow,
+  Map<String, Object?>? sheetCell,
+}) {
   return {
     'pageIndex': pageIndex,
     'width': 200.0,
@@ -1241,5 +1261,35 @@ Map<String, Object?> _pageJson({required int pageIndex, required String text}) {
     'selectionAnchors': const [
       {'nodeIndex': 0, 'charIndex': 0, 'x': 24.0, 'y': 32.0},
     ],
+    if (sheetWindow != null)
+      'sheetViewport': {
+        'window': {
+          'startRow': sheetWindow.startRow,
+          'endRow': sheetWindow.endRow,
+          'startColumn': sheetWindow.startColumn,
+          'endColumn': sheetWindow.endColumn,
+        },
+        'effectiveBounds': {
+          'startRow': 1,
+          'endRow': 120,
+          'startColumn': 1,
+          'endColumn': 24,
+        },
+        'visibleRows': [
+          for (var row = sheetWindow.startRow; row <= sheetWindow.endRow; row++) row,
+        ],
+        'visibleColumns': [
+          for (var column = sheetWindow.startColumn; column <= sheetWindow.endColumn; column++)
+            column,
+        ],
+      },
+    if (sheetCell != null)
+      'sheetCells': [
+        {
+          'row': sheetCell['row'],
+          'column': sheetCell['column'],
+          'bounds': {'x': 24.0, 'y': 32.0, 'width': 120.0, 'height': 24.0},
+        },
+      ],
   };
 }

@@ -1004,6 +1004,14 @@
   - Tests:
     - `sheet_viewport` re-expand on resize widget test
     - `packages/ms_viewer` 전체 회귀 테스트
+- [x] XLSX cell-centric search navigation groundwork
+  - Scope:
+    - `XLSX` search result는 text offset뿐 아니라 target cell(row/column)을 함께 가진다
+    - search 결과 선택 시 해당 sheet/cell이 현재 window 밖이면 viewport를 그 셀 중심으로 다시 연다
+    - highlight는 text range 대신 target cell rect에 적용한다
+  - Tests:
+    - xlsx search result contract decode test
+    - xlsx search widget integration test
 
 ### Acceptance
 - [ ] XLSX visual parity acceptance pass

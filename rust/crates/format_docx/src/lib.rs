@@ -1013,6 +1013,7 @@ pub fn build_selection_page_models(
             nodes,
             selection_anchors: anchors,
             sheet_viewport: None,
+            sheet_cells: Vec::new(),
         });
     }
 

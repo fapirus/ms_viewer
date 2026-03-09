@@ -15,6 +15,7 @@ void main() {
                 start: 0,
                 end: 5,
                 preview: 'alpha preview',
+                sheetCell: null,
               ),
               SearchResult(
                 query: 'alpha',
@@ -22,6 +23,7 @@ void main() {
                 start: 10,
                 end: 15,
                 preview: 'second match',
+                sheetCell: null,
               ),
             ],
             currentIndex: 1,
