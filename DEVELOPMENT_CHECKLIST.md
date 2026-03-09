@@ -910,7 +910,7 @@
   - Tests:
     - xlsx full-screen shell widget test
     - viewport sizing smoke test
-- [ ] demo viewer shell acceptance pass
+- [x] demo viewer shell acceptance pass
   - Acceptance checks:
     - demo 첫 화면은 library 역할만 한다
     - 열람 시 별도 viewer screen으로 이동한다
