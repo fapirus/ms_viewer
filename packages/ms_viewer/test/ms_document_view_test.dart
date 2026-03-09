@@ -317,7 +317,7 @@ void main() {
           pageRequests.add(request);
           expect(request.sheetWindow, isNotNull);
           expect(request.sheetWindow!.startRow, 1);
-          expect(request.sheetWindow!.endRow, 40);
+          expect(request.sheetWindow!.endRow, 48);
           expect(request.sheetWindow!.startColumn, 1);
           expect(request.sheetWindow!.endColumn, 16);
           return platform.GetPageRenderModelSuccess(
@@ -564,10 +564,10 @@ void main() {
             'selectionAnchors': const [],
             'sheetViewport': {
               'window': {
-                'startRow': 21,
-                'endRow': 60,
-                'startColumn': 9,
-                'endColumn': 24,
+                'startRow': 1,
+                'endRow': 96,
+                'startColumn': 1,
+                'endColumn': 32,
               },
               'effectiveBounds': {
                 'startRow': 1,

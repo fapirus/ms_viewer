@@ -1020,6 +1020,14 @@
   - Tests:
     - `cargo test --manifest-path rust/Cargo.toml`
     - `packages/ms_viewer` 전체 회귀 테스트
+- [x] XLSX tile 기반 viewport cache와 composite window 적용
+  - Scope:
+    - controller가 임의의 large sheet window를 tile-aligned window들로 정규화한다
+    - cached tile page를 재사용하고, 필요한 경우 여러 tile을 `PageRenderModel` 1개로 합성한다
+    - 반대 방향 이동 시 전체 large window를 다시 만들지 않고 tile 재사용 경로를 우선 탄다
+  - Tests:
+    - xlsx controller tile-normalized window test
+    - `packages/ms_viewer`/`flutter_demo` 전체 회귀 테스트
 - [x] XLSX cell-centric search navigation groundwork
   - Scope:
     - `XLSX` search result는 text offset뿐 아니라 target cell(row/column)을 함께 가진다

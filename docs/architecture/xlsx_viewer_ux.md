@@ -152,7 +152,8 @@
   - cell lookup은 `(row, column)` 인덱스를 사용한다.
   - row/column pixel offset은 prefix sums로 계산한다.
   - merged range lookup은 visible bounds 기준으로 줄인다.
-  - tile cache는 그 다음 단계의 상위 최적화다.
+  - viewport cache는 tile-aligned window를 단위로 재사용한다.
+  - controller는 필요한 tile만 fetch하고, 여러 tile을 합성해 `PageRenderModel` 1개로 유지한다.
 
 ### Flutter painting policy
 - `XLSX` body는 cell마다 개별 widget을 쌓는 방식보다 sheet 전용 painter를 우선 사용한다.

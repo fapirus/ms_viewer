@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:flutter/foundation.dart';
@@ -16,6 +17,9 @@ enum ViewerShellStatus { idle, loading, ready, passwordPrompt, error }
 enum ViewerPageStatus { idle, loading, ready, error }
 
 class MsViewerController extends ChangeNotifier {
+  static const int _xlsxTileRows = 48;
+  static const int _xlsxTileColumns = 16;
+  static const int _maxCachedSheetTiles = 24;
   static const viewer_platform.SheetWindow _defaultSheetWindow =
       viewer_platform.SheetWindow(
         startRow: 1,
@@ -38,6 +42,8 @@ class MsViewerController extends ChangeNotifier {
   int? currentPageIndex;
   final Map<int, viewer_platform.PageRenderModel> _pageCache = {};
   final Map<String, viewer_platform.PageRenderModel> _sheetWindowCache = {};
+  final Map<String, viewer_platform.PageRenderModel> _sheetTileCache = {};
+  final List<String> _sheetTileUsageOrder = <String>[];
   final Set<int> _loadingPageIndexes = <int>{};
   viewer_platform.SheetWindow _currentSheetWindow = _defaultSheetWindow;
   bool _sheetWindowLoading = false;
@@ -79,6 +85,8 @@ class MsViewerController extends ChangeNotifier {
     currentPageIndex = null;
     _pageCache.clear();
     _sheetWindowCache.clear();
+    _sheetTileCache.clear();
+    _sheetTileUsageOrder.clear();
     _loadingPageIndexes.clear();
     pageError = null;
     pageHighlights = const [];
@@ -100,6 +108,8 @@ class MsViewerController extends ChangeNotifier {
     currentPageIndex = null;
     _pageCache.clear();
     _sheetWindowCache.clear();
+    _sheetTileCache.clear();
+    _sheetTileUsageOrder.clear();
     _loadingPageIndexes.clear();
     pageError = null;
     pageHighlights = const [];
@@ -132,6 +142,8 @@ class MsViewerController extends ChangeNotifier {
         currentPageIndex = null;
         _pageCache.clear();
         _sheetWindowCache.clear();
+        _sheetTileCache.clear();
+        _sheetTileUsageOrder.clear();
         _loadingPageIndexes.clear();
         pageError = null;
         pageHighlights = const [];
@@ -217,13 +229,14 @@ class MsViewerController extends ChangeNotifier {
 
     final pageIndex = currentPageIndex ?? descriptor.activePageIndex ?? 0;
     final previousWindow = _currentSheetWindow;
-    if (_sameSheetWindowBounds(previousWindow, window)) {
+    final normalizedWindow = _normalizeXlsxWindowToTileUnion(window);
+    if (_sameSheetWindowBounds(previousWindow, normalizedWindow)) {
       return;
     }
 
-    final cacheKey = _sheetWindowCacheKey(pageIndex, window);
+    final cacheKey = _sheetWindowCacheKey(pageIndex, normalizedWindow);
     final cachedPage = _sheetWindowCache[cacheKey];
-    _currentSheetWindow = window;
+    _currentSheetWindow = normalizedWindow;
     if (cachedPage != null) {
       currentPage = cachedPage;
       currentPageIndex = cachedPage.pageIndex;
@@ -238,28 +251,34 @@ class MsViewerController extends ChangeNotifier {
     _sheetWindowLoading = true;
     notifyListeners();
 
-    final result = await _platform.getPageRenderModel(
-      _buildPageRequest(
-        source: lastRequest.source,
-        documentId: descriptor.id,
-        pageIndex: pageIndex,
-        options: lastRequest.options,
-        kind: descriptor.kind,
-      ),
+    final page = await _fetchXlsxWindowPage(
+      source: lastRequest.source,
+      documentId: descriptor.id,
+      pageIndex: pageIndex,
+      options: lastRequest.options,
+      requestedWindow: normalizedWindow,
     );
 
-    switch (result) {
-      case viewer_platform.GetPageRenderModelSuccess(page: final page):
-        _cacheXlsxWindowPage(page);
-        currentPage = page;
-        currentPageIndex = page.pageIndex;
-        pageError = null;
-        pageStatus = ViewerPageStatus.ready;
-      case viewer_platform.GetPageRenderModelFailure():
-        _currentSheetWindow = previousWindow;
-        if (currentPage == null) {
-          pageStatus = ViewerPageStatus.error;
-        }
+    if (page != null) {
+      _cacheXlsxWindowPage(page);
+      currentPage = page;
+      currentPageIndex = page.pageIndex;
+      final viewport = page.sheetViewport;
+      if (viewport != null) {
+        _currentSheetWindow = viewer_platform.SheetWindow(
+          startRow: viewport.window.startRow,
+          endRow: viewport.window.endRow,
+          startColumn: viewport.window.startColumn,
+          endColumn: viewport.window.endColumn,
+        );
+      }
+      pageError = null;
+      pageStatus = ViewerPageStatus.ready;
+    } else {
+      _currentSheetWindow = previousWindow;
+      if (currentPage == null) {
+        pageStatus = ViewerPageStatus.error;
+      }
     }
 
     _sheetWindowLoading = false;
@@ -295,12 +314,15 @@ class MsViewerController extends ChangeNotifier {
     required int pageIndex,
     required viewer_platform.OpenOptions options,
     required DocumentKind kind,
+    viewer_platform.SheetWindow? sheetWindowOverride,
   }) {
     return viewer_platform.GetPageRenderModelRequest(
       source: source,
       documentId: documentId,
       pageIndex: pageIndex,
-      sheetWindow: kind == DocumentKind.xlsx ? _currentSheetWindow : null,
+      sheetWindow: kind == DocumentKind.xlsx
+          ? (sheetWindowOverride ?? _currentSheetWindow)
+          : null,
       options: options,
     );
   }
@@ -521,6 +543,38 @@ class MsViewerController extends ChangeNotifier {
       notifyListeners();
     }
 
+    if (descriptor.kind == DocumentKind.xlsx) {
+      final page = await _fetchXlsxWindowPage(
+        source: lastRequest.source,
+        documentId: descriptor.id,
+        pageIndex: pageIndex,
+        options: lastRequest.options,
+        requestedWindow: _normalizeXlsxWindowToTileUnion(_currentSheetWindow),
+      );
+      _loadingPageIndexes.remove(pageIndex);
+
+      if (page != null) {
+        _pageCache[page.pageIndex] = page;
+        _cacheXlsxWindowPage(page);
+        if (!updateVisibleState) {
+          notifyListeners();
+        }
+        return page;
+      }
+
+      if (updateVisibleState) {
+        currentPage = null;
+        pageError = const viewer_platform.OpenDocumentError(
+          code: viewer_platform.ViewerErrorCode.invalidDocument,
+          message: 'Failed to load sheet preview.',
+        ).toViewerException();
+        pageHighlights = const [];
+        pageStatus = ViewerPageStatus.error;
+        notifyListeners();
+      }
+      return null;
+    }
+
     final result = await _platform.getPageRenderModel(
       _buildPageRequest(
         source: lastRequest.source,
@@ -535,9 +589,6 @@ class MsViewerController extends ChangeNotifier {
     switch (result) {
       case viewer_platform.GetPageRenderModelSuccess(page: final page):
         _pageCache[page.pageIndex] = page;
-        if (descriptor.kind == DocumentKind.xlsx) {
-          _cacheXlsxWindowPage(page);
-        }
         if (!updateVisibleState) {
           notifyListeners();
         }
@@ -602,6 +653,236 @@ class MsViewerController extends ChangeNotifier {
     );
   }
 
+  Future<viewer_platform.PageRenderModel?> _fetchSinglePage({
+    required viewer_platform.OpenDocumentSource source,
+    required String documentId,
+    required int pageIndex,
+    required viewer_platform.OpenOptions options,
+    required DocumentKind kind,
+    viewer_platform.SheetWindow? sheetWindowOverride,
+  }) async {
+    final result = await _platform.getPageRenderModel(
+      _buildPageRequest(
+        source: source,
+        documentId: documentId,
+        pageIndex: pageIndex,
+        options: options,
+        kind: kind,
+        sheetWindowOverride: sheetWindowOverride,
+      ),
+    );
+
+    switch (result) {
+      case viewer_platform.GetPageRenderModelSuccess(page: final page):
+        return page;
+      case viewer_platform.GetPageRenderModelFailure():
+        return null;
+    }
+  }
+
+  Future<viewer_platform.PageRenderModel?> _fetchXlsxWindowPage({
+    required viewer_platform.OpenDocumentSource source,
+    required String documentId,
+    required int pageIndex,
+    required viewer_platform.OpenOptions options,
+    required viewer_platform.SheetWindow requestedWindow,
+  }) async {
+    final normalizedWindow = _normalizeXlsxWindowToTileUnion(requestedWindow);
+    final cacheKey = _sheetWindowCacheKey(pageIndex, normalizedWindow);
+    final cachedWindowPage = _sheetWindowCache[cacheKey];
+    if (cachedWindowPage != null) {
+      return cachedWindowPage;
+    }
+
+    final tileWindows = _resolveXlsxTileWindows(normalizedWindow);
+    final tilePages = <viewer_platform.PageRenderModel>[];
+    for (final tileWindow in tileWindows) {
+      final tileKey = _sheetTileCacheKey(pageIndex, tileWindow);
+      final cachedTile = _sheetTileCache[tileKey];
+      if (cachedTile != null) {
+        _touchSheetTileKey(tileKey);
+        tilePages.add(cachedTile);
+        continue;
+      }
+
+      final page = await _fetchSinglePage(
+        source: source,
+        documentId: documentId,
+        pageIndex: pageIndex,
+        options: options,
+        kind: DocumentKind.xlsx,
+        sheetWindowOverride: tileWindow,
+      );
+      if (page == null) {
+        return null;
+      }
+      _cacheSheetTilePage(page);
+      tilePages.add(page);
+    }
+
+    final compositePage = tilePages.length == 1
+        ? tilePages.single
+        : _composeXlsxTilePages(pageIndex, tilePages);
+    _sheetWindowCache[cacheKey] = compositePage;
+    return compositePage;
+  }
+
+  viewer_platform.PageRenderModel _composeXlsxTilePages(
+    int pageIndex,
+    List<viewer_platform.PageRenderModel> tilePages,
+  ) {
+    final pages = [...tilePages]
+      ..sort((a, b) {
+        final aWindow = a.sheetViewport!.window;
+        final bWindow = b.sheetViewport!.window;
+        final rowCompare = aWindow.startRow.compareTo(bWindow.startRow);
+        if (rowCompare != 0) {
+          return rowCompare;
+        }
+        return aWindow.startColumn.compareTo(bWindow.startColumn);
+      });
+
+    final rowBandHeights = <int, double>{};
+    final columnBandWidths = <int, double>{};
+    final visibleRows = <int>{};
+    final visibleColumns = <int>{};
+
+    for (final page in pages) {
+      final viewport = page.sheetViewport!;
+      rowBandHeights.putIfAbsent(viewport.window.startRow, () => page.height);
+      columnBandWidths.putIfAbsent(viewport.window.startColumn, () => page.width);
+      visibleRows.addAll(viewport.visibleRows);
+      visibleColumns.addAll(viewport.visibleColumns);
+    }
+
+    final sortedRowStarts = rowBandHeights.keys.toList()..sort();
+    final sortedColumnStarts = columnBandWidths.keys.toList()..sort();
+    final rowOffsets = <int, double>{};
+    final columnOffsets = <int, double>{};
+
+    var currentYOffset = 0.0;
+    for (final rowStart in sortedRowStarts) {
+      rowOffsets[rowStart] = currentYOffset;
+      currentYOffset += rowBandHeights[rowStart]!;
+    }
+
+    var currentXOffset = 0.0;
+    for (final columnStart in sortedColumnStarts) {
+      columnOffsets[columnStart] = currentXOffset;
+      currentXOffset += columnBandWidths[columnStart]!;
+    }
+
+    final nodes = <viewer_platform.RenderNodeModel>[];
+    final selectionAnchors = <viewer_platform.SelectionAnchorModel>[];
+    final sheetCells = <viewer_platform.SheetCellModel>[];
+
+    for (final page in pages) {
+      final viewport = page.sheetViewport!;
+      final dx = columnOffsets[viewport.window.startColumn] ?? 0.0;
+      final dy = rowOffsets[viewport.window.startRow] ?? 0.0;
+      final nodeIndexOffset = nodes.length;
+
+      nodes.addAll(
+        page.nodes.map((node) => _offsetRenderNode(node, dx: dx, dy: dy)),
+      );
+      selectionAnchors.addAll(
+        page.selectionAnchors.map(
+          (anchor) => viewer_platform.SelectionAnchorModel(
+            nodeIndex: anchor.nodeIndex + nodeIndexOffset,
+            charIndex: anchor.charIndex,
+            x: anchor.x + dx,
+            y: anchor.y + dy,
+          ),
+        ),
+      );
+      sheetCells.addAll(
+        page.sheetCells.map(
+          (cell) => viewer_platform.SheetCellModel(
+            row: cell.row,
+            column: cell.column,
+            bounds: _offsetRect(cell.bounds, dx: dx, dy: dy),
+          ),
+        ),
+      );
+    }
+
+    final firstViewport = pages.first.sheetViewport!;
+    final lastViewport = pages.last.sheetViewport!;
+    final sortedVisibleRows = visibleRows.toList()..sort();
+    final sortedVisibleColumns = visibleColumns.toList()..sort();
+
+    return viewer_platform.PageRenderModel(
+      pageIndex: pageIndex,
+      width: currentXOffset,
+      height: currentYOffset,
+      nodes: nodes,
+      selectionAnchors: selectionAnchors,
+      sheetViewport: viewer_platform.SheetViewportModel(
+        window: viewer_platform.SheetBoundsModel(
+          startRow: firstViewport.window.startRow,
+          endRow: lastViewport.window.endRow,
+          startColumn: firstViewport.window.startColumn,
+          endColumn: pages
+              .map((page) => page.sheetViewport!.window.endColumn)
+              .reduce(math.max),
+        ),
+        effectiveBounds: firstViewport.effectiveBounds,
+        frozenPane: firstViewport.frozenPane,
+        visibleRows: sortedVisibleRows,
+        visibleColumns: sortedVisibleColumns,
+      ),
+      sheetCells: sheetCells,
+    );
+  }
+
+  viewer_platform.RenderNodeModel _offsetRenderNode(
+    viewer_platform.RenderNodeModel node, {
+    required double dx,
+    required double dy,
+  }) {
+    return switch (node) {
+      viewer_platform.TextRenderNodeModel() => viewer_platform.TextRenderNodeModel(
+        text: node.text,
+        bounds: _offsetRect(node.bounds, dx: dx, dy: dy),
+        style: node.style,
+        range: node.range,
+      ),
+      viewer_platform.ImageRenderNodeModel() =>
+        viewer_platform.ImageRenderNodeModel(
+          resourceId: node.resourceId,
+          description: node.description,
+          contentType: node.contentType,
+          dataBase64: node.dataBase64,
+          bounds: _offsetRect(node.bounds, dx: dx, dy: dy),
+          crop: node.crop,
+          flipHorizontal: node.flipHorizontal,
+          flipVertical: node.flipVertical,
+        ),
+      viewer_platform.BoxRenderNodeModel() => viewer_platform.BoxRenderNodeModel(
+        bounds: _offsetRect(node.bounds, dx: dx, dy: dy),
+        fillColorHex: node.fillColorHex,
+        gradientEndColorHex: node.gradientEndColorHex,
+        gradientAngleDegrees: node.gradientAngleDegrees,
+        strokeColorHex: node.strokeColorHex,
+        strokeWidth: node.strokeWidth,
+        cornerRadius: node.cornerRadius,
+      ),
+    };
+  }
+
+  viewer_platform.RectModel _offsetRect(
+    viewer_platform.RectModel rect, {
+    required double dx,
+    required double dy,
+  }) {
+    return viewer_platform.RectModel(
+      x: rect.x + dx,
+      y: rect.y + dy,
+      width: rect.width,
+      height: rect.height,
+    );
+  }
+
   void _cacheXlsxWindowPage(viewer_platform.PageRenderModel page) {
     final viewport = page.sheetViewport;
     if (viewport == null) {
@@ -620,11 +901,95 @@ class MsViewerController extends ChangeNotifier {
         page;
   }
 
+  void _cacheSheetTilePage(viewer_platform.PageRenderModel page) {
+    final viewport = page.sheetViewport;
+    if (viewport == null) {
+      return;
+    }
+    final tileWindow = viewer_platform.SheetWindow(
+      startRow: viewport.window.startRow,
+      endRow: viewport.window.endRow,
+      startColumn: viewport.window.startColumn,
+      endColumn: viewport.window.endColumn,
+    );
+    final tileKey = _sheetTileCacheKey(page.pageIndex, tileWindow);
+    _sheetTileCache[tileKey] = page;
+    _touchSheetTileKey(tileKey);
+    while (_sheetTileUsageOrder.length > _maxCachedSheetTiles) {
+      final evictedKey = _sheetTileUsageOrder.removeAt(0);
+      _sheetTileCache.remove(evictedKey);
+    }
+  }
+
+  void _touchSheetTileKey(String key) {
+    _sheetTileUsageOrder.remove(key);
+    _sheetTileUsageOrder.add(key);
+  }
+
   String _sheetWindowCacheKey(
     int pageIndex,
     viewer_platform.SheetWindow window,
   ) {
     return '$pageIndex:${window.startRow}:${window.endRow}:${window.startColumn}:${window.endColumn}';
+  }
+
+  String _sheetTileCacheKey(int pageIndex, viewer_platform.SheetWindow window) {
+    return 'tile:${_sheetWindowCacheKey(pageIndex, window)}';
+  }
+
+  viewer_platform.SheetWindow _normalizeXlsxWindowToTileUnion(
+    viewer_platform.SheetWindow window,
+  ) {
+    final tiles = _resolveXlsxTileWindows(window);
+    final firstTile = tiles.first;
+    final lastTile = tiles.last;
+    return viewer_platform.SheetWindow(
+      startRow: firstTile.startRow,
+      endRow: tiles.map((tile) => tile.endRow).reduce(math.max),
+      startColumn: firstTile.startColumn,
+      endColumn: tiles.map((tile) => tile.endColumn).reduce(math.max),
+    );
+  }
+
+  List<viewer_platform.SheetWindow> _resolveXlsxTileWindows(
+    viewer_platform.SheetWindow window,
+  ) {
+    const maxRows = 1_048_576;
+    const maxColumns = 16_384;
+    final normalizedStartRow =
+        (((window.startRow - 1) ~/ _xlsxTileRows) * _xlsxTileRows) + 1;
+    final normalizedStartColumn =
+        (((window.startColumn - 1) ~/ _xlsxTileColumns) * _xlsxTileColumns) + 1;
+    final normalizedEndRow =
+        (((window.endRow - 1) ~/ _xlsxTileRows) * _xlsxTileRows) + 1;
+    final normalizedEndColumn =
+        (((window.endColumn - 1) ~/ _xlsxTileColumns) * _xlsxTileColumns) + 1;
+
+    final tiles = <viewer_platform.SheetWindow>[];
+    for (
+      var rowStart = normalizedStartRow;
+      rowStart <= normalizedEndRow;
+      rowStart += _xlsxTileRows
+    ) {
+      for (
+        var columnStart = normalizedStartColumn;
+        columnStart <= normalizedEndColumn;
+        columnStart += _xlsxTileColumns
+      ) {
+        tiles.add(
+          viewer_platform.SheetWindow(
+            startRow: rowStart,
+            endRow: math.min(rowStart + _xlsxTileRows - 1, maxRows),
+            startColumn: columnStart,
+            endColumn: math.min(
+              columnStart + _xlsxTileColumns - 1,
+              maxColumns,
+            ),
+          ),
+        );
+      }
+    }
+    return tiles;
   }
 
   bool _sheetCellInWindow(

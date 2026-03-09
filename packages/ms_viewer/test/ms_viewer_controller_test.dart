@@ -253,10 +253,10 @@ void main() {
               'selectionAnchors': const [],
               'sheetViewport': {
                 'window': {
-                  'startRow': 1,
-                  'endRow': 24,
-                  'startColumn': 1,
-                  'endColumn': 10,
+                  'startRow': request.sheetWindow!.startRow,
+                  'endRow': request.sheetWindow!.endRow,
+                  'startColumn': request.sheetWindow!.startColumn,
+                  'endColumn': request.sheetWindow!.endColumn,
                 },
                 'effectiveBounds': {
                   'startRow': 1,
@@ -284,7 +284,7 @@ void main() {
     expect(capturedPageRequest!.pageIndex, 1);
     expect(capturedPageRequest!.sheetWindow, isNotNull);
     expect(capturedPageRequest!.sheetWindow!.startRow, 1);
-    expect(capturedPageRequest!.sheetWindow!.endRow, 40);
+    expect(capturedPageRequest!.sheetWindow!.endRow, 48);
     expect(capturedPageRequest!.sheetWindow!.startColumn, 1);
     expect(capturedPageRequest!.sheetWindow!.endColumn, 16);
     expect(controller.pageStatus, ViewerPageStatus.ready);
@@ -352,21 +352,21 @@ void main() {
     );
     await controller.loadSheetWindow(
       const platform.SheetWindow(
-        startRow: 11,
-        endRow: 30,
-        startColumn: 5,
-        endColumn: 12,
+        startRow: 55,
+        endRow: 78,
+        startColumn: 17,
+        endColumn: 20,
       ),
     );
 
     expect(requests, hasLength(2));
     expect(requests.last.sheetWindow, isNotNull);
-    expect(requests.last.sheetWindow!.startRow, 11);
-    expect(requests.last.sheetWindow!.endRow, 30);
-    expect(requests.last.sheetWindow!.startColumn, 5);
-    expect(requests.last.sheetWindow!.endColumn, 12);
-    expect(controller.currentSheetWindow.startRow, 11);
-    expect(controller.currentSheetWindow.endColumn, 12);
+    expect(requests.last.sheetWindow!.startRow, 49);
+    expect(requests.last.sheetWindow!.endRow, 96);
+    expect(requests.last.sheetWindow!.startColumn, 17);
+    expect(requests.last.sheetWindow!.endColumn, 32);
+    expect(controller.currentSheetWindow.startRow, 49);
+    expect(controller.currentSheetWindow.endColumn, 32);
     expect(controller.pageStatus, ViewerPageStatus.ready);
     expect(controller.currentPage, isNotNull);
   });
@@ -406,7 +406,7 @@ void main() {
                     'sheetViewport': {
                       'window': {
                         'startRow': 1,
-                        'endRow': 40,
+                        'endRow': 48,
                         'startColumn': 1,
                         'endColumn': 16,
                       },
@@ -437,10 +437,10 @@ void main() {
       final originalPage = controller.currentPage;
       final loadFuture = controller.loadSheetWindow(
         const platform.SheetWindow(
-          startRow: 21,
-          endRow: 60,
-          startColumn: 9,
-          endColumn: 24,
+          startRow: 55,
+          endRow: 78,
+          startColumn: 17,
+          endColumn: 20,
         ),
       );
 
@@ -458,10 +458,10 @@ void main() {
             'selectionAnchors': const [],
             'sheetViewport': {
               'window': {
-                'startRow': 21,
-                'endRow': 60,
-                'startColumn': 9,
-                'endColumn': 24,
+                'startRow': 49,
+                'endRow': 96,
+                'startColumn': 17,
+                'endColumn': 32,
               },
               'effectiveBounds': {
                 'startRow': 1,
@@ -469,8 +469,8 @@ void main() {
                 'startColumn': 1,
                 'endColumn': 24,
               },
-              'visibleRows': [21, 22, 23],
-              'visibleColumns': [9, 10, 11],
+              'visibleRows': [49, 50, 51],
+              'visibleColumns': [17, 18, 19],
             },
           }),
         ),
@@ -479,7 +479,7 @@ void main() {
 
       expect(controller.isSheetWindowLoading, isFalse);
       expect(controller.currentPage, isNot(same(originalPage)));
-      expect(controller.currentSheetWindow.startRow, 21);
+      expect(controller.currentSheetWindow.startRow, 49);
     },
   );
 
