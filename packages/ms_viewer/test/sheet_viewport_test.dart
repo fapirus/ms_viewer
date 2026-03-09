@@ -373,4 +373,88 @@ void main() {
       expect(requestedWindow!.endRow, greaterThan(page.sheetViewport!.window.endRow));
     },
   );
+
+  testWidgets(
+    'sheet viewport re-expands when viewport size grows significantly',
+    (tester) async {
+      final requests = <platform.SheetWindow>[];
+      final page = buildSheetPage(
+        columns: 4,
+        rows: 8,
+        effectiveEndRow: 400,
+        effectiveEndColumn: 64,
+        cellWidth: 32,
+        cellHeight: 20,
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: SizedBox(
+                width: 420,
+                height: 320,
+                child: SheetViewport(
+                  page: page,
+                  onWindowRequest: (window) async {
+                    requests.add(window);
+                  },
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      expect(requests, isNotEmpty);
+      final firstRequest = requests.last;
+      requests.clear();
+      final expandedPage = buildSheetPage(
+        columns: firstRequest.endColumn - firstRequest.startColumn + 1,
+        rows: firstRequest.endRow - firstRequest.startRow + 1,
+        startRow: firstRequest.startRow,
+        startColumn: firstRequest.startColumn,
+        effectiveEndRow: 400,
+        effectiveEndColumn: 64,
+        cellWidth: 32,
+        cellHeight: 20,
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: SizedBox(
+                width: 980,
+                height: 720,
+                child: SheetViewport(
+                  page: expandedPage,
+                  onWindowRequest: (window) async {
+                    requests.add(window);
+                  },
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      expect(requests, isNotEmpty);
+      final secondRequest = requests.last;
+      expect(secondRequest.endRow, greaterThanOrEqualTo(firstRequest.endRow));
+      expect(
+        secondRequest.endColumn,
+        greaterThanOrEqualTo(firstRequest.endColumn),
+      );
+      expect(
+        secondRequest.endRow > firstRequest.endRow ||
+            secondRequest.endColumn > firstRequest.endColumn,
+        isTrue,
+      );
+    },
+  );
 }

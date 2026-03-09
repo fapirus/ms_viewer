@@ -149,6 +149,12 @@
 - 이후 visible window, search, selection 요청은 cached package를 재사용한다.
 - 즉 large-sheet 성능 병목은 "프로세스 재시작 + ZIP/XML 재파싱"이 아니라 실제 viewport diff와 painting 비용으로 좁혀야 한다.
 
+### Flutter painting policy
+- `XLSX` body는 cell마다 개별 widget을 쌓는 방식보다 sheet 전용 painter를 우선 사용한다.
+- blank/default cell까지 전부 widget tree에 올리면 large-sheet scroll에서 rebuild/paint 비용이 급격히 커진다.
+- 따라서 row/column header 외 본문은 가능한 한 적은 widget 수로 유지하고, 보이는 rect에 겹치는 node만 paint/cull한다.
+- viewport size가 커지면 scroll edge를 기다리지 않고 minimum visible window를 다시 평가해 빈 영역이 남지 않게 한다.
+
 ## UX priorities
 
 ### P0

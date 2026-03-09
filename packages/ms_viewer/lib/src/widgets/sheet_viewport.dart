@@ -59,6 +59,7 @@ class _SheetViewportState extends State<SheetViewport> {
   int _pendingPrependedRows = 0;
   _SheetViewportMetrics? _latestMetrics;
   bool _initialWindowExpansionScheduled = false;
+  Size? _lastBodyViewportSize;
 
   @override
   void initState() {
@@ -290,9 +291,6 @@ class _SheetViewportState extends State<SheetViewport> {
     Size viewportSize,
     _SheetViewportMetrics metrics,
   ) {
-    if (_initialWindowExpansionScheduled) {
-      return;
-    }
     final callback = widget.onWindowRequest;
     final viewport = widget.page.sheetViewport;
     if (callback == null || viewport == null) {
@@ -304,6 +302,16 @@ class _SheetViewportState extends State<SheetViewport> {
         math.max(0.0, viewportSize.width - _cornerExtent - 1);
     final bodyViewportHeight =
         math.max(0.0, viewportSize.height - _headerExtent - 1);
+    final bodyViewportSize = Size(bodyViewportWidth, bodyViewportHeight);
+    if (_lastBodyViewportSize == null ||
+        bodyViewportSize.width > _lastBodyViewportSize!.width + 24 ||
+        bodyViewportSize.height > _lastBodyViewportSize!.height + 24) {
+      _initialWindowExpansionScheduled = false;
+    }
+    _lastBodyViewportSize = bodyViewportSize;
+    if (_initialWindowExpansionScheduled) {
+      return;
+    }
     final averageColumnExtent = metrics.columns.isEmpty
         ? _targetColumnPixels
         : (metrics.columns.fold<double>(
@@ -472,61 +480,77 @@ class _SheetViewportState extends State<SheetViewport> {
     final frozenWidth = metrics.extentForLeadingColumns(frozenColumnCount);
     final frozenHeight = metrics.extentForLeadingRows(frozenRowCount);
 
-    return Stack(
-      children: [
-        KeyedSubtree(
-          key: const ValueKey('sheet-body-viewport'),
-          child: Scrollbar(
-            controller: _verticalBodyController,
-            thumbVisibility: true,
-            child: Scrollbar(
-              controller: _horizontalBodyController,
-              thumbVisibility: true,
-              notificationPredicate: (notification) => notification.depth == 1,
-              child: SingleChildScrollView(
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final viewportSize = Size(
+          constraints.maxWidth,
+          constraints.maxHeight,
+        );
+        return Stack(
+          children: [
+            KeyedSubtree(
+              key: const ValueKey('sheet-body-viewport'),
+              child: Scrollbar(
                 controller: _verticalBodyController,
-                scrollDirection: Axis.vertical,
-                child: SingleChildScrollView(
+                thumbVisibility: true,
+                child: Scrollbar(
                   controller: _horizontalBodyController,
-                  scrollDirection: Axis.horizontal,
-                  child: RenderNodeCanvas(
-                    key: const ValueKey('sheet-body-canvas'),
-                    page: widget.page,
-                    canvasWidth: widget.page.width,
-                    canvasHeight: widget.page.height,
-                    scaleX: 1,
-                    scaleY: 1,
-                    highlights: widget.highlights,
-                    backgroundColor: Colors.white,
-                    clipBehavior: Clip.hardEdge,
-                    onSelectionStart: widget.onSelectionStart,
-                    onSelectionUpdate: widget.onSelectionUpdate,
-                    onSelectionEnd: widget.onSelectionEnd,
+                  thumbVisibility: true,
+                  notificationPredicate: (notification) => notification.depth == 1,
+                  child: SingleChildScrollView(
+                    controller: _verticalBodyController,
+                    scrollDirection: Axis.vertical,
+                    child: SingleChildScrollView(
+                      controller: _horizontalBodyController,
+                      scrollDirection: Axis.horizontal,
+                      child: SheetRenderCanvas(
+                        key: const ValueKey('sheet-body-canvas'),
+                        page: widget.page,
+                        canvasWidth: widget.page.width,
+                        canvasHeight: widget.page.height,
+                        viewportOffset: Offset(
+                          _horizontalBodyController.hasClients
+                              ? _horizontalBodyController.offset
+                              : 0,
+                          _verticalBodyController.hasClients
+                              ? _verticalBodyController.offset
+                              : 0,
+                        ),
+                        viewportSize: viewportSize,
+                        highlights: widget.highlights,
+                        backgroundColor: Colors.white,
+                        clipBehavior: Clip.hardEdge,
+                        onSelectionStart: widget.onSelectionStart,
+                        onSelectionUpdate: widget.onSelectionUpdate,
+                        onSelectionEnd: widget.onSelectionEnd,
+                      ),
+                    ),
                   ),
                 ),
               ),
             ),
-          ),
-        ),
-        if (frozenColumnCount > 0 || frozenRowCount > 0)
-          IgnorePointer(
-            child: _FrozenPaneOverlay(
-              key: const ValueKey('sheet-frozen-overlay'),
-              page: widget.page,
-              highlights: widget.highlights,
-              horizontalOffset: _horizontalBodyController.hasClients
-                  ? _horizontalBodyController.offset
-                  : 0,
-              verticalOffset: _verticalBodyController.hasClients
-                  ? _verticalBodyController.offset
-                  : 0,
-              frozenWidth: frozenWidth,
-              frozenHeight: frozenHeight,
-              freezeColumns: frozenColumnCount > 0,
-              freezeRows: frozenRowCount > 0,
-            ),
-          ),
-      ],
+            if (frozenColumnCount > 0 || frozenRowCount > 0)
+              IgnorePointer(
+                child: _FrozenPaneOverlay(
+                  key: const ValueKey('sheet-frozen-overlay'),
+                  page: widget.page,
+                  highlights: widget.highlights,
+                  horizontalOffset: _horizontalBodyController.hasClients
+                      ? _horizontalBodyController.offset
+                      : 0,
+                  verticalOffset: _verticalBodyController.hasClients
+                      ? _verticalBodyController.offset
+                      : 0,
+                  viewportSize: viewportSize,
+                  frozenWidth: frozenWidth,
+                  frozenHeight: frozenHeight,
+                  freezeColumns: frozenColumnCount > 0,
+                  freezeRows: frozenRowCount > 0,
+                ),
+              ),
+          ],
+        );
+      },
     );
   }
 }
@@ -538,6 +562,7 @@ class _FrozenPaneOverlay extends StatelessWidget {
     required this.highlights,
     required this.horizontalOffset,
     required this.verticalOffset,
+    required this.viewportSize,
     required this.frozenWidth,
     required this.frozenHeight,
     required this.freezeColumns,
@@ -548,6 +573,7 @@ class _FrozenPaneOverlay extends StatelessWidget {
   final List<Rect> highlights;
   final double horizontalOffset;
   final double verticalOffset;
+  final Size viewportSize;
   final double frozenWidth;
   final double frozenHeight;
   final bool freezeColumns;
@@ -566,12 +592,12 @@ class _FrozenPaneOverlay extends StatelessWidget {
             child: ClipRect(
               child: Transform.translate(
                 offset: Offset(-horizontalOffset, 0),
-                child: RenderNodeCanvas(
+                child: SheetRenderCanvas(
                   page: page,
                   canvasWidth: page.width,
                   canvasHeight: page.height,
-                  scaleX: 1,
-                  scaleY: 1,
+                  viewportOffset: Offset(horizontalOffset, 0),
+                  viewportSize: Size(viewportSize.width, frozenHeight),
                   highlights: highlights,
                   backgroundColor: Colors.transparent,
                 ),
@@ -587,12 +613,12 @@ class _FrozenPaneOverlay extends StatelessWidget {
             child: ClipRect(
               child: Transform.translate(
                 offset: Offset(0, -verticalOffset),
-                child: RenderNodeCanvas(
+                child: SheetRenderCanvas(
                   page: page,
                   canvasWidth: page.width,
                   canvasHeight: page.height,
-                  scaleX: 1,
-                  scaleY: 1,
+                  viewportOffset: Offset(0, verticalOffset),
+                  viewportSize: Size(frozenWidth, viewportSize.height),
                   highlights: highlights,
                   backgroundColor: Colors.transparent,
                 ),
@@ -605,18 +631,18 @@ class _FrozenPaneOverlay extends StatelessWidget {
             top: 0,
             width: frozenWidth,
             height: frozenHeight,
-            child: ClipRect(
-              child: RenderNodeCanvas(
-                page: page,
-                canvasWidth: page.width,
-                canvasHeight: page.height,
-                scaleX: 1,
-                scaleY: 1,
-                highlights: highlights,
-                backgroundColor: Colors.transparent,
+              child: ClipRect(
+                child: SheetRenderCanvas(
+                  page: page,
+                  canvasWidth: page.width,
+                  canvasHeight: page.height,
+                  viewportOffset: Offset.zero,
+                  viewportSize: Size(frozenWidth, frozenHeight),
+                  highlights: highlights,
+                  backgroundColor: Colors.transparent,
+                ),
               ),
             ),
-          ),
         if (freezeColumns && frozenWidth > 0)
           Positioned(
             left: frozenWidth - 1,

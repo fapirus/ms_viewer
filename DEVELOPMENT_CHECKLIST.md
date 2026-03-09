@@ -996,6 +996,14 @@
   - Tests:
     - `viewer_cli` cache path를 포함한 `cargo test --manifest-path rust/Cargo.toml`
     - `ms_viewer`/`flutter_demo` 회귀 테스트
+- [x] XLSX sheet painter 최적화와 viewport resize 재확장 보정
+  - Scope:
+    - `XLSX` body는 수천 개의 cell widget 대신 sheet 전용 painter로 box/text 레이어를 그린다
+    - body viewport가 커지면 minimum visible window 확장을 다시 평가한다
+    - large-sheet에서 widget tree 폭증과 resize 후 빈 영역 잔존을 줄인다
+  - Tests:
+    - `sheet_viewport` re-expand on resize widget test
+    - `packages/ms_viewer` 전체 회귀 테스트
 
 ### Acceptance
 - [ ] XLSX visual parity acceptance pass

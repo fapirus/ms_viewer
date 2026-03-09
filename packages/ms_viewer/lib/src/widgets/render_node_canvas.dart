@@ -96,6 +96,128 @@ class RenderNodeCanvas extends StatelessWidget {
   }
 }
 
+class SheetRenderCanvas extends StatelessWidget {
+  const SheetRenderCanvas({
+    super.key,
+    required this.page,
+    required this.canvasWidth,
+    required this.canvasHeight,
+    required this.viewportOffset,
+    required this.viewportSize,
+    this.highlights = const [],
+    this.backgroundColor = Colors.transparent,
+    this.clipBehavior = Clip.none,
+    this.onSelectionStart,
+    this.onSelectionUpdate,
+    this.onSelectionEnd,
+  });
+
+  final PageRenderModel page;
+  final double canvasWidth;
+  final double canvasHeight;
+  final Offset viewportOffset;
+  final Size viewportSize;
+  final List<Rect> highlights;
+  final Color backgroundColor;
+  final Clip clipBehavior;
+  final ValueChanged<Offset>? onSelectionStart;
+  final ValueChanged<Offset>? onSelectionUpdate;
+  final VoidCallback? onSelectionEnd;
+
+  @override
+  Widget build(BuildContext context) {
+    final visibleRect = Rect.fromLTWH(
+      viewportOffset.dx,
+      viewportOffset.dy,
+      viewportSize.width,
+      viewportSize.height,
+    );
+    final transformedHighlights = highlights
+        .where((rect) => rect.overlaps(visibleRect))
+        .map(
+          (rect) => Rect.fromLTWH(
+            rect.left,
+            rect.top,
+            rect.width,
+            rect.height,
+          ),
+        )
+        .toList(growable: false);
+    final platform = viewerPlatformForTargetPlatform(defaultTargetPlatform);
+    final visibleImageNodes = <(int, ImageRenderNodeModel)>[];
+    for (var index = 0; index < page.nodes.length; index++) {
+      final node = page.nodes[index];
+      if (node case ImageRenderNodeModel()) {
+        final bounds = Rect.fromLTWH(
+          node.bounds.x,
+          node.bounds.y,
+          node.bounds.width,
+          node.bounds.height,
+        );
+        if (bounds.overlaps(visibleRect)) {
+          visibleImageNodes.add((index, node));
+        }
+      }
+    }
+
+    return SizedBox(
+      width: canvasWidth,
+      height: canvasHeight,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onPanStart: onSelectionStart == null
+            ? null
+            : (details) => onSelectionStart!(details.localPosition),
+        onPanUpdate: onSelectionUpdate == null
+            ? null
+            : (details) => onSelectionUpdate!(details.localPosition),
+        onPanEnd: onSelectionEnd == null ? null : (_) => onSelectionEnd!(),
+        child: RepaintBoundary(
+          child: ColoredBox(
+            color: backgroundColor,
+            child: ClipRect(
+              clipBehavior: clipBehavior,
+              child: Stack(
+                clipBehavior: clipBehavior,
+                children: [
+                  CustomPaint(
+                    size: Size(canvasWidth, canvasHeight),
+                    painter: _SheetNodePainter(
+                      page: page,
+                      platform: platform,
+                      visibleRect: visibleRect,
+                    ),
+                  ),
+                  for (final (index, node) in visibleImageNodes)
+                    Positioned(
+                      key: ValueKey('sheet-image-node-$index'),
+                      left: node.bounds.x,
+                      top: node.bounds.y,
+                      width: node.bounds.width,
+                      height: node.bounds.height,
+                      child: IgnorePointer(
+                        child: _ImageNodeLayer(
+                          node: node,
+                          width: node.bounds.width,
+                          height: node.bounds.height,
+                        ),
+                      ),
+                    ),
+                  IgnorePointer(
+                    child: SelectionHighlightOverlay(
+                      highlights: transformedHighlights,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 List<Widget> buildRenderLayers({
   required PageRenderModel page,
   required ViewerPlatform platform,
@@ -112,6 +234,95 @@ List<Widget> buildRenderLayers({
         scaleY: scaleY,
       ),
   ];
+}
+
+class _SheetNodePainter extends CustomPainter {
+  const _SheetNodePainter({
+    required this.page,
+    required this.platform,
+    required this.visibleRect,
+  });
+
+  final PageRenderModel page;
+  final ViewerPlatform platform;
+  final Rect visibleRect;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    for (final node in page.nodes) {
+      switch (node) {
+        case TextRenderNodeModel():
+          final rect = Rect.fromLTWH(
+            node.bounds.x,
+            node.bounds.y,
+            node.bounds.width,
+            node.bounds.height,
+          );
+          if (!rect.overlaps(visibleRect)) {
+            continue;
+          }
+          final painter = buildRenderTextPainter(
+            node: node,
+            platform: platform,
+            scaleX: 1,
+            scaleY: 1,
+          )..layout();
+          painter.paint(canvas, Offset(node.bounds.x, node.bounds.y));
+        case BoxRenderNodeModel():
+          final rect = Rect.fromLTWH(
+            node.bounds.x,
+            node.bounds.y,
+            node.bounds.width,
+            node.bounds.height,
+          );
+          if (!rect.overlaps(visibleRect)) {
+            continue;
+          }
+          final radius = Radius.circular(node.cornerRadius ?? 0);
+          final fillPaint = Paint()..style = PaintingStyle.fill;
+          final fillColor = parseColor(node.fillColorHex);
+          final gradientEndColor = parseColor(node.gradientEndColorHex);
+          if (fillColor != null && gradientEndColor != null) {
+            fillPaint.shader = _buildLinearGradientShader(
+              rect,
+              fillColor,
+              gradientEndColor,
+              node.gradientAngleDegrees ?? 0,
+            );
+          } else {
+            fillPaint.color = fillColor ?? Colors.transparent;
+          }
+
+          final rrect = RRect.fromRectAndRadius(rect, radius);
+          if (node.cornerRadius != null && node.cornerRadius! > 0) {
+            canvas.drawRRect(rrect, fillPaint);
+          } else {
+            canvas.drawRect(rect, fillPaint);
+          }
+
+          if (node.strokeWidth > 0) {
+            final strokePaint = Paint()
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = node.strokeWidth
+              ..color = parseColor(node.strokeColorHex) ?? Colors.black;
+            if (node.cornerRadius != null && node.cornerRadius! > 0) {
+              canvas.drawRRect(rrect, strokePaint);
+            } else {
+              canvas.drawRect(rect, strokePaint);
+            }
+          }
+        case ImageRenderNodeModel():
+          continue;
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _SheetNodePainter oldDelegate) {
+    return oldDelegate.page != page ||
+        oldDelegate.platform != platform ||
+        oldDelegate.visibleRect != visibleRect;
+  }
 }
 
 Offset _toPageOffset(Offset localPosition, double scaleX, double scaleY) {
