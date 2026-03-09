@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:ms_viewer_platform_interface/ms_viewer_platform_interface.dart';
 
@@ -235,6 +236,49 @@ class _SheetViewportState extends State<SheetViewport> {
     );
   }
 
+  void _handlePointerSignal(PointerSignalEvent event) {
+    if (event is! PointerScrollEvent) {
+      return;
+    }
+
+    GestureBinding.instance.pointerSignalResolver.register(event, (
+      PointerSignalEvent resolvedEvent,
+    ) {
+      if (resolvedEvent is! PointerScrollEvent) {
+        return;
+      }
+
+      var didScroll = false;
+      if (_horizontalBodyController.hasClients &&
+          resolvedEvent.scrollDelta.dx != 0) {
+        final nextHorizontalOffset = (_horizontalBodyController.offset +
+                resolvedEvent.scrollDelta.dx)
+            .clamp(0.0, _horizontalBodyController.position.maxScrollExtent);
+        if ((nextHorizontalOffset - _horizontalBodyController.offset).abs() >
+            0.5) {
+          _horizontalBodyController.jumpTo(nextHorizontalOffset);
+          didScroll = true;
+        }
+      }
+
+      if (_verticalBodyController.hasClients &&
+          resolvedEvent.scrollDelta.dy != 0) {
+        final nextVerticalOffset = (_verticalBodyController.offset +
+                resolvedEvent.scrollDelta.dy)
+            .clamp(0.0, _verticalBodyController.position.maxScrollExtent);
+        if ((nextVerticalOffset - _verticalBodyController.offset).abs() > 0.5) {
+          _verticalBodyController.jumpTo(nextVerticalOffset);
+          didScroll = true;
+        }
+      }
+
+      if (didScroll && mounted) {
+        _maybeRequestWindow();
+        setState(() {});
+      }
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final metrics = _SheetViewportMetrics.fromPage(widget.page);
@@ -243,43 +287,47 @@ class _SheetViewportState extends State<SheetViewport> {
     return LayoutBuilder(
       builder: (context, constraints) {
         _scheduleMinimumWindowExpansion(constraints.biggest, metrics);
-        return DecoratedBox(
-          decoration: BoxDecoration(
-            color: const Color(0xFFF7F9FC),
-            border: Border.all(color: _headerBorder),
-            borderRadius: BorderRadius.circular(14),
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(14),
-            child: Column(
-              children: [
-                SizedBox(
-                  height: _headerExtent,
-                  child: Row(
-                    children: [
-                      _buildCornerCell(),
-                      Expanded(child: _buildColumnHeaders(metrics)),
-                    ],
+        return Listener(
+          behavior: HitTestBehavior.opaque,
+          onPointerSignal: _handlePointerSignal,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: const Color(0xFFF7F9FC),
+              border: Border.all(color: _headerBorder),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(14),
+              child: Column(
+                children: [
+                  SizedBox(
+                    height: _headerExtent,
+                    child: Row(
+                      children: [
+                        _buildCornerCell(),
+                        Expanded(child: _buildColumnHeaders(metrics)),
+                      ],
+                    ),
                   ),
-                ),
-                const Divider(height: 1, thickness: 1, color: _headerBorder),
-                Expanded(
-                  child: Row(
-                    children: [
-                      SizedBox(
-                        width: _cornerExtent,
-                        child: _buildRowHeaders(metrics),
-                      ),
-                      const VerticalDivider(
-                        width: 1,
-                        thickness: 1,
-                        color: _headerBorder,
-                      ),
-                      Expanded(child: _buildScrollableBody(metrics)),
-                    ],
+                  const Divider(height: 1, thickness: 1, color: _headerBorder),
+                  Expanded(
+                    child: Row(
+                      children: [
+                        SizedBox(
+                          width: _cornerExtent,
+                          child: _buildRowHeaders(metrics),
+                        ),
+                        const VerticalDivider(
+                          width: 1,
+                          thickness: 1,
+                          color: _headerBorder,
+                        ),
+                        Expanded(child: _buildScrollableBody(metrics)),
+                      ],
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         );

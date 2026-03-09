@@ -1012,6 +1012,13 @@
   - Tests:
     - xlsx search result contract decode test
     - xlsx search widget integration test
+- [x] XLSX viewport pointer scroll routing 보정
+  - Scope:
+    - sheet viewport가 wheel/trackpad scroll 신호를 직접 소비해 body scroll controller에만 전달한다
+    - 상위 shell/app bar가 spreadsheet body scroll에 반응하지 않도록 분리한다
+  - Tests:
+    - sheet viewport pointer scroll widget test
+    - `packages/ms_viewer` 전체 회귀 테스트
 
 ### Acceptance
 - [ ] XLSX visual parity acceptance pass
@@ -1039,6 +1046,19 @@
     - 최소 placeholder 또는 chart preview 렌더 전략 확정
   - Output:
     - `PROJECT_PLAN.md`와 이 문서의 hardening backlog 동기화
+- [ ] XLSX zoom in/out contract와 viewport scaling support
+  - Scope:
+    - scale factor에 따라 visible budget, overscan, frozen pane overlay를 다시 계산
+    - zoom 상태를 active sheet viewport state와 함께 유지
+- [ ] XLSX active cell keyboard navigation
+  - Scope:
+    - 방향키 기반 active cell 이동
+    - search jump 이후 active cell focus 유지
+    - active cell이 window 밖으로 나가면 viewport를 따라 이동
+- [ ] XLSX multi-cell range selection
+  - Scope:
+    - pointer drag 또는 `Shift + 방향키` 기반 cell range selection
+    - merged cell/frozen pane이 있는 경우 range rect 계산 규칙 확정
 - [ ] password flow end-to-end polish
   - Tests:
     - wrong password retry

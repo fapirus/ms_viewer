@@ -163,6 +163,16 @@
   - target cell이 현재 window 밖이면 viewport를 그 셀 중심으로 재요청한다
   - target cell rect를 highlight한다
 - drag selection도 장기적으로는 text range가 아니라 cell range selection으로 전환한다.
+- zoom in/out은 long-term optional이 아니라 viewport contract가 수용해야 하는 기본 요구사항으로 본다.
+  - visible count 계산
+  - overscan budget
+  - frozen pane overlay
+  모두 scale factor를 기준으로 다시 계산 가능해야 한다.
+- keyboard navigation도 장기적으로 별도 기능이 아니라 spreadsheet UX의 핵심 상호작용으로 본다.
+  - 화살표 키로 active cell 이동
+  - `Shift + 방향키` 기반 range 확장
+  - search jump 이후 active cell focus 유지
+  를 수용할 수 있어야 한다.
 
 ## UX priorities
 
@@ -181,9 +191,12 @@
 - search jump to cell
 - read-only cell detail bar
 - number/date display fidelity
+- wheel/trackpad scroll routing isolation
 
 ### P2
 - keyboard navigation
+- zoom in/out
+- multi-cell range selection
 - resize affordance
 - stacked headers
 - sheet tabs polish

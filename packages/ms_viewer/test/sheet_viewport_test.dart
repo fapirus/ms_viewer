@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ms_viewer/ms_viewer.dart';
@@ -148,6 +150,40 @@ void main() {
     expect(tester.getTopLeft(rowHeader).dy, lessThan(initialRowTop));
     expect(find.byKey(const ValueKey('sheet-corner-cell')), findsOneWidget);
   });
+
+  testWidgets(
+    'sheet viewport consumes pointer scroll signals inside the sheet area',
+    (tester) async {
+      final page = buildSheetPage(columns: 12, rows: 60);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: SizedBox(
+                width: 320,
+                height: 240,
+                child: SheetViewport(page: page),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final rowHeader = find.byKey(const ValueKey('sheet-row-header-8'));
+      final initialRowTop = tester.getTopLeft(rowHeader).dy;
+      final bodyViewport = find.byKey(const ValueKey('sheet-body-viewport'));
+      final bodyCenter = tester.getCenter(bodyViewport);
+      final pointer = TestPointer(1, PointerDeviceKind.mouse);
+
+      await tester.sendEventToBinding(pointer.hover(bodyCenter));
+      await tester.sendEventToBinding(pointer.scroll(const Offset(0, 160)));
+      await tester.pump();
+
+      expect(tester.getTopLeft(rowHeader).dy, lessThan(initialRowTop));
+    },
+  );
 
   testWidgets(
     'sheet viewport paints frozen pane overlay when metadata exists',
