@@ -170,13 +170,13 @@ class SheetRenderCanvas extends StatelessWidget {
         onTapUp: onCellTap == null
             ? null
             : (details) => onCellTap!(details.localPosition),
-        onPanStart: onSelectionStart == null
+        onLongPressStart: onSelectionStart == null
             ? null
             : (details) => onSelectionStart!(details.localPosition),
-        onPanUpdate: onSelectionUpdate == null
+        onLongPressMoveUpdate: onSelectionUpdate == null
             ? null
             : (details) => onSelectionUpdate!(details.localPosition),
-        onPanEnd: onSelectionEnd == null ? null : (_) => onSelectionEnd!(),
+        onLongPressEnd: onSelectionEnd == null ? null : (_) => onSelectionEnd!(),
         child: RepaintBoundary(
           child: ColoredBox(
             color: backgroundColor,

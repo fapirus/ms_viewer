@@ -463,8 +463,12 @@ class _MsDocumentViewState extends State<MsDocumentView> {
                   _sheetFocusNode.requestFocus();
                   widget.controller.selectSheetCellAt(pagePosition);
                 },
-                onSelectionStart: widget.controller.startSelectionAt,
-                onSelectionUpdate: widget.controller.updateSelectionAt,
+                onSelectionStart: (pagePosition) {
+                  _sheetFocusNode.requestFocus();
+                  widget.controller.startSheetRangeSelectionAt(pagePosition);
+                },
+                onSelectionUpdate: widget.controller.updateSheetRangeSelectionAt,
+                onSelectionEnd: widget.controller.endSheetRangeSelection,
                 onWindowRequest: widget.controller.loadSheetWindow,
               ),
             ),

@@ -497,16 +497,7 @@ class MsViewerController extends ChangeNotifier {
       return;
     }
 
-    final selectedCell = page.sheetCells.cast<viewer_platform.SheetCellModel?>()
-        .firstWhere(
-          (cell) =>
-              cell != null &&
-              pagePosition.dx >= cell.bounds.x &&
-              pagePosition.dx <= cell.bounds.x + cell.bounds.width &&
-              pagePosition.dy >= cell.bounds.y &&
-              pagePosition.dy <= cell.bounds.y + cell.bounds.height,
-          orElse: () => null,
-        );
+    final selectedCell = _sheetCellAtPosition(page, pagePosition);
     if (selectedCell == null) {
       return;
     }
@@ -520,6 +511,65 @@ class MsViewerController extends ChangeNotifier {
     _sheetRangeExtentCell = _activeSheetCell;
     _sheetRangePageIndex = pageIndex;
     selectionController.clear();
+    _applySearchHighlightOnly();
+    notifyListeners();
+  }
+
+  void startSheetRangeSelectionAt(Offset pagePosition) {
+    final page = currentPage;
+    final pageIndex = currentPageIndex;
+    if (page == null || pageIndex == null || document?.kind != DocumentKind.xlsx) {
+      return;
+    }
+
+    final selectedCell = _sheetCellAtPosition(page, pagePosition);
+    if (selectedCell == null) {
+      return;
+    }
+
+    _activeSheetCell = SearchSheetCell(
+      row: selectedCell.row,
+      column: selectedCell.column,
+    );
+    _activeSheetCellPageIndex = pageIndex;
+    _sheetRangeAnchorCell = _activeSheetCell;
+    _sheetRangeExtentCell = _activeSheetCell;
+    _sheetRangePageIndex = pageIndex;
+    selectionController.clear();
+    _applySearchHighlightOnly();
+    notifyListeners();
+  }
+
+  void updateSheetRangeSelectionAt(Offset pagePosition) {
+    final page = currentPage;
+    final pageIndex = currentPageIndex;
+    if (page == null ||
+        pageIndex == null ||
+        document?.kind != DocumentKind.xlsx ||
+        _sheetRangeAnchorCell == null) {
+      return;
+    }
+
+    final selectedCell = _sheetCellAtPosition(page, pagePosition);
+    if (selectedCell == null) {
+      return;
+    }
+
+    _activeSheetCell = SearchSheetCell(
+      row: selectedCell.row,
+      column: selectedCell.column,
+    );
+    _activeSheetCellPageIndex = pageIndex;
+    _sheetRangeExtentCell = _activeSheetCell;
+    _sheetRangePageIndex = pageIndex;
+    _applySearchHighlightOnly();
+    notifyListeners();
+  }
+
+  void endSheetRangeSelection() {
+    if (document?.kind != DocumentKind.xlsx) {
+      return;
+    }
     _applySearchHighlightOnly();
     notifyListeners();
   }
@@ -1197,6 +1247,21 @@ class MsViewerController extends ChangeNotifier {
       });
     final first = cells.first;
     return SearchSheetCell(row: first.row, column: first.column);
+  }
+
+  viewer_platform.SheetCellModel? _sheetCellAtPosition(
+    viewer_platform.PageRenderModel page,
+    Offset pagePosition,
+  ) {
+    return page.sheetCells.cast<viewer_platform.SheetCellModel?>().firstWhere(
+      (cell) =>
+          cell != null &&
+          pagePosition.dx >= cell.bounds.x &&
+          pagePosition.dx <= cell.bounds.x + cell.bounds.width &&
+          pagePosition.dy >= cell.bounds.y &&
+          pagePosition.dy <= cell.bounds.y + cell.bounds.height,
+      orElse: () => null,
+    );
   }
 }
 
