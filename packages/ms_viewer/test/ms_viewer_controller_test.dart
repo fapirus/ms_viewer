@@ -282,9 +282,9 @@ void main() {
     expect(capturedPageRequest!.pageIndex, 1);
     expect(capturedPageRequest!.sheetWindow, isNotNull);
     expect(capturedPageRequest!.sheetWindow!.startRow, 1);
-    expect(capturedPageRequest!.sheetWindow!.endRow, 24);
+    expect(capturedPageRequest!.sheetWindow!.endRow, 40);
     expect(capturedPageRequest!.sheetWindow!.startColumn, 1);
-    expect(capturedPageRequest!.sheetWindow!.endColumn, 10);
+    expect(capturedPageRequest!.sheetWindow!.endColumn, 16);
     expect(controller.pageStatus, ViewerPageStatus.ready);
     expect(controller.currentPageIndex, 1);
   });

@@ -19,9 +19,9 @@ class MsViewerController extends ChangeNotifier {
   static const viewer_platform.SheetWindow _defaultSheetWindow =
       viewer_platform.SheetWindow(
         startRow: 1,
-        endRow: 24,
+        endRow: 40,
         startColumn: 1,
-        endColumn: 10,
+        endColumn: 16,
       );
 
   MsViewerController({

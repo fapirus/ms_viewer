@@ -191,8 +191,8 @@ void main() {
   ) async {
     platform.SheetWindow? requestedWindow;
     final page = buildSheetPage(
-      columns: 10,
-      rows: 24,
+      columns: 16,
+      rows: 40,
       effectiveEndRow: 120,
       effectiveEndColumn: 24,
     );
@@ -220,7 +220,7 @@ void main() {
     final bodyViewport = find.byKey(const ValueKey('sheet-body-viewport'));
     await tester.drag(
       bodyViewport,
-      const Offset(-900, -900),
+      const Offset(-2200, -2200),
       warnIfMissed: false,
     );
     await tester.pump();
@@ -275,8 +275,8 @@ void main() {
       expect(requestedWindow, isNotNull);
       expect(requestedWindow!.startRow, 1);
       expect(requestedWindow!.startColumn, 1);
-      expect(requestedWindow!.endRow, greaterThanOrEqualTo(24));
-      expect(requestedWindow!.endColumn, greaterThanOrEqualTo(10));
+      expect(requestedWindow!.endRow, greaterThanOrEqualTo(40));
+      expect(requestedWindow!.endColumn, greaterThanOrEqualTo(16));
     },
   );
 }

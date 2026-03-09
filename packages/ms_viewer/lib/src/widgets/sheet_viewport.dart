@@ -35,10 +35,12 @@ class _SheetViewportState extends State<SheetViewport> {
   static const Color _headerBorder = Color(0xFFD0D7DE);
   static const double _windowShiftRatio = 0.5;
   static const double _requestThreshold = 0.72;
-  static const int _minimumVisibleRows = 24;
-  static const int _minimumVisibleColumns = 10;
-  static const double _targetRowPixels = 30;
-  static const double _targetColumnPixels = 108;
+  static const int _minimumVisibleRows = 40;
+  static const int _minimumVisibleColumns = 16;
+  static const int _initialRowOverscan = 12;
+  static const int _initialColumnOverscan = 4;
+  static const double _targetRowPixels = 24;
+  static const double _targetColumnPixels = 72;
   static const int _excelMaxRows = 1048576;
   static const int _excelMaxColumns = 16384;
 
@@ -278,11 +280,13 @@ class _SheetViewportState extends State<SheetViewport> {
     final currentWindow = viewport.window;
     final desiredRowCount = math.max(
       _minimumVisibleRows,
-      ((viewportSize.height - _headerExtent) / _targetRowPixels).ceil(),
+      ((viewportSize.height - _headerExtent) / _targetRowPixels).ceil() +
+          _initialRowOverscan,
     );
     final desiredColumnCount = math.max(
       _minimumVisibleColumns,
-      ((viewportSize.width - _cornerExtent) / _targetColumnPixels).ceil(),
+      ((viewportSize.width - _cornerExtent) / _targetColumnPixels).ceil() +
+          _initialColumnOverscan,
     );
     final currentRowCount = currentWindow.endRow - currentWindow.startRow + 1;
     final currentColumnCount =

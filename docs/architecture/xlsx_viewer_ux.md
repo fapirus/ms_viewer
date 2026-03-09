@@ -116,9 +116,9 @@
   - frozen pane이 있으면 `topLeftCell`
   - 없으면 `A1`
 - 기본 visible budget:
-  - desktop first pass: `rows 24+`, `columns 10+`
+  - desktop first pass: `rows 40+`, `columns 16+`
   - mobile first pass: `rows 18+`, `columns 6+`
-  - 첫 frame 이후 viewport 크기를 보고 minimum visible window를 한 번 확장한다
+  - 첫 frame 이후 viewport 크기를 보고 visible count + overscan 기준으로 window를 확장한다
 - 기본 overscan:
   - desktop: `+20 rows`, `+4 columns`
   - mobile: `+12 rows`, `+2 columns`
@@ -135,6 +135,8 @@
 - scroll 시 viewport window만 다시 요청
 - full sheet render 금지
 - overscan은 row/column metric 변동을 고려해 보수적으로 유지
+- used range까지만 clamp하지 않고 blank grid도 함께 유지한다
+- 이후 zoom이 들어오면 visible count 계산은 scale factor를 반영하도록 확장한다
 
 ## UX priorities
 

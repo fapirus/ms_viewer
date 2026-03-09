@@ -317,9 +317,9 @@ void main() {
           pageRequests.add(request);
           expect(request.sheetWindow, isNotNull);
           expect(request.sheetWindow!.startRow, 1);
-          expect(request.sheetWindow!.endRow, 24);
+          expect(request.sheetWindow!.endRow, 40);
           expect(request.sheetWindow!.startColumn, 1);
-          expect(request.sheetWindow!.endColumn, 10);
+          expect(request.sheetWindow!.endColumn, 16);
           return platform.GetPageRenderModelSuccess(
             platform.PageRenderModel.fromJson({
               'pageIndex': request.pageIndex,
