@@ -452,25 +452,21 @@ class _MsDocumentViewState extends State<MsDocumentView> {
             focusNode: _sheetFocusNode,
             autofocus: true,
             onKeyEvent: _handleSpreadsheetKeyEvent,
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: _sheetFocusNode.requestFocus,
-              child: SheetViewport(
-                page: page,
-                highlights: widget.controller.pageHighlights,
-                focusRect: activeCellRect,
-                onCellTap: (pagePosition) {
-                  _sheetFocusNode.requestFocus();
-                  widget.controller.selectSheetCellAt(pagePosition);
-                },
-                onSelectionStart: (pagePosition) {
-                  _sheetFocusNode.requestFocus();
-                  widget.controller.startSheetRangeSelectionAt(pagePosition);
-                },
-                onSelectionUpdate: widget.controller.updateSheetRangeSelectionAt,
-                onSelectionEnd: widget.controller.endSheetRangeSelection,
-                onWindowRequest: widget.controller.loadSheetWindow,
-              ),
+            child: SheetViewport(
+              page: page,
+              highlights: widget.controller.pageHighlights,
+              focusRect: activeCellRect,
+              onCellTap: (pagePosition) {
+                _sheetFocusNode.requestFocus();
+                widget.controller.selectSheetCellAt(pagePosition);
+              },
+              onSelectionStart: (pagePosition) {
+                _sheetFocusNode.requestFocus();
+                widget.controller.startSheetRangeSelectionAt(pagePosition);
+              },
+              onSelectionUpdate: widget.controller.updateSheetRangeSelectionAt,
+              onSelectionEnd: widget.controller.endSheetRangeSelection,
+              onWindowRequest: widget.controller.loadSheetWindow,
             ),
           )
         : DocumentPageView(

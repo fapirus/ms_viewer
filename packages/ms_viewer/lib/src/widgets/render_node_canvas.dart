@@ -167,7 +167,7 @@ class SheetRenderCanvas extends StatelessWidget {
       height: canvasHeight,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTapUp: onCellTap == null
+        onTapDown: onCellTap == null
             ? null
             : (details) => onCellTap!(details.localPosition),
         onLongPressStart: onSelectionStart == null
