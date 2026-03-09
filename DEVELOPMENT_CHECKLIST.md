@@ -1036,6 +1036,14 @@
   - Tests:
     - xlsx search result contract decode test
     - xlsx search widget integration test
+- [x] XLSX active cell 선택과 표시
+  - Scope:
+    - sheet body에서 cell을 클릭하면 active cell(row/column)을 선택한다
+    - active cell은 현재 sheet 기준으로 하이라이트되고 UI에 cell address를 표시한다
+    - search jump와 active cell 하이라이트가 같은 모델을 공유한다
+  - Tests:
+    - xlsx controller active cell selection test
+    - xlsx active cell widget integration test
 - [x] XLSX viewport pointer scroll routing 보정
   - Scope:
     - sheet viewport가 wheel/trackpad scroll 신호를 직접 소비해 body scroll controller에만 전달한다

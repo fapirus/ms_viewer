@@ -12,6 +12,7 @@ class SheetViewport extends StatefulWidget {
     super.key,
     required this.page,
     this.highlights = const [],
+    this.onCellTap,
     this.onSelectionStart,
     this.onSelectionUpdate,
     this.onSelectionEnd,
@@ -20,6 +21,7 @@ class SheetViewport extends StatefulWidget {
 
   final PageRenderModel page;
   final List<Rect> highlights;
+  final ValueChanged<Offset>? onCellTap;
   final ValueChanged<Offset>? onSelectionStart;
   final ValueChanged<Offset>? onSelectionUpdate;
   final VoidCallback? onSelectionEnd;
@@ -568,6 +570,7 @@ class _SheetViewportState extends State<SheetViewport> {
                         highlights: widget.highlights,
                         backgroundColor: Colors.white,
                         clipBehavior: Clip.hardEdge,
+                        onCellTap: widget.onCellTap,
                         onSelectionStart: widget.onSelectionStart,
                         onSelectionUpdate: widget.onSelectionUpdate,
                         onSelectionEnd: widget.onSelectionEnd,

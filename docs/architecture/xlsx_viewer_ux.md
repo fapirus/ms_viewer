@@ -168,6 +168,8 @@
 ### Interaction policy
 - `XLSX`는 `DOCX/PPTX`처럼 문자 range selection을 기본 interaction으로 두지 않는다.
 - search 결과는 `sheet + cell(row/column)` 기준으로 반환하는 편이 맞다.
+- active cell은 `sheet + row + column`으로 유지한다.
+- active cell은 search jump, pointer click, 이후 keyboard navigation의 공통 기준이 된다.
 - search 결과 선택 시:
   - 해당 sheet를 연다
   - target cell이 현재 window 밖이면 viewport를 그 셀 중심으로 재요청한다

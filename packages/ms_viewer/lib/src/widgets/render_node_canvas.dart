@@ -107,6 +107,7 @@ class SheetRenderCanvas extends StatelessWidget {
     this.highlights = const [],
     this.backgroundColor = Colors.transparent,
     this.clipBehavior = Clip.none,
+    this.onCellTap,
     this.onSelectionStart,
     this.onSelectionUpdate,
     this.onSelectionEnd,
@@ -120,6 +121,7 @@ class SheetRenderCanvas extends StatelessWidget {
   final List<Rect> highlights;
   final Color backgroundColor;
   final Clip clipBehavior;
+  final ValueChanged<Offset>? onCellTap;
   final ValueChanged<Offset>? onSelectionStart;
   final ValueChanged<Offset>? onSelectionUpdate;
   final VoidCallback? onSelectionEnd;
@@ -165,6 +167,9 @@ class SheetRenderCanvas extends StatelessWidget {
       height: canvasHeight,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
+        onTapUp: onCellTap == null
+            ? null
+            : (details) => onCellTap!(details.localPosition),
         onPanStart: onSelectionStart == null
             ? null
             : (details) => onSelectionStart!(details.localPosition),

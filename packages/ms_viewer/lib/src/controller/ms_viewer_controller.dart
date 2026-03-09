@@ -48,6 +48,8 @@ class MsViewerController extends ChangeNotifier {
   viewer_platform.SheetWindow _currentSheetWindow = _defaultSheetWindow;
   bool _sheetWindowLoading = false;
   List<Rect> pageHighlights = const [];
+  SearchSheetCell? _activeSheetCell;
+  int? _activeSheetCellPageIndex;
   final DocumentSearchController searchController = DocumentSearchController();
   final SelectionDragController selectionController = SelectionDragController();
   PasswordPromptState passwordPromptState = const PasswordPromptState(
@@ -71,6 +73,15 @@ class MsViewerController extends ChangeNotifier {
 
   viewer_platform.SheetWindow get currentSheetWindow => _currentSheetWindow;
   bool get isSheetWindowLoading => _sheetWindowLoading;
+  SearchSheetCell? get activeSheetCell =>
+      _activeSheetCellPageIndex == currentPageIndex ? _activeSheetCell : null;
+  String? get activeSheetCellLabel {
+    final cell = activeSheetCell;
+    if (cell == null) {
+      return null;
+    }
+    return '${_columnLabel(cell.column)}${cell.row}';
+  }
 
   viewer_platform.PageRenderModel? pageForIndex(int pageIndex) {
     return _pageCache[pageIndex];
@@ -90,6 +101,8 @@ class MsViewerController extends ChangeNotifier {
     _loadingPageIndexes.clear();
     pageError = null;
     pageHighlights = const [];
+    _activeSheetCell = null;
+    _activeSheetCellPageIndex = null;
     pageStatus = ViewerPageStatus.idle;
     _currentSheetWindow = _defaultSheetWindow;
     _sheetWindowLoading = false;
@@ -113,6 +126,8 @@ class MsViewerController extends ChangeNotifier {
     _loadingPageIndexes.clear();
     pageError = null;
     pageHighlights = const [];
+    _activeSheetCell = null;
+    _activeSheetCellPageIndex = null;
     pageStatus = ViewerPageStatus.idle;
     _currentSheetWindow = _defaultSheetWindow;
     _sheetWindowLoading = false;
@@ -147,6 +162,8 @@ class MsViewerController extends ChangeNotifier {
         _loadingPageIndexes.clear();
         pageError = null;
         pageHighlights = const [];
+        _activeSheetCell = null;
+        _activeSheetCellPageIndex = null;
         pageStatus = ViewerPageStatus.idle;
         searchController.clear();
         selectionController.clear();
@@ -188,7 +205,7 @@ class MsViewerController extends ChangeNotifier {
       );
     }
     pageError = null;
-    pageHighlights = const [];
+    _applySearchHighlightOnly();
     pageStatus = ViewerPageStatus.ready;
     _sheetWindowLoading = false;
     notifyListeners();
@@ -273,6 +290,7 @@ class MsViewerController extends ChangeNotifier {
         );
       }
       pageError = null;
+      _applySearchHighlightOnly();
       pageStatus = ViewerPageStatus.ready;
     } else {
       _currentSheetWindow = previousWindow;
@@ -437,6 +455,37 @@ class MsViewerController extends ChangeNotifier {
     notifyListeners();
   }
 
+  void selectSheetCellAt(Offset pagePosition) {
+    final page = currentPage;
+    final pageIndex = currentPageIndex;
+    if (page == null || pageIndex == null || document?.kind != DocumentKind.xlsx) {
+      return;
+    }
+
+    final selectedCell = page.sheetCells.cast<viewer_platform.SheetCellModel?>()
+        .firstWhere(
+          (cell) =>
+              cell != null &&
+              pagePosition.dx >= cell.bounds.x &&
+              pagePosition.dx <= cell.bounds.x + cell.bounds.width &&
+              pagePosition.dy >= cell.bounds.y &&
+              pagePosition.dy <= cell.bounds.y + cell.bounds.height,
+          orElse: () => null,
+        );
+    if (selectedCell == null) {
+      return;
+    }
+
+    _activeSheetCell = SearchSheetCell(
+      row: selectedCell.row,
+      column: selectedCell.column,
+    );
+    _activeSheetCellPageIndex = pageIndex;
+    selectionController.clear();
+    _applySearchHighlightOnly();
+    notifyListeners();
+  }
+
   Future<void> _syncSearchHighlights() async {
     final result = searchController.currentResult;
     if (result == null) {
@@ -446,6 +495,8 @@ class MsViewerController extends ChangeNotifier {
 
     final descriptor = document;
     if (descriptor?.kind == DocumentKind.xlsx && result.sheetCell != null) {
+      _activeSheetCell = result.sheetCell;
+      _activeSheetCellPageIndex = result.pageIndex;
       if (currentPageIndex != result.pageIndex) {
         await loadPage(result.pageIndex);
       }
@@ -460,58 +511,6 @@ class MsViewerController extends ChangeNotifier {
   }
 
   void _applySearchHighlightOnly() {
-    final page = currentPage;
-    final result = searchController.currentResult;
-    if (page == null ||
-        result == null ||
-        currentPageIndex != result.pageIndex) {
-      pageHighlights = const [];
-      return;
-    }
-
-    if (document?.kind == DocumentKind.xlsx && result.sheetCell != null) {
-      pageHighlights = page.sheetCells
-          .where(
-            (cell) =>
-                cell.row == result.sheetCell!.row &&
-                cell.column == result.sheetCell!.column,
-          )
-          .map(
-            (cell) => Rect.fromLTWH(
-              cell.bounds.x,
-              cell.bounds.y,
-              cell.bounds.width,
-              cell.bounds.height,
-            ),
-          )
-          .toList(growable: false);
-      _applySelectionHighlights();
-      return;
-    }
-
-    final highlights = <Rect>[];
-    for (final node in page.nodes) {
-      if (node is! viewer_platform.TextRenderNodeModel) {
-        continue;
-      }
-      if (_rangesOverlap(
-        node.range.start,
-        node.range.end,
-        result.start,
-        result.end,
-      )) {
-        highlights.add(
-          Rect.fromLTWH(
-            node.bounds.x,
-            node.bounds.y,
-            node.bounds.width,
-            node.bounds.height,
-          ),
-        );
-      }
-    }
-
-    pageHighlights = highlights;
     _applySelectionHighlights();
   }
 
@@ -608,32 +607,91 @@ class MsViewerController extends ChangeNotifier {
   }
 
   void _applySelectionHighlights() {
-    final selectionRect = selectionController.selectionRect;
-    if (selectionRect == null || currentPage == null) {
+    final page = currentPage;
+    if (page == null) {
+      pageHighlights = const [];
       return;
     }
 
-    final selectionHighlights = <Rect>[];
-    for (final node in currentPage!.nodes) {
-      if (node is! viewer_platform.TextRenderNodeModel) {
-        continue;
-      }
-      final bounds = Rect.fromLTWH(
-        node.bounds.x,
-        node.bounds.y,
-        node.bounds.width,
-        node.bounds.height,
-      );
-      if (selectionRect.overlaps(bounds)) {
-        selectionHighlights.add(bounds);
+    final highlights = <Rect>[];
+
+    final activeCell = activeSheetCell;
+    if (activeCell != null) {
+      for (final cell in page.sheetCells) {
+        if (cell.row == activeCell.row && cell.column == activeCell.column) {
+          highlights.add(
+            Rect.fromLTWH(
+              cell.bounds.x,
+              cell.bounds.y,
+              cell.bounds.width,
+              cell.bounds.height,
+            ),
+          );
+        }
       }
     }
 
-    final searchHighlights = pageHighlights
-        .where((highlight) => !selectionHighlights.contains(highlight))
-        .toList(growable: true);
-    searchHighlights.addAll(selectionHighlights);
-    pageHighlights = searchHighlights;
+    final result = searchController.currentResult;
+    if (result != null && currentPageIndex == result.pageIndex) {
+      if (document?.kind == DocumentKind.xlsx && result.sheetCell != null) {
+        for (final cell in page.sheetCells) {
+          if (cell.row == result.sheetCell!.row &&
+              cell.column == result.sheetCell!.column) {
+            final bounds = Rect.fromLTWH(
+              cell.bounds.x,
+              cell.bounds.y,
+              cell.bounds.width,
+              cell.bounds.height,
+            );
+            if (!highlights.contains(bounds)) {
+              highlights.add(bounds);
+            }
+          }
+        }
+      } else {
+        for (final node in page.nodes) {
+          if (node is! viewer_platform.TextRenderNodeModel) {
+            continue;
+          }
+          if (_rangesOverlap(
+            node.range.start,
+            node.range.end,
+            result.start,
+            result.end,
+          )) {
+            final bounds = Rect.fromLTWH(
+              node.bounds.x,
+              node.bounds.y,
+              node.bounds.width,
+              node.bounds.height,
+            );
+            if (!highlights.contains(bounds)) {
+              highlights.add(bounds);
+            }
+          }
+        }
+      }
+    }
+
+    final selectionRect = selectionController.selectionRect;
+    if (selectionRect != null) {
+      for (final node in page.nodes) {
+        if (node is! viewer_platform.TextRenderNodeModel) {
+          continue;
+        }
+        final bounds = Rect.fromLTWH(
+          node.bounds.x,
+          node.bounds.y,
+          node.bounds.width,
+          node.bounds.height,
+        );
+        if (selectionRect.overlaps(bounds) && !highlights.contains(bounds)) {
+          highlights.add(bounds);
+        }
+      }
+    }
+
+    pageHighlights = highlights;
   }
 
   Future<void> submitPassword(String password) async {
@@ -1035,4 +1093,15 @@ bool _sameSheetWindowBounds(
       a.endRow == b.endRow &&
       a.startColumn == b.startColumn &&
       a.endColumn == b.endColumn;
+}
+
+String _columnLabel(int index) {
+  var value = index;
+  final buffer = StringBuffer();
+  while (value > 0) {
+    final remainder = (value - 1) % 26;
+    buffer.writeCharCode(65 + remainder);
+    value = (value - 1) ~/ 26;
+  }
+  return buffer.toString().split('').reversed.join();
 }

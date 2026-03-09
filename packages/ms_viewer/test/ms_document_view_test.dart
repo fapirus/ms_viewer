@@ -361,6 +361,44 @@ void main() {
                 {'nodeIndex': 1, 'charIndex': 0, 'x': 24.0, 'y': 10.0},
                 {'nodeIndex': 1, 'charIndex': 6, 'x': 72.0, 'y': 10.0},
               ],
+              'sheetCells': [
+                {
+                  'row': 1,
+                  'column': 1,
+                  'bounds': {
+                    'x': 0.0,
+                    'y': 0.0,
+                    'width': 140.0,
+                    'height': 40.0,
+                  },
+                },
+                {
+                  'row': 1,
+                  'column': 2,
+                  'bounds': {
+                    'x': 140.0,
+                    'y': 0.0,
+                    'width': 140.0,
+                    'height': 40.0,
+                  },
+                },
+              ],
+              'sheetViewport': {
+                'window': {
+                  'startRow': request.sheetWindow!.startRow,
+                  'endRow': request.sheetWindow!.endRow,
+                  'startColumn': request.sheetWindow!.startColumn,
+                  'endColumn': request.sheetWindow!.endColumn,
+                },
+                'effectiveBounds': {
+                  'startRow': 1,
+                  'endRow': 120,
+                  'startColumn': 1,
+                  'endColumn': 24,
+                },
+                'visibleRows': [1],
+                'visibleColumns': [1, 2],
+              },
             }),
           );
         },
@@ -403,6 +441,91 @@ void main() {
       containsAll([0, 1]),
     );
     expect(find.text('Detail · 2 sheets'), findsOneWidget);
+  });
+
+  testWidgets('xlsx sheet tap selects active cell and shows label', (
+    tester,
+  ) async {
+    final controller = MsViewerController(
+      platform: _FakeMsViewerPlatform(
+        onOpen: (_) async => platform.OpenDocumentOpened(
+          const platform.OpenDocumentSuccess(
+            documentId: 'sheet_001',
+            kind: platform.DocumentKind.xlsx,
+            title: 'budget.xlsx',
+            pageCount: 1,
+            capabilities: platform.DocumentCapabilities(
+              search: true,
+              textSelection: true,
+              passwordProtected: false,
+            ),
+          ),
+        ),
+        onGetPage: (_) async => platform.GetPageRenderModelSuccess(
+          platform.PageRenderModel.fromJson({
+            'pageIndex': 0,
+            'width': 280.0,
+            'height': 160.0,
+            'nodes': const [],
+            'selectionAnchors': const [],
+            'sheetCells': [
+              {
+                'row': 1,
+                'column': 1,
+                'bounds': {'x': 0.0, 'y': 0.0, 'width': 140.0, 'height': 40.0},
+              },
+              {
+                'row': 1,
+                'column': 2,
+                'bounds': {
+                  'x': 140.0,
+                  'y': 0.0,
+                  'width': 140.0,
+                  'height': 40.0,
+                },
+              },
+            ],
+            'sheetViewport': {
+              'window': {
+                'startRow': 1,
+                'endRow': 48,
+                'startColumn': 1,
+                'endColumn': 16,
+              },
+              'effectiveBounds': {
+                'startRow': 1,
+                'endRow': 120,
+                'startColumn': 1,
+                'endColumn': 24,
+              },
+              'visibleRows': [1],
+              'visibleColumns': [1, 2],
+            },
+          }),
+        ),
+      ),
+    );
+
+    await controller.openDocument(
+      const platform.OpenDocumentRequest(
+        source: platform.OpenDocumentSource.path('/tmp/budget.xlsx'),
+      ),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: MsDocumentView(controller: controller)),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final bodyCanvas = find.byKey(const ValueKey('sheet-body-canvas'));
+    await tester.tapAt(tester.getTopLeft(bodyCanvas) + const Offset(170, 20));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('xlsx-active-cell-label')), findsOneWidget);
+    expect(find.text('Cell B1'), findsOneWidget);
+    expect(controller.pageHighlights, isNotEmpty);
   });
 
   testWidgets('view shows xlsx sheet fetch error state', (tester) async {
@@ -668,7 +791,7 @@ void main() {
     expect(controller.pageHighlights, isNotEmpty);
   });
 
-  testWidgets('xlsx sheet text selection integration widget test', (
+  testWidgets('xlsx sheet active cell integration widget test', (
     tester,
   ) async {
     final controller = MsViewerController(
@@ -687,7 +810,19 @@ void main() {
           ),
         ),
         onGetPage: (_) async =>
-            _pageModel(_pageJson(pageIndex: 0, text: 'North Region 420')),
+            _pageModel(
+              _pageJson(
+                pageIndex: 0,
+                text: 'North Region 420',
+                sheetWindow: const platform.SheetWindow(
+                  startRow: 1,
+                  endRow: 48,
+                  startColumn: 1,
+                  endColumn: 16,
+                ),
+                sheetCell: const {'row': 3, 'column': 2},
+              ),
+            ),
       ),
     );
 
@@ -709,17 +844,16 @@ void main() {
     expect(pageFinder, findsOneWidget);
     final pageRect = tester.getRect(pageFinder);
 
-    final gesture = await tester.startGesture(
+    await tester.tapAt(
       Offset(
         pageRect.left + pageRect.width * 0.18,
         pageRect.top + pageRect.height * 0.12,
       ),
     );
-    await gesture.moveBy(Offset(pageRect.width * 0.4, pageRect.height * 0.05));
-    await tester.pump();
+    await tester.pumpAndSettle();
 
     expect(controller.pageHighlights, isNotEmpty);
-    expect(find.byType(Positioned), findsWidgets);
+    expect(find.text('Cell B3'), findsOneWidget);
   });
 
   testWidgets('search action integration widget test', (tester) async {

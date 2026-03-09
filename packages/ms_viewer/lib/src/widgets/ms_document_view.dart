@@ -341,6 +341,7 @@ class _MsDocumentViewState extends State<MsDocumentView> {
           orElse: () => sheetTabs.isEmpty ? null : sheetTabs.first,
         )
         ?.title;
+    final activeCellLabel = widget.controller.activeSheetCellLabel;
     return Column(
       key: const ValueKey('xlsx-sheet-shell'),
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -357,6 +358,14 @@ class _MsDocumentViewState extends State<MsDocumentView> {
                     ? '$pageCount sheets'
                     : '$activeSheetTitle · ${sheetTabs.length} sheets',
               ),
+              if (activeCellLabel != null) ...[
+                const SizedBox(height: 4),
+                Text(
+                  'Cell $activeCellLabel',
+                  key: const ValueKey('xlsx-active-cell-label'),
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ],
               const SizedBox(height: 12),
               Row(
                 children: [
@@ -435,6 +444,7 @@ class _MsDocumentViewState extends State<MsDocumentView> {
         ? SheetViewport(
             page: page,
             highlights: widget.controller.pageHighlights,
+            onCellTap: widget.controller.selectSheetCellAt,
             onSelectionStart: widget.controller.startSelectionAt,
             onSelectionUpdate: widget.controller.updateSelectionAt,
             onWindowRequest: widget.controller.loadSheetWindow,
