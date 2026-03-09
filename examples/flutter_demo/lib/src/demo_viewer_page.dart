@@ -121,7 +121,8 @@ class _DemoViewerPageState extends State<DemoViewerPage> {
         ),
         child: Column(
           children: [
-            _buildViewerChrome(context),
+            if (widget.entry.kind != DocumentKind.xlsx)
+              _buildViewerChrome(context),
             Expanded(
               child: widget.entry.requiresPassword
                   ? _buildLockedPreview(context)

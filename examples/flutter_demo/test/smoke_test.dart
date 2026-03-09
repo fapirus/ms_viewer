@@ -286,6 +286,7 @@ void main() {
       platform.DocumentSourceKind.bytesBase64,
     );
     expect(find.text('xlsx_basic_grid.xlsx'), findsWidgets);
+    expect(find.text('Bundled fixture'), findsNothing);
   });
 }
 

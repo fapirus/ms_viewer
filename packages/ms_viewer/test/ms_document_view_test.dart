@@ -376,10 +376,15 @@ void main() {
     expect(find.text('budget.xlsx'), findsOneWidget);
     expect(find.text('2 sheets'), findsOneWidget);
     expect(find.text('Sheet 1 / 2'), findsOneWidget);
+    expect(find.byKey(const ValueKey('xlsx-sheet-shell')), findsOneWidget);
     expect(find.byType(SheetViewport), findsOneWidget);
     expect(find.byKey(const ValueKey('sheet-column-header-1')), findsOneWidget);
     expect(find.byKey(const ValueKey('sheet-row-header-1')), findsOneWidget);
     expect(find.widgetWithText(OutlinedButton, 'Next'), findsOneWidget);
+    expect(
+      tester.getSize(find.byKey(const ValueKey('xlsx-sheet-shell'))).height,
+      greaterThan(300),
+    );
   });
 
   testWidgets('view shows xlsx sheet fetch error state', (tester) async {

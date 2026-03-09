@@ -903,7 +903,7 @@
   - Tests:
     - pptx continuous scroll widget test
     - slide list smoke test
-- [ ] XLSX full-screen viewport shell 적용
+- [x] XLSX full-screen viewport shell 적용
   - Scope:
     - side rail과 preview layout 없이 sheet viewport를 문서 전용 화면으로 제공
     - row/column header와 2D viewport를 주 surface로 둔다

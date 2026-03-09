@@ -5,6 +5,7 @@ import 'package:ms_viewer_platform_interface/ms_viewer_platform_interface.dart';
 
 import '../controller/ms_viewer_controller.dart';
 import '../models/document_descriptor.dart' as document_model;
+import '../models/search_result.dart';
 import 'document_page_view.dart';
 import 'search_result_list.dart';
 import 'sheet_viewport.dart';
@@ -97,6 +98,16 @@ class _MsDocumentViewState extends State<MsDocumentView> {
         : widget.previewPages.first;
     final page = fetchedPage ?? fallbackPreviewPage;
     final searchResults = widget.controller.searchController.results;
+    if (isSpreadsheet) {
+      return _buildSpreadsheetReadyState(
+        title: title,
+        pageCount: pageCount,
+        currentLabel: currentLabel,
+        page: page,
+        searchResults: searchResults,
+      );
+    }
+
     return Padding(
       padding: const EdgeInsets.all(24),
       child: Column(
@@ -302,6 +313,119 @@ class _MsDocumentViewState extends State<MsDocumentView> {
     );
   }
 
+  Widget _buildSpreadsheetReadyState({
+    required String title,
+    required int pageCount,
+    required String currentLabel,
+    required PageRenderModel? page,
+    required List<SearchResult> searchResults,
+  }) {
+    return Column(
+      key: const ValueKey('xlsx-sheet-shell'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title, style: Theme.of(context).textTheme.titleMedium),
+              const SizedBox(height: 6),
+              Text('$pageCount sheets'),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: widget.controller.canGoToPreviousPage
+                        ? () => unawaited(widget.controller.goToPreviousPage())
+                        : null,
+                    icon: const Icon(Icons.chevron_left),
+                    label: const Text('Previous'),
+                  ),
+                  const SizedBox(width: 8),
+                  OutlinedButton.icon(
+                    onPressed: widget.controller.canGoToNextPage
+                        ? () => unawaited(widget.controller.goToNextPage())
+                        : null,
+                    icon: const Icon(Icons.chevron_right),
+                    label: const Text('Next'),
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    pageCount == 0
+                        ? '$currentLabel 0 / 0'
+                        : '$currentLabel ${(widget.controller.currentPageIndex ?? 0) + 1} / $pageCount',
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _searchController,
+                      textInputAction: TextInputAction.search,
+                      onSubmitted: _submitSearch,
+                      decoration: const InputDecoration(
+                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.search),
+                        hintText: 'Search in document',
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  FilledButton(
+                    onPressed: () => _submitSearch(_searchController.text),
+                    child: const Text('Search'),
+                  ),
+                ],
+              ),
+              if (_searchController.text.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                SizedBox(
+                  height: 120,
+                  child: SearchResultList(
+                    results: searchResults,
+                    currentIndex:
+                        widget.controller.searchController.currentIndex,
+                    onTap: (index) {
+                      unawaited(widget.controller.selectSearchResult(index));
+                    },
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+        Expanded(
+          child: switch (widget.controller.pageStatus) {
+            ViewerPageStatus.loading => const Center(
+              child: CircularProgressIndicator(),
+            ),
+            ViewerPageStatus.error => Center(
+              child: Text(
+                widget.controller.pageError?.message ??
+                    'Failed to load sheet preview.',
+                textAlign: TextAlign.center,
+              ),
+            ),
+            ViewerPageStatus.ready when page != null => _buildViewerSurface(
+              page,
+              true,
+            ),
+            _ when page != null => _buildViewerSurface(page, true),
+            _ => const Center(
+              child: Text(
+                'Viewer placeholder: render model not loaded',
+                textAlign: TextAlign.center,
+              ),
+            ),
+          },
+        ),
+      ],
+    );
+  }
+
   Widget _buildViewerSurface(PageRenderModel page, bool isSpreadsheet) {
     final viewer = isSpreadsheet
         ? SheetViewport(
@@ -319,7 +443,7 @@ class _MsDocumentViewState extends State<MsDocumentView> {
           );
 
     if (isSpreadsheet) {
-      return viewer;
+      return ColoredBox(color: Colors.white, child: viewer);
     }
 
     return Center(
