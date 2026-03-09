@@ -41,10 +41,12 @@ fn review_fixture_basic_grid_opens_and_supports_render_and_search() {
     assert!(text_nodes.iter().any(|node| node.text == "North Region"));
     assert!(text_nodes.iter().any(|node| node.text == "340"));
 
-    let pages = build_search_pages(&archive, &workbook, &shared_strings).expect("search pages");
+    let pages =
+        build_search_pages(&archive, &workbook, &shared_strings, &styles).expect("search pages");
     assert_eq!(pages.len(), 2);
     assert_eq!(pages[0].text, "Revenue\tNorth Region\n120\t340");
-    let matches = search_workbook(&archive, &workbook, &shared_strings, "status").expect("search");
+    let matches =
+        search_workbook(&archive, &workbook, &shared_strings, &styles, "status").expect("search");
     assert_eq!(matches.len(), 1);
     assert_eq!(matches[0].page_index, 1);
 }

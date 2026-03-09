@@ -908,7 +908,7 @@
   - Tests:
     - effective bounds regression fixture
     - overscan stability regression fixture
-- [ ] XLSX number/date format 및 기본 타이포그래피 보정
+- [x] XLSX number/date format 및 기본 타이포그래피 보정
   - Tests:
     - number/date display regression fixture
     - mixed width text regression fixture

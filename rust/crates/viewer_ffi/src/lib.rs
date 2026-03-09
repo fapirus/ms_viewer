@@ -405,7 +405,14 @@ fn search_document_pages_impl(
         DocumentKind::Xlsx => {
             let workbook = parse_xlsx(&archive)?;
             let shared_strings = parse_shared_strings(&archive, &workbook)?;
-            search_workbook(&archive, &workbook, &shared_strings, &request.query)
+            let styles = parse_cell_style_subset(&archive, &workbook)?;
+            search_workbook(
+                &archive,
+                &workbook,
+                &shared_strings,
+                &styles,
+                &request.query,
+            )
         }
     }
 }

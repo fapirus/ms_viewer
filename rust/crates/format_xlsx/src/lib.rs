@@ -490,6 +490,7 @@ pub fn build_sheet_render_model(
         metrics,
         merges,
         styles,
+        workbook.date_1904,
         full_bounds,
         full_bounds,
         frozen_panes.pane.as_ref(),
@@ -555,6 +556,7 @@ pub fn build_visible_window_render_model(
         metrics,
         merges,
         styles,
+        workbook.date_1904,
         (
             render_start_row,
             render_start_column,
@@ -575,6 +577,7 @@ pub fn build_search_pages(
     archive: &OoxmlArchive,
     workbook: &XlsxWorkbook,
     shared_strings: &[String],
+    styles: &XlsxStyleCatalog,
 ) -> Result<Vec<SearchPage>, ViewerError> {
     let worksheet_cells = parse_worksheet_cells(archive, workbook, shared_strings)?;
     let mut pages = Vec::new();
@@ -599,7 +602,12 @@ pub fn build_search_pages(
                 current_row = Some(cell.row);
             }
 
-            if let Some(display_text) = format_cell_display_value(&cell.value) {
+            let style = cell
+                .style_index
+                .and_then(|index| styles.cell_formats.get(index as usize));
+            if let Some(display_text) =
+                format_cell_display_value(&cell.value, style, workbook.date_1904)
+            {
                 if !display_text.trim().is_empty() {
                     row_values.push(display_text);
                 }
@@ -622,9 +630,10 @@ pub fn search_workbook(
     archive: &OoxmlArchive,
     workbook: &XlsxWorkbook,
     shared_strings: &[String],
+    styles: &XlsxStyleCatalog,
     query: &str,
 ) -> Result<Vec<SearchMatch>, ViewerError> {
-    let pages = build_search_pages(archive, workbook, shared_strings)?;
+    let pages = build_search_pages(archive, workbook, shared_strings, styles)?;
     Ok(search_pages(&pages, query))
 }
 
@@ -891,6 +900,7 @@ fn render_sheet_model(
     metrics: &WorksheetGridMetrics,
     merges: &WorksheetMergedCells,
     styles: &XlsxStyleCatalog,
+    date_1904: bool,
     render_bounds: (u32, u32, u32, u32),
     effective_bounds: (u32, u32, u32, u32),
     frozen_pane: Option<&XlsxFrozenPane>,
@@ -979,7 +989,8 @@ fn render_sheet_model(
             }));
 
             if let Some(cell) = cell {
-                if let Some(display_text) = format_cell_display_value(&cell.value) {
+                if let Some(display_text) = format_cell_display_value(&cell.value, style, date_1904)
+                {
                     if !display_text.is_empty() {
                         let text_style = resolve_text_style(styles, style);
                         let text_bounds =
@@ -1640,16 +1651,260 @@ fn build_text_selection_anchors(
     anchors
 }
 
-fn format_cell_display_value(value: &Option<XlsxCellValue>) -> Option<String> {
+fn format_cell_display_value(
+    value: &Option<XlsxCellValue>,
+    format: Option<&XlsxCellFormat>,
+    date_1904: bool,
+) -> Option<String> {
     match value {
         Some(XlsxCellValue::Text(text)) => Some(text.clone()),
-        Some(XlsxCellValue::Number(number)) => Some(number.clone()),
+        Some(XlsxCellValue::Number(number)) => Some(format_number_cell_value(
+            number,
+            effective_number_format_code(format),
+            date_1904,
+        )),
         Some(XlsxCellValue::Boolean(value)) => {
             Some(if *value { "TRUE" } else { "FALSE" }.to_string())
         }
         Some(XlsxCellValue::Error(error)) => Some(error.clone()),
         None => None,
     }
+}
+
+fn effective_number_format_code(format: Option<&XlsxCellFormat>) -> Option<&str> {
+    let format = format?;
+    format
+        .number_format_code
+        .as_deref()
+        .or_else(|| builtin_number_format_code(format.num_fmt_id))
+}
+
+fn builtin_number_format_code(num_fmt_id: u32) -> Option<&'static str> {
+    match num_fmt_id {
+        1 => Some("0"),
+        2 => Some("0.00"),
+        3 => Some("#,##0"),
+        4 => Some("#,##0.00"),
+        9 => Some("0%"),
+        10 => Some("0.00%"),
+        11 => Some("0.00E+00"),
+        12 => Some("# ?/?"),
+        13 => Some("# ??/??"),
+        14 => Some("m/d/yy"),
+        15 => Some("d-mmm-yy"),
+        16 => Some("d-mmm"),
+        17 => Some("mmm-yy"),
+        18 => Some("h:mm AM/PM"),
+        19 => Some("h:mm:ss AM/PM"),
+        20 => Some("h:mm"),
+        21 => Some("h:mm:ss"),
+        22 => Some("m/d/yy h:mm"),
+        37 => Some("#,##0 ;(#,##0)"),
+        38 => Some("#,##0 ;[Red](#,##0)"),
+        39 => Some("#,##0.00;(#,##0.00)"),
+        40 => Some("#,##0.00;[Red](#,##0.00)"),
+        45 => Some("mm:ss"),
+        46 => Some("[h]:mm:ss"),
+        47 => Some("mmss.0"),
+        48 => Some("##0.0E+0"),
+        49 => Some("@"),
+        _ => None,
+    }
+}
+
+fn format_number_cell_value(number: &str, format_code: Option<&str>, date_1904: bool) -> String {
+    let Ok(value) = number.parse::<f64>() else {
+        return number.to_string();
+    };
+
+    let Some(format_code) = format_code else {
+        return normalize_numeric_string(number);
+    };
+    let primary_section = format_code.split(';').next().unwrap_or(format_code).trim();
+    let normalized = normalize_format_code(primary_section);
+
+    if is_date_like_format(&normalized) {
+        return format_excel_date(value, &normalized, date_1904)
+            .unwrap_or_else(|| normalize_numeric_string(number));
+    }
+    if normalized.contains('%') {
+        return format_percentage(value, &normalized);
+    }
+    if normalized.contains('0') || normalized.contains('#') {
+        return format_decimal_number(value, &normalized);
+    }
+
+    normalize_numeric_string(number)
+}
+
+fn normalize_numeric_string(number: &str) -> String {
+    if let Ok(value) = number.parse::<f64>() {
+        if value.fract().abs() < f64::EPSILON {
+            return format!("{}", value as i64);
+        }
+    }
+    number.to_string()
+}
+
+fn normalize_format_code(code: &str) -> String {
+    let mut normalized = String::new();
+    let mut chars = code.chars().peekable();
+    let mut in_quotes = false;
+
+    while let Some(character) = chars.next() {
+        match character {
+            '"' => {
+                in_quotes = !in_quotes;
+            }
+            '\\' | '_' => {
+                let _ = chars.next();
+            }
+            '[' if !in_quotes => {
+                for next in chars.by_ref() {
+                    if next == ']' {
+                        break;
+                    }
+                }
+            }
+            '*' if !in_quotes => {
+                let _ = chars.next();
+            }
+            _ if !in_quotes => normalized.push(character),
+            _ => {}
+        }
+    }
+
+    normalized.trim().to_string()
+}
+
+fn is_date_like_format(code: &str) -> bool {
+    let lower = code.to_ascii_lowercase();
+    let has_date_token = lower.contains('y') || lower.contains('d');
+    let has_time_or_month = lower.contains('m') || lower.contains('h') || lower.contains('s');
+    has_date_token && has_time_or_month
+}
+
+fn format_percentage(value: f64, code: &str) -> String {
+    let decimals = decimal_places_in_code(code);
+    format!("{:.*}%", decimals, value * 100.0)
+}
+
+fn format_decimal_number(value: f64, code: &str) -> String {
+    if code.contains('E') || code.contains('e') {
+        let decimals = decimal_places_in_code(code);
+        return format!("{:.*E}", decimals, value);
+    }
+
+    let decimals = decimal_places_in_code(code);
+    let use_grouping = code.contains("#,##") || code.contains(",##0");
+    let negative = value.is_sign_negative();
+    let absolute = value.abs();
+    let mut text = format!("{:.*}", decimals, absolute);
+    if use_grouping {
+        if let Some((integer, fraction)) = text.split_once('.') {
+            text = format!("{}.{}", group_integer_part(integer), fraction);
+        } else {
+            text = group_integer_part(&text);
+        }
+    }
+
+    if negative {
+        format!("-{text}")
+    } else {
+        text
+    }
+}
+
+fn decimal_places_in_code(code: &str) -> usize {
+    code.split('.')
+        .nth(1)
+        .map(|fraction| {
+            fraction
+                .chars()
+                .take_while(|character| matches!(character, '0' | '#'))
+                .count()
+        })
+        .unwrap_or(0)
+}
+
+fn group_integer_part(integer: &str) -> String {
+    let mut grouped = String::new();
+    for (index, character) in integer.chars().rev().enumerate() {
+        if index > 0 && index % 3 == 0 {
+            grouped.push(',');
+        }
+        grouped.push(character);
+    }
+    grouped.chars().rev().collect()
+}
+
+fn format_excel_date(serial: f64, code: &str, date_1904: bool) -> Option<String> {
+    if !serial.is_finite() {
+        return None;
+    }
+
+    let whole_days = serial.floor() as i64;
+    let mut day_number = if date_1904 {
+        days_from_civil(1904, 1, 1) + whole_days
+    } else {
+        let adjusted = if whole_days >= 60 {
+            whole_days - 1
+        } else {
+            whole_days
+        };
+        days_from_civil(1899, 12, 31) + adjusted
+    };
+
+    let mut seconds = ((serial.fract() * 86_400.0).round() as i64).clamp(0, 86_400);
+    if seconds == 86_400 {
+        seconds = 0;
+        day_number += 1;
+    }
+
+    let (year, month, day) = civil_from_days(day_number);
+    let hour = seconds / 3600;
+    let minute = (seconds % 3600) / 60;
+    let second = seconds % 60;
+    let lower = code.to_ascii_lowercase();
+    let has_time = lower.contains('h') || lower.contains('s');
+    let include_seconds = lower.contains("ss");
+
+    Some(if has_time {
+        if include_seconds {
+            format!("{year:04}-{month:02}-{day:02} {hour:02}:{minute:02}:{second:02}")
+        } else {
+            format!("{year:04}-{month:02}-{day:02} {hour:02}:{minute:02}")
+        }
+    } else {
+        format!("{year:04}-{month:02}-{day:02}")
+    })
+}
+
+fn civil_from_days(days: i64) -> (i32, u32, u32) {
+    let z = days + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+    let mut year = (yoe + era * 400) as i32;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = (doy - (153 * mp + 2) / 5 + 1) as u32;
+    let month = (mp + if mp < 10 { 3 } else { -9 }) as u32;
+    if month <= 2 {
+        year += 1;
+    }
+    (year, month, day)
+}
+
+fn days_from_civil(year: i32, month: u32, day: u32) -> i64 {
+    let year = year - if month <= 2 { 1 } else { 0 };
+    let era = if year >= 0 { year } else { year - 399 } / 400;
+    let yoe = (year - era * 400) as i64;
+    let month = month as i64;
+    let day = day as i64;
+    let doy = (153 * (month + if month > 2 { -3 } else { 9 }) + 2) / 5 + day - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    era as i64 * 146_097 + doe - 719_468
 }
 
 fn normalize_argb_hex(hex: &str) -> Option<String> {

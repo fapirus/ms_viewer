@@ -608,6 +608,114 @@ fn effective_bounds_union_dimension_metrics_merges_and_frozen_panes() {
     );
 }
 
+#[test]
+fn render_model_formats_numbers_dates_and_typography_from_styles() {
+    let dir = tempdir().expect("tempdir should exist");
+    let path = dir.path().join("sheet-formatting.xlsx");
+    create_zip(
+        &path,
+        &[
+            (
+                "_rels/.rels",
+                br#"
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>
+"#,
+            ),
+            (
+                "xl/workbook.xml",
+                br#"
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+          xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <workbookPr date1904="1"/>
+  <sheets>
+    <sheet name="Sheet1" sheetId="1" r:id="rIdSheet1"/>
+  </sheets>
+</workbook>
+"#,
+            ),
+            (
+                "xl/_rels/workbook.xml.rels",
+                br#"
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdSheet1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+  <Relationship Id="rIdStyles" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+</Relationships>
+"#,
+            ),
+            (
+                "xl/styles.xml",
+                br##"
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <numFmts count="2">
+    <numFmt numFmtId="164" formatCode="#,##0.00"/>
+    <numFmt numFmtId="165" formatCode="yyyy-mm-dd"/>
+  </numFmts>
+  <fonts count="2">
+    <font><name val="Calibri"/><sz val="11"/></font>
+    <font><name val="Pretendard"/><sz val="14"/><b/></font>
+  </fonts>
+  <fills count="2">
+    <fill><patternFill patternType="none"/></fill>
+    <fill><patternFill patternType="gray125"/></fill>
+  </fills>
+  <cellXfs count="4">
+    <xf numFmtId="164" fontId="0" fillId="0" applyNumberFormat="1"/>
+    <xf numFmtId="165" fontId="0" fillId="0" applyNumberFormat="1"/>
+    <xf numFmtId="10" fontId="0" fillId="0" applyNumberFormat="1"/>
+    <xf numFmtId="0" fontId="1" fillId="0"/>
+  </cellXfs>
+</styleSheet>
+"##,
+            ),
+            (
+                "xl/worksheets/sheet1.xml",
+                r#"
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <dimension ref="A1:D1"/>
+  <sheetData>
+    <row r="1">
+      <c r="A1" s="0"><v>1234.5</v></c>
+      <c r="B1" s="1"><v>1</v></c>
+      <c r="C1" s="2"><v>0.125</v></c>
+      <c r="D1" s="3" t="inlineStr"><is><t>한글 Budget</t></is></c>
+    </row>
+  </sheetData>
+</worksheet>
+"#
+                .as_bytes(),
+            ),
+        ],
+    );
+
+    let archive = OoxmlArchive::open_path(&path).expect("archive should open");
+    let workbook = parse_xlsx(&archive).expect("xlsx should parse");
+    let styles = parse_cell_style_subset(&archive, &workbook).expect("styles");
+    let render_model =
+        build_sheet_render_model(&archive, &workbook, &[], &styles, 0).expect("render model");
+    let text_nodes: Vec<_> = render_model
+        .nodes
+        .iter()
+        .filter_map(|node| match node {
+            RenderNode::Text(node) => Some(node),
+            _ => None,
+        })
+        .collect();
+
+    assert!(text_nodes.iter().any(|node| node.text == "1,234.50"));
+    assert!(text_nodes.iter().any(|node| node.text == "1904-01-02"));
+    assert!(text_nodes.iter().any(|node| node.text == "12.50%"));
+
+    let typography_node = text_nodes
+        .iter()
+        .find(|node| node.text == "한글 Budget")
+        .expect("styled text node");
+    assert_eq!(typography_node.style.font_family, "Pretendard");
+    assert_eq!(typography_node.style.font_size, 14.0);
+    assert!(typography_node.style.bold);
+}
+
 fn excel_column_width_to_pixels(width_units: f32) -> f32 {
     let max_digit_width = 7.0;
     let padding = 5.0;
