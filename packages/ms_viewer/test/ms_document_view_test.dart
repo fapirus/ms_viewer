@@ -187,7 +187,7 @@ void main() {
     );
   });
 
-  testWidgets('view exposes page navigation controls', (tester) async {
+  testWidgets('view renders docx continuous page stack', (tester) async {
     final pageRequests = <platform.GetPageRenderModelRequest>[];
     final controller = MsViewerController(
       platform: _FakeMsViewerPlatform(
@@ -229,13 +229,20 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Page 1 / 2'), findsOneWidget);
-    expect(find.widgetWithText(OutlinedButton, 'Next'), findsOneWidget);
-
-    await tester.tap(find.widgetWithText(OutlinedButton, 'Next'));
+    expect(find.byKey(const ValueKey('docx-page-stack')), findsOneWidget);
+    expect(find.text('Page 1'), findsOneWidget);
+    expect(find.widgetWithText(OutlinedButton, 'Next'), findsNothing);
+    await tester.scrollUntilVisible(
+      find.text('Page 2'),
+      300,
+      scrollable: find.descendant(
+        of: find.byKey(const ValueKey('docx-page-stack')),
+        matching: find.byType(Scrollable),
+      ),
+    );
     await tester.pumpAndSettle();
 
-    expect(find.text('Page 2 / 2'), findsOneWidget);
+    expect(find.text('Page 2'), findsOneWidget);
     expect(pageRequests.map((request) => request.pageIndex), [0, 1]);
   });
 
@@ -641,18 +648,10 @@ void main() {
     await controller.loadPage(0);
     await tester.pumpAndSettle();
 
-    final pageFinder = find.byType(DocumentPageView);
-    expect(pageFinder, findsOneWidget);
-    final pageRect = tester.getRect(pageFinder);
-
-    final gesture = await tester.startGesture(
-      Offset(
-        pageRect.left + pageRect.width * 0.18,
-        pageRect.top + pageRect.height * 0.12,
-      ),
-    );
-    await gesture.moveBy(Offset(pageRect.width * 0.4, pageRect.height * 0.05));
-    await tester.pump();
+    controller.activateCachedPage(0);
+    controller.startSelectionAt(const Offset(24, 32));
+    controller.updateSelectionAt(const Offset(112, 38));
+    await tester.pumpAndSettle();
 
     expect(controller.pageHighlights, isNotEmpty);
     expect(find.byType(Positioned), findsWidgets);

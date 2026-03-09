@@ -36,6 +36,8 @@ class MsViewerController extends ChangeNotifier {
   MsViewerException? pageError;
   viewer_platform.PageRenderModel? currentPage;
   int? currentPageIndex;
+  final Map<int, viewer_platform.PageRenderModel> _pageCache = {};
+  final Set<int> _loadingPageIndexes = <int>{};
   viewer_platform.SheetWindow _currentSheetWindow = _defaultSheetWindow;
   List<Rect> pageHighlights = const [];
   final DocumentSearchController searchController = DocumentSearchController();
@@ -61,11 +63,19 @@ class MsViewerController extends ChangeNotifier {
 
   viewer_platform.SheetWindow get currentSheetWindow => _currentSheetWindow;
 
+  viewer_platform.PageRenderModel? pageForIndex(int pageIndex) {
+    return _pageCache[pageIndex];
+  }
+
+  bool isPageLoading(int pageIndex) => _loadingPageIndexes.contains(pageIndex);
+
   void attachDocument(DocumentDescriptor next) {
     document = next;
     error = null;
     currentPage = null;
     currentPageIndex = null;
+    _pageCache.clear();
+    _loadingPageIndexes.clear();
     pageError = null;
     pageHighlights = const [];
     pageStatus = ViewerPageStatus.idle;
@@ -83,6 +93,8 @@ class MsViewerController extends ChangeNotifier {
     error = null;
     currentPage = null;
     currentPageIndex = null;
+    _pageCache.clear();
+    _loadingPageIndexes.clear();
     pageError = null;
     pageHighlights = const [];
     pageStatus = ViewerPageStatus.idle;
@@ -110,6 +122,8 @@ class MsViewerController extends ChangeNotifier {
         document = null;
         currentPage = null;
         currentPageIndex = null;
+        _pageCache.clear();
+        _loadingPageIndexes.clear();
         pageError = null;
         pageHighlights = const [];
         pageStatus = ViewerPageStatus.idle;
@@ -135,56 +149,49 @@ class MsViewerController extends ChangeNotifier {
   }
 
   Future<void> loadPage(int pageIndex) async {
+    final page = await _fetchPage(pageIndex, updateVisibleState: true);
+    if (page == null) {
+      return;
+    }
+
+    currentPage = page;
+    currentPageIndex = page.pageIndex;
+    final descriptor = document;
+    final sheetViewport = page.sheetViewport;
+    if (descriptor?.kind == DocumentKind.xlsx && sheetViewport != null) {
+      _currentSheetWindow = viewer_platform.SheetWindow(
+        startRow: sheetViewport.window.startRow,
+        endRow: sheetViewport.window.endRow,
+        startColumn: sheetViewport.window.startColumn,
+        endColumn: sheetViewport.window.endColumn,
+      );
+    }
+    pageError = null;
+    pageHighlights = const [];
+    pageStatus = ViewerPageStatus.ready;
+    notifyListeners();
+  }
+
+  Future<void> ensurePageLoaded(int pageIndex) async {
+    await _fetchPage(pageIndex, updateVisibleState: false);
+  }
+
+  void activateCachedPage(int pageIndex) {
     final lastRequest = _lastRequest;
     final descriptor = document;
     if (lastRequest == null || descriptor == null) {
       return;
     }
-    if (pageIndex < 0 || pageIndex >= descriptor.pageCount) {
+    final cached = _pageCache[pageIndex];
+    if (cached == null) {
       return;
     }
-
-    pageStatus = ViewerPageStatus.loading;
-    currentPage = null;
-    currentPageIndex = pageIndex;
-    pageError = null;
-    notifyListeners();
-
-    final result = await _platform.getPageRenderModel(
-      _buildPageRequest(
-        source: lastRequest.source,
-        documentId: descriptor.id,
-        pageIndex: pageIndex,
-        options: lastRequest.options,
-        kind: descriptor.kind,
-      ),
-    );
-
-    switch (result) {
-      case viewer_platform.GetPageRenderModelSuccess(page: final page):
-        currentPage = page;
-        currentPageIndex = page.pageIndex;
-        final sheetViewport = page.sheetViewport;
-        if (descriptor.kind == DocumentKind.xlsx && sheetViewport != null) {
-          _currentSheetWindow = viewer_platform.SheetWindow(
-            startRow: sheetViewport.window.startRow,
-            endRow: sheetViewport.window.endRow,
-            startColumn: sheetViewport.window.startColumn,
-            endColumn: sheetViewport.window.endColumn,
-          );
-        }
-        pageError = null;
-        pageHighlights = const [];
-        pageStatus = ViewerPageStatus.ready;
-      case viewer_platform.GetPageRenderModelFailure(
-        error: final pageFetchError,
-      ):
-        currentPage = null;
-        pageError = pageFetchError.toViewerException();
-        pageHighlights = const [];
-        pageStatus = ViewerPageStatus.error;
+    if (currentPageIndex == pageIndex && currentPage == cached) {
+      return;
     }
-
+    currentPage = cached;
+    currentPageIndex = pageIndex;
+    _applySearchHighlightOnly();
     notifyListeners();
   }
 
@@ -309,6 +316,7 @@ class MsViewerController extends ChangeNotifier {
       case viewer_platform.GetSelectionPageSuccess(page: final page):
         currentPage = page;
         currentPageIndex = page.pageIndex;
+        _pageCache[page.pageIndex] = page;
         pageError = null;
         pageStatus = ViewerPageStatus.ready;
       case viewer_platform.GetSelectionPageFailure(error: final selectionError):
@@ -385,6 +393,66 @@ class MsViewerController extends ChangeNotifier {
 
     pageHighlights = highlights;
     _applySelectionHighlights();
+  }
+
+  Future<viewer_platform.PageRenderModel?> _fetchPage(
+    int pageIndex, {
+    required bool updateVisibleState,
+  }) async {
+    final lastRequest = _lastRequest;
+    final descriptor = document;
+    if (lastRequest == null || descriptor == null) {
+      return null;
+    }
+    if (pageIndex < 0 || pageIndex >= descriptor.pageCount) {
+      return null;
+    }
+    if (!updateVisibleState && _pageCache.containsKey(pageIndex)) {
+      return _pageCache[pageIndex];
+    }
+    if (_loadingPageIndexes.contains(pageIndex)) {
+      return _pageCache[pageIndex];
+    }
+
+    _loadingPageIndexes.add(pageIndex);
+    if (updateVisibleState) {
+      pageStatus = ViewerPageStatus.loading;
+      currentPage = null;
+      currentPageIndex = pageIndex;
+      pageError = null;
+      notifyListeners();
+    }
+
+    final result = await _platform.getPageRenderModel(
+      _buildPageRequest(
+        source: lastRequest.source,
+        documentId: descriptor.id,
+        pageIndex: pageIndex,
+        options: lastRequest.options,
+        kind: descriptor.kind,
+      ),
+    );
+    _loadingPageIndexes.remove(pageIndex);
+
+    switch (result) {
+      case viewer_platform.GetPageRenderModelSuccess(page: final page):
+        _pageCache[page.pageIndex] = page;
+        if (!updateVisibleState) {
+          notifyListeners();
+        }
+        return page;
+      case viewer_platform.GetPageRenderModelFailure(
+        error: final pageFetchError,
+      ):
+        if (updateVisibleState) {
+          currentPage = null;
+          pageError = pageFetchError.toViewerException();
+          pageHighlights = const [];
+          pageStatus = ViewerPageStatus.error;
+          notifyListeners();
+        }
+        return null;
+    }
   }
 
   void _applySelectionHighlights() {

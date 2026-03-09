@@ -78,6 +78,7 @@ class _MsDocumentViewState extends State<MsDocumentView> {
     final title = document.title;
     final pageCount = document.pageCount;
     final isSpreadsheet = document.kind == document_model.DocumentKind.xlsx;
+    final isContinuousDocx = document.kind == document_model.DocumentKind.docx;
     final collectionLabel = isSpreadsheet ? 'sheets' : 'pages';
     final currentLabel = isSpreadsheet ? 'Sheet' : 'Page';
     final fetchedPage = widget.controller.currentPage;
@@ -95,32 +96,34 @@ class _MsDocumentViewState extends State<MsDocumentView> {
           const SizedBox(height: 8),
           Text('$pageCount $collectionLabel'),
           const SizedBox(height: 16),
-          Row(
-            children: [
-              OutlinedButton.icon(
-                onPressed: widget.controller.canGoToPreviousPage
-                    ? () => unawaited(widget.controller.goToPreviousPage())
-                    : null,
-                icon: const Icon(Icons.chevron_left),
-                label: const Text('Previous'),
-              ),
-              const SizedBox(width: 8),
-              OutlinedButton.icon(
-                onPressed: widget.controller.canGoToNextPage
-                    ? () => unawaited(widget.controller.goToNextPage())
-                    : null,
-                icon: const Icon(Icons.chevron_right),
-                label: const Text('Next'),
-              ),
-              const SizedBox(width: 12),
-              Text(
-                pageCount == 0
-                    ? '$currentLabel 0 / 0'
-                    : '$currentLabel ${(widget.controller.currentPageIndex ?? 0) + 1} / $pageCount',
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
+          if (!isContinuousDocx) ...[
+            Row(
+              children: [
+                OutlinedButton.icon(
+                  onPressed: widget.controller.canGoToPreviousPage
+                      ? () => unawaited(widget.controller.goToPreviousPage())
+                      : null,
+                  icon: const Icon(Icons.chevron_left),
+                  label: const Text('Previous'),
+                ),
+                const SizedBox(width: 8),
+                OutlinedButton.icon(
+                  onPressed: widget.controller.canGoToNextPage
+                      ? () => unawaited(widget.controller.goToNextPage())
+                      : null,
+                  icon: const Icon(Icons.chevron_right),
+                  label: const Text('Next'),
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  pageCount == 0
+                      ? '$currentLabel 0 / 0'
+                      : '$currentLabel ${(widget.controller.currentPageIndex ?? 0) + 1} / $pageCount',
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+          ],
           Row(
             children: [
               Expanded(
@@ -157,31 +160,129 @@ class _MsDocumentViewState extends State<MsDocumentView> {
           ],
           const SizedBox(height: 16),
           Expanded(
-            child: switch (widget.controller.pageStatus) {
-              ViewerPageStatus.loading => const Center(
-                child: CircularProgressIndicator(),
-              ),
-              ViewerPageStatus.error => Center(
-                child: Text(
-                  widget.controller.pageError?.message ??
-                      'Failed to load page preview.',
-                  textAlign: TextAlign.center,
-                ),
-              ),
-              ViewerPageStatus.ready when page != null => _buildViewerSurface(
-                page,
-                isSpreadsheet,
-              ),
-              _ when page != null => _buildViewerSurface(page, isSpreadsheet),
-              _ => const Center(
-                child: Text(
-                  'Viewer placeholder: render model not loaded',
-                  textAlign: TextAlign.center,
-                ),
-              ),
-            },
+            child: isContinuousDocx
+                ? _buildContinuousDocxSurface(pageCount)
+                : switch (widget.controller.pageStatus) {
+                    ViewerPageStatus.loading => const Center(
+                      child: CircularProgressIndicator(),
+                    ),
+                    ViewerPageStatus.error => Center(
+                      child: Text(
+                        widget.controller.pageError?.message ??
+                            'Failed to load page preview.',
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                    ViewerPageStatus.ready when page != null =>
+                      _buildViewerSurface(page, isSpreadsheet),
+                    _ when page != null => _buildViewerSurface(
+                      page,
+                      isSpreadsheet,
+                    ),
+                    _ => const Center(
+                      child: Text(
+                        'Viewer placeholder: render model not loaded',
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  },
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildContinuousDocxSurface(int pageCount) {
+    if (pageCount == 0) {
+      return const Center(child: Text('No pages available.'));
+    }
+    if (widget.controller.pageStatus == ViewerPageStatus.error &&
+        widget.controller.currentPage == null) {
+      return Center(
+        child: Text(
+          widget.controller.pageError?.message ??
+              'Failed to load page preview.',
+          textAlign: TextAlign.center,
+        ),
+      );
+    }
+
+    return ListView.separated(
+      key: const ValueKey('docx-page-stack'),
+      padding: const EdgeInsets.only(bottom: 24),
+      itemCount: pageCount,
+      separatorBuilder: (_, __) => const SizedBox(height: 20),
+      itemBuilder: (context, index) {
+        final page = widget.controller.pageForIndex(index);
+        if (page == null) {
+          unawaited(widget.controller.ensurePageLoaded(index));
+          return _buildDocxPagePlaceholder(index);
+        }
+
+        return Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 640),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Text(
+                    'Page ${index + 1}',
+                    style: Theme.of(context).textTheme.bodySmall,
+                    textAlign: TextAlign.right,
+                  ),
+                ),
+                DocumentPageView(
+                  page: page,
+                  highlights: widget.controller.currentPageIndex == index
+                      ? widget.controller.pageHighlights
+                      : const [],
+                  onSelectionStart: (pagePosition) {
+                    widget.controller.activateCachedPage(index);
+                    widget.controller.startSelectionAt(pagePosition);
+                  },
+                  onSelectionUpdate: (pagePosition) {
+                    widget.controller.activateCachedPage(index);
+                    widget.controller.updateSelectionAt(pagePosition);
+                  },
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildDocxPagePlaceholder(int index) {
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 640),
+        child: AspectRatio(
+          aspectRatio: 595 / 842,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFFD9E2EC)),
+            ),
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const SizedBox(
+                    width: 28,
+                    height: 28,
+                    child: CircularProgressIndicator(strokeWidth: 2.4),
+                  ),
+                  const SizedBox(height: 12),
+                  Text('Loading page ${index + 1}'),
+                ],
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }

@@ -889,7 +889,7 @@
   - Tests:
     - viewer app bar widget test
     - search placement widget test
-- [ ] DOCX continuous page scroll viewer 적용
+- [x] DOCX continuous page scroll viewer 적용
   - Scope:
     - engine page model은 유지
     - Flutter UI는 page button paging 대신 vertical scroll stack으로 전환
