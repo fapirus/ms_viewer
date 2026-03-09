@@ -13,6 +13,8 @@ void main() {
     int startColumn = 1,
     int effectiveEndRow = 40,
     int effectiveEndColumn = 16,
+    double cellWidth = 140,
+    double cellHeight = 40,
   }) {
     final nodes = <Map<String, Object?>>[];
     for (var row = 0; row < rows; row++) {
@@ -20,10 +22,10 @@ void main() {
         nodes.add({
           'type': 'box',
           'bounds': {
-            'x': column * 140.0,
-            'y': row * 40.0,
-            'width': 140.0,
-            'height': 40.0,
+            'x': column * cellWidth,
+            'y': row * cellHeight,
+            'width': cellWidth,
+            'height': cellHeight,
           },
           'fillColorHex': row == 0 ? '#1F4E78' : '#FFFFFF',
           'strokeColorHex': '#D0D7DE',
@@ -49,8 +51,8 @@ void main() {
 
     return platform.PageRenderModel.fromJson({
       'pageIndex': 0,
-      'width': columns * 140.0,
-      'height': rows * 40.0,
+      'width': columns * cellWidth,
+      'height': rows * cellHeight,
       'nodes': nodes,
       'selectionAnchors': [
         {'nodeIndex': nodes.length - 1, 'charIndex': 0, 'x': 20.0, 'y': 10.0},
@@ -334,6 +336,45 @@ void main() {
       expect(requestedWindow!.startColumn, 1);
       expect(requestedWindow!.endRow, greaterThanOrEqualTo(40));
       expect(requestedWindow!.endColumn, greaterThanOrEqualTo(16));
+    },
+  );
+
+  testWidgets(
+    'sheet viewport expands further when narrow cells do not fill viewport',
+    (tester) async {
+      platform.SheetWindow? requestedWindow;
+      final page = buildSheetPage(
+        columns: 16,
+        rows: 40,
+        cellWidth: 32,
+        cellHeight: 20,
+        effectiveEndRow: 240,
+        effectiveEndColumn: 120,
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: SizedBox(
+                width: 1100,
+                height: 760,
+                child: SheetViewport(
+                  page: page,
+                  onWindowRequest: (window) async {
+                    requestedWindow = window;
+                  },
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(requestedWindow, isNotNull);
+      expect(requestedWindow!.endColumn, greaterThan(page.sheetViewport!.window.endColumn));
+      expect(requestedWindow!.endRow, greaterThan(page.sheetViewport!.window.endRow));
     },
   );
 }

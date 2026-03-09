@@ -42,6 +42,8 @@ class _SheetViewportState extends State<SheetViewport> {
   static const int _initialColumnOverscan = 4;
   static const double _targetRowPixels = 24;
   static const double _targetColumnPixels = 72;
+  static const double _viewportRowOverscanPixels = 240;
+  static const double _viewportColumnOverscanPixels = 320;
   static const int _excelMaxRows = 1048576;
   static const int _excelMaxColumns = 16384;
 
@@ -238,7 +240,7 @@ class _SheetViewportState extends State<SheetViewport> {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        _scheduleMinimumWindowExpansion(constraints.biggest);
+        _scheduleMinimumWindowExpansion(constraints.biggest, metrics);
         return DecoratedBox(
           decoration: BoxDecoration(
             color: const Color(0xFFF7F9FC),
@@ -283,7 +285,10 @@ class _SheetViewportState extends State<SheetViewport> {
     );
   }
 
-  void _scheduleMinimumWindowExpansion(Size viewportSize) {
+  void _scheduleMinimumWindowExpansion(
+    Size viewportSize,
+    _SheetViewportMetrics metrics,
+  ) {
     if (_initialWindowExpansionScheduled) {
       return;
     }
@@ -294,15 +299,45 @@ class _SheetViewportState extends State<SheetViewport> {
     }
 
     final currentWindow = viewport.window;
+    final bodyViewportWidth =
+        math.max(0.0, viewportSize.width - _cornerExtent - 1);
+    final bodyViewportHeight =
+        math.max(0.0, viewportSize.height - _headerExtent - 1);
+    final averageColumnExtent = metrics.columns.isEmpty
+        ? _targetColumnPixels
+        : (metrics.columns.fold<double>(
+                  0,
+                  (sum, segment) => sum + segment.extent,
+                ) /
+                metrics.columns.length)
+            .clamp(1.0, double.infinity);
+    final averageRowExtent = metrics.rows.isEmpty
+        ? _targetRowPixels
+        : (metrics.rows.fold<double>(
+                  0,
+                  (sum, segment) => sum + segment.extent,
+                ) /
+                metrics.rows.length)
+            .clamp(1.0, double.infinity);
     final desiredRowCount = math.max(
       _minimumVisibleRows,
-      ((viewportSize.height - _headerExtent) / _targetRowPixels).ceil() +
-          _initialRowOverscan,
+      math.max(
+            ((viewportSize.height - _headerExtent) / _targetRowPixels).ceil() +
+                _initialRowOverscan,
+            ((bodyViewportHeight + _viewportRowOverscanPixels) /
+                    averageRowExtent)
+                .ceil(),
+          ),
     );
     final desiredColumnCount = math.max(
       _minimumVisibleColumns,
-      ((viewportSize.width - _cornerExtent) / _targetColumnPixels).ceil() +
-          _initialColumnOverscan,
+      math.max(
+            ((viewportSize.width - _cornerExtent) / _targetColumnPixels).ceil() +
+                _initialColumnOverscan,
+            ((bodyViewportWidth + _viewportColumnOverscanPixels) /
+                    averageColumnExtent)
+                .ceil(),
+          ),
     );
     final currentRowCount = currentWindow.endRow - currentWindow.startRow + 1;
     final currentColumnCount =
