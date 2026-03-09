@@ -416,6 +416,13 @@ OOXML은 ZIP 기반이라 완전한 스트리밍이 쉽지 않다.
 - 검색
 - 순수 텍스트 선택
 
+### Milestone 3.5: Viewer Shell Refactor
+- library screen / viewer screen 분리
+- `DOCX/PPTX` 연속 스크롤 viewer
+- `XLSX` full-screen viewport shell
+- viewer chrome 정리
+- format별 수동 검증 기준 재정의
+
 ### Milestone 4: Hardening
 - encrypted document password flow
 - FileHandle support

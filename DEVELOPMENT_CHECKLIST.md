@@ -868,6 +868,56 @@
     - dropped xlsx opens through real engine path
     - visible sheet window render matches real model
 
+## Phase 3.55: Demo viewer shell refactor
+### Purpose
+- 이 phase는 `examples/flutter_demo`와 `packages/ms_viewer`의 viewer shell을 실제 제품에 가까운 구조로 재편한다.
+- `XLSX visual parity acceptance` 전에 수행한다.
+- `DOCX/PPTX/XLSX` 수동 검증 기준을 preview shell이 아니라 document viewer shell 기준으로 바꾼다.
+
+### Structure
+- [ ] 문서 목록 화면과 뷰어 화면 분리
+  - Done when:
+    - library screen과 viewer screen이 route 단위로 분리된다
+    - 문서 선택 시 viewer route로 이동한다
+  - Tests:
+    - library -> viewer navigation widget test
+    - back navigation widget test
+- [ ] viewer 전용 chrome 구성
+  - Scope:
+    - title, back, search, open file를 viewer 화면 기준으로 재배치
+    - preview shell 성격의 보조 메타 패널 제거
+  - Tests:
+    - viewer app bar widget test
+    - search placement widget test
+- [ ] DOCX continuous page scroll viewer 적용
+  - Scope:
+    - engine page model은 유지
+    - Flutter UI는 page button paging 대신 vertical scroll stack으로 전환
+  - Tests:
+    - docx continuous scroll widget test
+    - page stack smoke test
+- [ ] PPTX continuous slide scroll viewer 적용
+  - Scope:
+    - engine slide index는 유지
+    - Flutter UI는 slide button paging 대신 vertical slide list로 전환
+  - Tests:
+    - pptx continuous scroll widget test
+    - slide list smoke test
+- [ ] XLSX full-screen viewport shell 적용
+  - Scope:
+    - side rail과 preview layout 없이 sheet viewport를 문서 전용 화면으로 제공
+    - row/column header와 2D viewport를 주 surface로 둔다
+  - Tests:
+    - xlsx full-screen shell widget test
+    - viewport sizing smoke test
+- [ ] demo viewer shell acceptance pass
+  - Acceptance checks:
+    - demo 첫 화면은 library 역할만 한다
+    - 열람 시 별도 viewer screen으로 이동한다
+    - `DOCX/PPTX`는 scroll viewing으로 동작한다
+    - `XLSX`는 spreadsheet viewer처럼 보인다
+    - 이후 issue screenshot은 viewer screen 기준으로 수집한다
+
 ## Phase 3.6: XLSX visual parity and large-sheet pass
 ### Visual regression triage
 - [x] XLSX grid-first viewer UX 아키텍처 확정
