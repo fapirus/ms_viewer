@@ -42,12 +42,22 @@ pub struct DocumentCapabilities {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+pub struct SheetTab {
+    pub page_index: u32,
+    pub title: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub struct OpenDocumentSuccess {
     pub document_id: String,
     pub kind: DocumentKind,
     pub title: String,
     pub page_count: u32,
     pub capabilities: DocumentCapabilities,
+    #[serde(default)]
+    pub sheet_tabs: Vec<SheetTab>,
+    pub active_page_index: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -258,8 +268,34 @@ fn build_open_success(
     title: String,
 ) -> Result<OpenDocumentSuccess, ViewerError> {
     let kind = detect_document_kind(archive)?;
-    let page_count = detect_page_count(archive, kind)?;
     let document_id = build_document_id(source, &title);
+    let (page_count, sheet_tabs, active_page_index) = match kind {
+        DocumentKind::Xlsx => {
+            let workbook = parse_xlsx(archive)?;
+            let sheet_tabs = workbook
+                .sheets
+                .iter()
+                .enumerate()
+                .filter(|(_, sheet)| matches!(sheet.visibility, format_xlsx::WorksheetVisibility::Visible))
+                .map(|(index, sheet)| SheetTab {
+                    page_index: index as u32,
+                    title: sheet.name.clone(),
+                })
+                .collect::<Vec<_>>();
+            let fallback_index = sheet_tabs.first().map(|tab| tab.page_index);
+            let active_page_index = workbook
+                .active_sheet_index
+                .and_then(|index| {
+                    sheet_tabs
+                        .iter()
+                        .find(|tab| tab.page_index == index)
+                        .map(|tab| tab.page_index)
+                })
+                .or(fallback_index);
+            (sheet_tabs.len().max(1) as u32, sheet_tabs, active_page_index)
+        }
+        _ => (detect_page_count(archive, kind)?, Vec::new(), None),
+    };
 
     Ok(OpenDocumentSuccess {
         document_id,
@@ -271,6 +307,8 @@ fn build_open_success(
             text_selection: supports_text_selection(kind),
             password_protected: false,
         },
+        sheet_tabs,
+        active_page_index,
     })
 }
 

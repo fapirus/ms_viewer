@@ -233,13 +233,18 @@ void main() {
               textSelection: true,
               passwordProtected: false,
             ),
+            sheetTabs: [
+              platform.SheetTabModel(pageIndex: 0, title: 'Summary'),
+              platform.SheetTabModel(pageIndex: 1, title: 'Detail'),
+            ],
+            activePageIndex: 1,
           ),
         ),
         onGetPage: (request) async {
           capturedPageRequest = request;
           return platform.GetPageRenderModelSuccess(
             platform.PageRenderModel.fromJson({
-              'pageIndex': 0,
+              'pageIndex': 1,
               'width': 640.0,
               'height': 360.0,
               'nodes': const [],
@@ -247,9 +252,9 @@ void main() {
               'sheetViewport': {
                 'window': {
                   'startRow': 1,
-                  'endRow': 20,
+                  'endRow': 24,
                   'startColumn': 1,
-                  'endColumn': 8,
+                  'endColumn': 10,
                 },
                 'effectiveBounds': {
                   'startRow': 1,
@@ -274,14 +279,14 @@ void main() {
 
     expect(capturedPageRequest, isNotNull);
     expect(capturedPageRequest!.documentId, 'xlsx_001');
-    expect(capturedPageRequest!.pageIndex, 0);
+    expect(capturedPageRequest!.pageIndex, 1);
     expect(capturedPageRequest!.sheetWindow, isNotNull);
     expect(capturedPageRequest!.sheetWindow!.startRow, 1);
-    expect(capturedPageRequest!.sheetWindow!.endRow, 20);
+    expect(capturedPageRequest!.sheetWindow!.endRow, 24);
     expect(capturedPageRequest!.sheetWindow!.startColumn, 1);
-    expect(capturedPageRequest!.sheetWindow!.endColumn, 8);
+    expect(capturedPageRequest!.sheetWindow!.endColumn, 10);
     expect(controller.pageStatus, ViewerPageStatus.ready);
-    expect(controller.currentPageIndex, 0);
+    expect(controller.currentPageIndex, 1);
   });
 
   test('controller reloads xlsx with requested sheet window', () async {

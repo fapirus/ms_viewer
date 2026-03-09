@@ -292,6 +292,7 @@ void main() {
   testWidgets('view renders xlsx sheet preview from live fetch', (
     tester,
   ) async {
+    final pageRequests = <platform.GetPageRenderModelRequest>[];
     final controller = MsViewerController(
       platform: _FakeMsViewerPlatform(
         onOpen: (_) async => platform.OpenDocumentOpened(
@@ -305,14 +306,20 @@ void main() {
               textSelection: true,
               passwordProtected: false,
             ),
+            sheetTabs: [
+              platform.SheetTabModel(pageIndex: 0, title: 'Summary'),
+              platform.SheetTabModel(pageIndex: 1, title: 'Detail'),
+            ],
+            activePageIndex: 0,
           ),
         ),
         onGetPage: (request) async {
+          pageRequests.add(request);
           expect(request.sheetWindow, isNotNull);
           expect(request.sheetWindow!.startRow, 1);
-          expect(request.sheetWindow!.endRow, 20);
+          expect(request.sheetWindow!.endRow, 24);
           expect(request.sheetWindow!.startColumn, 1);
-          expect(request.sheetWindow!.endColumn, 8);
+          expect(request.sheetWindow!.endColumn, 10);
           return platform.GetPageRenderModelSuccess(
             platform.PageRenderModel.fromJson({
               'pageIndex': request.pageIndex,
@@ -374,17 +381,28 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('budget.xlsx'), findsOneWidget);
-    expect(find.text('2 sheets'), findsOneWidget);
-    expect(find.text('Sheet 1 / 2'), findsOneWidget);
+    expect(find.text('Summary · 2 sheets'), findsOneWidget);
     expect(find.byKey(const ValueKey('xlsx-sheet-shell')), findsOneWidget);
+    expect(find.byKey(const ValueKey('xlsx-sheet-tabs')), findsOneWidget);
+    expect(find.byKey(const ValueKey('xlsx-sheet-tab-0')), findsOneWidget);
+    expect(find.byKey(const ValueKey('xlsx-sheet-tab-1')), findsOneWidget);
     expect(find.byType(SheetViewport), findsOneWidget);
     expect(find.byKey(const ValueKey('sheet-column-header-1')), findsOneWidget);
     expect(find.byKey(const ValueKey('sheet-row-header-1')), findsOneWidget);
-    expect(find.widgetWithText(OutlinedButton, 'Next'), findsOneWidget);
+    expect(find.widgetWithText(OutlinedButton, 'Next'), findsNothing);
     expect(
       tester.getSize(find.byKey(const ValueKey('xlsx-sheet-shell'))).height,
       greaterThan(300),
     );
+
+    await tester.tap(find.byKey(const ValueKey('xlsx-sheet-tab-1')));
+    await tester.pumpAndSettle();
+
+    expect(
+      pageRequests.map((request) => request.pageIndex),
+      containsAll([0, 1]),
+    );
+    expect(find.text('Detail · 2 sheets'), findsOneWidget);
   });
 
   testWidgets('view shows xlsx sheet fetch error state', (tester) async {

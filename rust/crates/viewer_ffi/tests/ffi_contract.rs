@@ -2,7 +2,7 @@ use viewer_core::{DocumentKind, OpenOptions};
 use viewer_ffi::{
     DocumentCapabilities, DocumentSource, ErrorResponse, GetPageRenderModelRequest,
     GetSelectionPageRequest, OpenDocumentRequest, OpenDocumentSuccess, SearchDocumentRequest,
-    SheetWindow, ViewerErrorCode,
+    SheetTab, SheetWindow, ViewerErrorCode,
 };
 
 #[test]
@@ -31,6 +31,11 @@ fn open_document_success_round_trips() {
             text_selection: true,
             password_protected: false,
         },
+        sheet_tabs: vec![SheetTab {
+            page_index: 0,
+            title: "Sheet1".to_string(),
+        }],
+        active_page_index: Some(0),
     };
 
     let json = serde_json::to_string(&response).expect("response should serialize");

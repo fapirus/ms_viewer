@@ -191,8 +191,8 @@ void main() {
   ) async {
     platform.SheetWindow? requestedWindow;
     final page = buildSheetPage(
-      columns: 8,
-      rows: 20,
+      columns: 10,
+      rows: 24,
       effectiveEndRow: 120,
       effectiveEndColumn: 24,
     );
@@ -240,4 +240,43 @@ void main() {
           page.sheetViewport!.window.startColumn,
     );
   });
+
+  testWidgets(
+    'sheet viewport expands initial visible window to minimum cell count',
+    (tester) async {
+      platform.SheetWindow? requestedWindow;
+      final page = buildSheetPage(
+        columns: 4,
+        rows: 8,
+        effectiveEndRow: 120,
+        effectiveEndColumn: 24,
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: SizedBox(
+                width: 840,
+                height: 640,
+                child: SheetViewport(
+                  page: page,
+                  onWindowRequest: (window) async {
+                    requestedWindow = window;
+                  },
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(requestedWindow, isNotNull);
+      expect(requestedWindow!.startRow, 1);
+      expect(requestedWindow!.startColumn, 1);
+      expect(requestedWindow!.endRow, greaterThanOrEqualTo(24));
+      expect(requestedWindow!.endColumn, greaterThanOrEqualTo(10));
+    },
+  );
 }

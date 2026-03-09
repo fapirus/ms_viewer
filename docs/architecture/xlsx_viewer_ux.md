@@ -82,6 +82,7 @@
   - scrollable body grid
   - frozen pane split
   - desktop scrollbar
+  - workbook sheet tabs
 
 ### Rust side
 - 현재 `PageRenderModel` 기반 sheet window는 transitional wire model로 유지 가능
@@ -115,11 +116,20 @@
   - frozen pane이 있으면 `topLeftCell`
   - 없으면 `A1`
 - 기본 visible budget:
-  - desktop first pass: `rows 40`, `columns 12`
-  - mobile first pass: `rows 24`, `columns 6`
+  - desktop first pass: `rows 24+`, `columns 10+`
+  - mobile first pass: `rows 18+`, `columns 6+`
+  - 첫 frame 이후 viewport 크기를 보고 minimum visible window를 한 번 확장한다
 - 기본 overscan:
   - desktop: `+20 rows`, `+4 columns`
   - mobile: `+12 rows`, `+2 columns`
+
+### Sheet navigation policy
+- `XLSX`는 `next/previous`로 탐색하지 않는다.
+- workbook의 visible sheet를 하단 탭으로 노출한다.
+- 탭 label은 sheet name을 사용한다.
+- hidden / veryHidden sheet는 기본 탭 strip에 노출하지 않는다.
+- active sheet가 있으면 그 시트를 먼저 연다.
+- 시트 전환은 같은 viewer shell 안에서 viewport만 교체한다.
 
 ### Scroll policy
 - scroll 시 viewport window만 다시 요청
@@ -131,6 +141,7 @@
 ### P0
 - pinned row/column headers
 - 2D scroll
+- visible sheet tabs
 - accurate column widths / row heights
 - frozen panes
 - merged cell placement

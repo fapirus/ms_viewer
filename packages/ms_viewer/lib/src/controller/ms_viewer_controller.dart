@@ -19,9 +19,9 @@ class MsViewerController extends ChangeNotifier {
   static const viewer_platform.SheetWindow _defaultSheetWindow =
       viewer_platform.SheetWindow(
         startRow: 1,
-        endRow: 20,
+        endRow: 24,
         startColumn: 1,
-        endColumn: 8,
+        endColumn: 10,
       );
 
   MsViewerController({
@@ -116,7 +116,8 @@ class MsViewerController extends ChangeNotifier {
         );
         status = ViewerShellStatus.ready;
         if (_supportsImmediatePageFetch(opened.kind) && opened.pageCount > 0) {
-          await loadPage(0);
+          final initialPageIndex = document?.activePageIndex ?? 0;
+          await loadPage(initialPageIndex);
         }
       case viewer_platform.OpenDocumentFailure(error: final openError):
         document = null;

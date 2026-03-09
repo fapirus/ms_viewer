@@ -32,6 +32,30 @@ void main() {
     expect(success.capabilities.textSelection, isTrue);
   });
 
+  test('open document success decodes sheet tabs and active page index', () {
+    final success = OpenDocumentSuccess.fromJson({
+      'documentId': 'sheet_001',
+      'kind': 'xlsx',
+      'title': 'budget.xlsx',
+      'pageCount': 2,
+      'capabilities': {
+        'search': true,
+        'textSelection': true,
+        'passwordProtected': false,
+      },
+      'sheetTabs': [
+        {'pageIndex': 0, 'title': 'Summary'},
+        {'pageIndex': 1, 'title': 'Detail'},
+      ],
+      'activePageIndex': 1,
+    });
+
+    expect(success.kind, DocumentKind.xlsx);
+    expect(success.sheetTabs, hasLength(2));
+    expect(success.sheetTabs.first.title, 'Summary');
+    expect(success.activePageIndex, 1);
+  });
+
   test('open document error decodes from json-like map', () {
     final error = OpenDocumentError.fromJson({
       'code': 'password_required',
@@ -76,20 +100,23 @@ void main() {
     expect(result, isA<OpenDocumentFailure>());
   });
 
-  test('get page render model request encodes to rust-compatible json-like map', () {
-    const request = GetPageRenderModelRequest(
-      source: OpenDocumentSource.path('/tmp/sample.docx'),
-      documentId: 'path:/tmp/sample.docx',
-      pageIndex: 1,
-    );
+  test(
+    'get page render model request encodes to rust-compatible json-like map',
+    () {
+      const request = GetPageRenderModelRequest(
+        source: OpenDocumentSource.path('/tmp/sample.docx'),
+        documentId: 'path:/tmp/sample.docx',
+        pageIndex: 1,
+      );
 
-    expect(request.toJson(), {
-      'source': {'kind': 'path', 'value': '/tmp/sample.docx'},
-      'documentId': 'path:/tmp/sample.docx',
-      'pageIndex': 1,
-      'options': {'password': null, 'preferLazyLoading': true},
-    });
-  });
+      expect(request.toJson(), {
+        'source': {'kind': 'path', 'value': '/tmp/sample.docx'},
+        'documentId': 'path:/tmp/sample.docx',
+        'pageIndex': 1,
+        'options': {'password': null, 'preferLazyLoading': true},
+      });
+    },
+  );
 
   test('get page render model request encodes sheet window when present', () {
     const request = GetPageRenderModelRequest(
@@ -179,20 +206,23 @@ void main() {
     expect(result, isA<SearchDocumentFailure>());
   });
 
-  test('get selection page request encodes to rust-compatible json-like map', () {
-    const request = GetSelectionPageRequest(
-      source: OpenDocumentSource.path('/tmp/sample.docx'),
-      documentId: 'path:/tmp/sample.docx',
-      pageIndex: 0,
-    );
+  test(
+    'get selection page request encodes to rust-compatible json-like map',
+    () {
+      const request = GetSelectionPageRequest(
+        source: OpenDocumentSource.path('/tmp/sample.docx'),
+        documentId: 'path:/tmp/sample.docx',
+        pageIndex: 0,
+      );
 
-    expect(request.toJson(), {
-      'source': {'kind': 'path', 'value': '/tmp/sample.docx'},
-      'documentId': 'path:/tmp/sample.docx',
-      'pageIndex': 0,
-      'options': {'password': null, 'preferLazyLoading': true},
-    });
-  });
+      expect(request.toJson(), {
+        'source': {'kind': 'path', 'value': '/tmp/sample.docx'},
+        'documentId': 'path:/tmp/sample.docx',
+        'pageIndex': 0,
+        'options': {'password': null, 'preferLazyLoading': true},
+      });
+    },
+  );
 
   test('get selection page result decodes success response', () {
     final result = GetSelectionPageResult.fromJson({

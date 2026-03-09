@@ -939,6 +939,12 @@
   - Tests:
     - initial viewport widget test
     - 2D scroll smoke test
+- [x] XLSX 최소 visible window와 기본 셀 수 확장 보정
+  - Scope:
+    - 첫 렌더에서 너무 적은 셀만 보이지 않도록 minimum row/column budget 적용
+    - viewport 크기에 따라 초기 visible window를 한 번 확장한다
+  - Tests:
+    - minimum visible window expansion widget test
 - [x] pinned row/column headers와 corner cell 구현
   - Tests:
     - pinned header widget test
@@ -962,6 +968,13 @@
   - Tests:
     - number/date display regression fixture
     - mixed width text regression fixture
+- [x] XLSX sheet tab navigation shell 구현
+  - Scope:
+    - `next/previous` 대신 workbook sheet name 기반 하단 탭을 사용한다
+    - hidden sheet는 탭에 노출하지 않고 active sheet를 우선 연다
+  - Tests:
+    - open contract sheet tab decode test
+    - xlsx tab switch widget test
 
 ### Acceptance
 - [ ] XLSX visual parity acceptance pass
@@ -969,6 +982,7 @@
     - 주요 issue sheet가 빈 영역/잘린 영역 없이 렌더된다
     - `XLSX`가 page viewer처럼 보이지 않고 spreadsheet viewport처럼 동작한다
     - row/column headers가 유지된다
+    - 하단 시트 탭으로 workbook sheet 전환이 가능하다
     - column width와 row height가 허용 범위 내에 있다
     - frozen pane과 visible window가 안정적으로 동작한다
     - 최소 재현 fixture 회귀 테스트가 추가되었다

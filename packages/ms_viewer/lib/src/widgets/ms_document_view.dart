@@ -100,9 +100,9 @@ class _MsDocumentViewState extends State<MsDocumentView> {
     final searchResults = widget.controller.searchController.results;
     if (isSpreadsheet) {
       return _buildSpreadsheetReadyState(
+        document: document,
         title: title,
         pageCount: pageCount,
-        currentLabel: currentLabel,
         page: page,
         searchResults: searchResults,
       );
@@ -314,12 +314,33 @@ class _MsDocumentViewState extends State<MsDocumentView> {
   }
 
   Widget _buildSpreadsheetReadyState({
+    required document_model.DocumentDescriptor document,
     required String title,
     required int pageCount,
-    required String currentLabel,
     required PageRenderModel? page,
     required List<SearchResult> searchResults,
   }) {
+    final sheetTabs = document.sheetTabs.isEmpty
+        ? List<document_model.DocumentSheetTab>.generate(
+            pageCount,
+            (index) => document_model.DocumentSheetTab(
+              pageIndex: index,
+              title: 'Sheet ${index + 1}',
+            ),
+            growable: false,
+          )
+        : document.sheetTabs;
+    final activeSheetIndex =
+        widget.controller.currentPageIndex ??
+        document.activePageIndex ??
+        (sheetTabs.isEmpty ? 0 : sheetTabs.first.pageIndex);
+    final activeSheetTitle = sheetTabs
+        .cast<document_model.DocumentSheetTab?>()
+        .firstWhere(
+          (tab) => tab?.pageIndex == activeSheetIndex,
+          orElse: () => sheetTabs.isEmpty ? null : sheetTabs.first,
+        )
+        ?.title;
     return Column(
       key: const ValueKey('xlsx-sheet-shell'),
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -331,32 +352,10 @@ class _MsDocumentViewState extends State<MsDocumentView> {
             children: [
               Text(title, style: Theme.of(context).textTheme.titleMedium),
               const SizedBox(height: 6),
-              Text('$pageCount sheets'),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  OutlinedButton.icon(
-                    onPressed: widget.controller.canGoToPreviousPage
-                        ? () => unawaited(widget.controller.goToPreviousPage())
-                        : null,
-                    icon: const Icon(Icons.chevron_left),
-                    label: const Text('Previous'),
-                  ),
-                  const SizedBox(width: 8),
-                  OutlinedButton.icon(
-                    onPressed: widget.controller.canGoToNextPage
-                        ? () => unawaited(widget.controller.goToNextPage())
-                        : null,
-                    icon: const Icon(Icons.chevron_right),
-                    label: const Text('Next'),
-                  ),
-                  const SizedBox(width: 12),
-                  Text(
-                    pageCount == 0
-                        ? '$currentLabel 0 / 0'
-                        : '$currentLabel ${(widget.controller.currentPageIndex ?? 0) + 1} / $pageCount',
-                  ),
-                ],
+              Text(
+                activeSheetTitle == null
+                    ? '$pageCount sheets'
+                    : '$activeSheetTitle · ${sheetTabs.length} sheets',
               ),
               const SizedBox(height: 12),
               Row(
@@ -422,6 +421,33 @@ class _MsDocumentViewState extends State<MsDocumentView> {
             ),
           },
         ),
+        if (sheetTabs.isNotEmpty)
+          Container(
+            height: 56,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: const BoxDecoration(
+              color: Color(0xFFF8FBFF),
+              border: Border(top: BorderSide(color: Color(0xFFD0D7DE))),
+            ),
+            child: ListView.separated(
+              key: const ValueKey('xlsx-sheet-tabs'),
+              scrollDirection: Axis.horizontal,
+              itemCount: sheetTabs.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 8),
+              itemBuilder: (context, index) {
+                final tab = sheetTabs[index];
+                final selected = tab.pageIndex == activeSheetIndex;
+                return ChoiceChip(
+                  key: ValueKey('xlsx-sheet-tab-${tab.pageIndex}'),
+                  label: Text(tab.title),
+                  selected: selected,
+                  onSelected: (_) {
+                    unawaited(widget.controller.loadPage(tab.pageIndex));
+                  },
+                );
+              },
+            ),
+          ),
       ],
     );
   }

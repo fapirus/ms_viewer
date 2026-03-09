@@ -35,6 +35,10 @@ class _SheetViewportState extends State<SheetViewport> {
   static const Color _headerBorder = Color(0xFFD0D7DE);
   static const double _windowShiftRatio = 0.5;
   static const double _requestThreshold = 0.72;
+  static const int _minimumVisibleRows = 24;
+  static const int _minimumVisibleColumns = 10;
+  static const double _targetRowPixels = 30;
+  static const double _targetColumnPixels = 108;
 
   final ScrollController _horizontalBodyController = ScrollController();
   final ScrollController _verticalBodyController = ScrollController();
@@ -47,6 +51,7 @@ class _SheetViewportState extends State<SheetViewport> {
   int _pendingColumnShift = 0;
   int _pendingRowShift = 0;
   _SheetViewportMetrics? _latestMetrics;
+  bool _initialWindowExpansionScheduled = false;
 
   @override
   void initState() {
@@ -63,6 +68,7 @@ class _SheetViewportState extends State<SheetViewport> {
     if (oldWindow != null &&
         newWindow != null &&
         !_sameWindowBounds(oldWindow, newWindow)) {
+      _initialWindowExpansionScheduled = false;
       final oldMetrics = _SheetViewportMetrics.fromPage(oldWidget.page);
       final horizontalAdjustment = oldMetrics.extentForLeadingColumns(
         _pendingColumnShift,
@@ -217,46 +223,116 @@ class _SheetViewportState extends State<SheetViewport> {
     final metrics = _SheetViewportMetrics.fromPage(widget.page);
     _latestMetrics = metrics;
 
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: const Color(0xFFF7F9FC),
-        border: Border.all(color: _headerBorder),
-        borderRadius: BorderRadius.circular(14),
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(14),
-        child: Column(
-          children: [
-            SizedBox(
-              height: _headerExtent,
-              child: Row(
-                children: [
-                  _buildCornerCell(),
-                  Expanded(child: _buildColumnHeaders(metrics)),
-                ],
-              ),
-            ),
-            const Divider(height: 1, thickness: 1, color: _headerBorder),
-            Expanded(
-              child: Row(
-                children: [
-                  SizedBox(
-                    width: _cornerExtent,
-                    child: _buildRowHeaders(metrics),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        _scheduleMinimumWindowExpansion(constraints.biggest);
+        return DecoratedBox(
+          decoration: BoxDecoration(
+            color: const Color(0xFFF7F9FC),
+            border: Border.all(color: _headerBorder),
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(14),
+            child: Column(
+              children: [
+                SizedBox(
+                  height: _headerExtent,
+                  child: Row(
+                    children: [
+                      _buildCornerCell(),
+                      Expanded(child: _buildColumnHeaders(metrics)),
+                    ],
                   ),
-                  const VerticalDivider(
-                    width: 1,
-                    thickness: 1,
-                    color: _headerBorder,
+                ),
+                const Divider(height: 1, thickness: 1, color: _headerBorder),
+                Expanded(
+                  child: Row(
+                    children: [
+                      SizedBox(
+                        width: _cornerExtent,
+                        child: _buildRowHeaders(metrics),
+                      ),
+                      const VerticalDivider(
+                        width: 1,
+                        thickness: 1,
+                        color: _headerBorder,
+                      ),
+                      Expanded(child: _buildScrollableBody(metrics)),
+                    ],
                   ),
-                  Expanded(child: _buildScrollableBody(metrics)),
-                ],
-              ),
+                ),
+              ],
             ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
+  }
+
+  void _scheduleMinimumWindowExpansion(Size viewportSize) {
+    if (_initialWindowExpansionScheduled) {
+      return;
+    }
+    final callback = widget.onWindowRequest;
+    final viewport = widget.page.sheetViewport;
+    if (callback == null || viewport == null) {
+      return;
+    }
+
+    final currentWindow = viewport.window;
+    final effectiveBounds = viewport.effectiveBounds;
+    final desiredRowCount = math.max(
+      _minimumVisibleRows,
+      ((viewportSize.height - _headerExtent) / _targetRowPixels).ceil(),
+    );
+    final desiredColumnCount = math.max(
+      _minimumVisibleColumns,
+      ((viewportSize.width - _cornerExtent) / _targetColumnPixels).ceil(),
+    );
+    final currentRowCount = currentWindow.endRow - currentWindow.startRow + 1;
+    final currentColumnCount =
+        currentWindow.endColumn - currentWindow.startColumn + 1;
+    final targetEndRow = math.min(
+      effectiveBounds.endRow,
+      currentWindow.startRow + desiredRowCount - 1,
+    );
+    final targetEndColumn = math.min(
+      effectiveBounds.endColumn,
+      currentWindow.startColumn + desiredColumnCount - 1,
+    );
+
+    if (targetEndRow <= currentWindow.endRow &&
+        targetEndColumn <= currentWindow.endColumn) {
+      _initialWindowExpansionScheduled = true;
+      return;
+    }
+
+    if (currentRowCount >= desiredRowCount &&
+        currentColumnCount >= desiredColumnCount) {
+      _initialWindowExpansionScheduled = true;
+      return;
+    }
+
+    _initialWindowExpansionScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _windowRequestInFlight) {
+        return;
+      }
+      _windowRequestInFlight = true;
+      unawaited(
+        callback(
+          SheetWindow(
+            startRow: currentWindow.startRow,
+            endRow: targetEndRow,
+            startColumn: currentWindow.startColumn,
+            endColumn: targetEndColumn,
+          ),
+        ).catchError((_) {
+          _windowRequestInFlight = false;
+        }),
+      );
+    });
   }
 
   Widget _buildCornerCell() {
