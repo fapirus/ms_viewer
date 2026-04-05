@@ -232,11 +232,13 @@ OOXML은 ZIP 기반이라 완전한 스트리밍이 쉽지 않다.
 ## Hardening posture
 `docx`, `pptx`, `xlsx`를 한 바퀴 모두 돌고 나면 hardening phase에서 아래를 묶어 처리한다.
 
-- 포맷별로 미뤄둔 시각 충실도 보강
-- 공통 text metrics / fallback / theme font 보강
-- 암호화/비밀번호 UX polish
-- 대용량 파일과 cache/memory profiling
-- coverage tooling과 품질 기준 고정
+- `xlsx` drawing/image, chart placeholder, zoom 같은 남은 sheet-viewer 기능
+- 공통 text metrics / fallback / theme font / glyph fidelity 보강
+- 암호화/비밀번호 UX polish와 `FileHandle` 입력 support
+- 대용량 파일 cache tuning / memory profiling / Linux feasibility review
+- cross-format visual parity backlog와 coverage tooling 정리
+
+현재 `xlsx`의 active cell keyboard navigation과 multi-cell range selection은 hardening backlog가 아니라 Phase 3.6 delivered scope로 본다.
 
 즉, 포맷 phase에서는 "출시 가능한 MVP + 실연동"을 우선 확보하고, hardening에서는 각 포맷에서 수집된 잔여 debt를 체계적으로 갚는 구조로 간다.
 

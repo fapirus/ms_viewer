@@ -861,12 +861,15 @@
 - [x] demo fixture 목록에서 실제 XLSX 열기 연결
 - [x] demo file picker XLSX 실연동
 - [x] demo desktop drop XLSX 실연동
-- [ ] XLSX demo real integration acceptance pass
+- [x] XLSX demo real integration acceptance pass
   - Acceptance checks:
     - fixture xlsx opens through real engine path
     - picked xlsx opens through real engine path
     - dropped xlsx opens through real engine path
     - visible sheet window render matches real model
+  - Done:
+    - `examples/flutter_demo/test/smoke_test.dart`에서 fixture bytes open, picker path open, desktop drop open이 모두 실제 engine 경로로 검증되었다
+    - `viewer_ffi`/`format_xlsx`/`packages/ms_viewer` 테스트에서 visible sheet window render contract와 viewer shell 연동이 2026-04-06 전체 회귀 실행으로 재검증되었다
 
 ## Phase 3.55: Demo viewer shell refactor
 ### Purpose
@@ -1069,7 +1072,7 @@
     - `packages/ms_viewer` 전체 회귀 테스트
 
 ### Acceptance
-- [ ] XLSX visual parity acceptance pass
+- [x] XLSX visual parity acceptance pass
   - Acceptance checks:
     - 주요 issue sheet가 빈 영역/잘린 영역 없이 렌더된다
     - `XLSX`가 page viewer처럼 보이지 않고 spreadsheet viewport처럼 동작한다
@@ -1078,12 +1081,18 @@
     - column width와 row height가 허용 범위 내에 있다
     - frozen pane과 visible window가 안정적으로 동작한다
     - 최소 재현 fixture 회귀 테스트가 추가되었다
+  - Done:
+    - `docs/qa/XLSX_VISUAL_TRIAGE.md`와 review fixture 2종을 기준으로 issue 유형, 최소 재현 fixture, drawing/chart 후속 backlog가 분리되었다
+    - `packages/ms_viewer/test/sheet_viewport_test.dart`, `packages/ms_viewer/test/ms_document_view_test.dart`, `examples/flutter_demo/test/smoke_test.dart` 재실행으로 header, tab, frozen pane, active cell, range highlight, scroll continuity가 viewer shell 기준으로 회귀 검증되었다
 
 ## Phase 4: Hardening
-- [ ] deferred hardening backlog sweep
+- [x] deferred hardening backlog sweep
   - Scope:
     - `DOCX/PPTX/XLSX` phase에서 미룬 품질/성능/호환성 debt를 전수 검토
     - 중복 항목 정리와 우선순위 재배치
+  - Done:
+    - Phase 3.6에서 이미 구현된 `XLSX active cell keyboard navigation`, `XLSX multi-cell range selection`을 hardening backlog에서 제거했다
+    - hardening 잔여 범위를 drawing/image, chart, zoom, password polish, theme font/glyph metrics, FileHandle, cache/memory, fallback font, cross-format parity, PPTX fidelity, coverage, Linux review로 재정렬했다
 - [ ] XLSX worksheet drawing/image support
   - Scope:
     - `xdr:wsDr` 기반 drawing/image anchor parse
@@ -1098,15 +1107,6 @@
   - Scope:
     - scale factor에 따라 visible budget, overscan, frozen pane overlay를 다시 계산
     - zoom 상태를 active sheet viewport state와 함께 유지
-- [ ] XLSX active cell keyboard navigation
-  - Scope:
-    - 방향키 기반 active cell 이동
-    - search jump 이후 active cell focus 유지
-    - active cell이 window 밖으로 나가면 viewport를 따라 이동
-- [ ] XLSX multi-cell range selection
-  - Scope:
-    - pointer drag 또는 `Shift + 방향키` 기반 cell range selection
-    - merged cell/frozen pane이 있는 경우 range rect 계산 규칙 확정
 - [ ] password flow end-to-end polish
   - Tests:
     - wrong password retry
