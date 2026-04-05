@@ -838,72 +838,275 @@
 - 권장 브랜치 전략: `XLSX MVP` 브랜치와 별도 `XLSX demo integration` 브랜치로 분리한다.
 
 ### Rust and FFI
-- [ ] XLSX visible sheet window FFI endpoint 연결
+- [x] XLSX visible sheet window FFI endpoint 연결
   - Tests:
     - first sheet window fetch fixture test
     - invalid sheet index error mapping test
-- [ ] XLSX search and selection FFI endpoint 연결
+- [x] XLSX search and selection FFI endpoint 연결
   - Tests:
     - sheet search round-trip test
     - sheet selection metadata fetch smoke test
 
 ### Flutter bridge
-- [ ] Flutter platform bridge에서 XLSX sheet window fetch 연결
+- [x] Flutter platform bridge에서 XLSX sheet window fetch 연결
   - Tests:
     - sheet window fetch controller test
     - sheet fetch error state widget test
-- [ ] Flutter XLSX search/selection bridge 연결
+- [x] Flutter XLSX search/selection bridge 연결
   - Tests:
     - sheet search integration widget test
     - sheet text selection integration widget test
 
 ### Demo app
-- [ ] demo fixture 목록에서 실제 XLSX 열기 연결
-- [ ] demo file picker XLSX 실연동
-- [ ] demo desktop drop XLSX 실연동
-- [ ] XLSX demo real integration acceptance pass
+- [x] demo fixture 목록에서 실제 XLSX 열기 연결
+- [x] demo file picker XLSX 실연동
+- [x] demo desktop drop XLSX 실연동
+- [x] XLSX demo real integration acceptance pass
   - Acceptance checks:
     - fixture xlsx opens through real engine path
     - picked xlsx opens through real engine path
     - dropped xlsx opens through real engine path
     - visible sheet window render matches real model
+  - Done:
+    - `examples/flutter_demo/test/smoke_test.dart`에서 fixture bytes open, picker path open, desktop drop open이 모두 실제 engine 경로로 검증되었다
+    - `viewer_ffi`/`format_xlsx`/`packages/ms_viewer` 테스트에서 visible sheet window render contract와 viewer shell 연동이 2026-04-06 전체 회귀 실행으로 재검증되었다
+
+## Phase 3.55: Demo viewer shell refactor
+### Purpose
+- 이 phase는 `examples/flutter_demo`와 `packages/ms_viewer`의 viewer shell을 실제 제품에 가까운 구조로 재편한다.
+- `XLSX visual parity acceptance` 전에 수행한다.
+- `DOCX/PPTX/XLSX` 수동 검증 기준을 preview shell이 아니라 document viewer shell 기준으로 바꾼다.
+
+### Structure
+- [x] 문서 목록 화면과 뷰어 화면 분리
+  - Done when:
+    - library screen과 viewer screen이 route 단위로 분리된다
+    - 문서 선택 시 viewer route로 이동한다
+  - Tests:
+    - library -> viewer navigation widget test
+    - back navigation widget test
+- [x] viewer 전용 chrome 구성
+  - Scope:
+    - title, back, search, open file를 viewer 화면 기준으로 재배치
+    - preview shell 성격의 보조 메타 패널 제거
+  - Tests:
+    - viewer app bar widget test
+    - search placement widget test
+- [x] DOCX continuous page scroll viewer 적용
+  - Scope:
+    - engine page model은 유지
+    - Flutter UI는 page button paging 대신 vertical scroll stack으로 전환
+  - Tests:
+    - docx continuous scroll widget test
+    - page stack smoke test
+- [x] PPTX continuous slide scroll viewer 적용
+  - Scope:
+    - engine slide index는 유지
+    - Flutter UI는 slide button paging 대신 vertical slide list로 전환
+  - Tests:
+    - pptx continuous scroll widget test
+    - slide list smoke test
+- [x] XLSX full-screen viewport shell 적용
+  - Scope:
+    - side rail과 preview layout 없이 sheet viewport를 문서 전용 화면으로 제공
+    - row/column header와 2D viewport를 주 surface로 둔다
+  - Tests:
+    - xlsx full-screen shell widget test
+    - viewport sizing smoke test
+- [x] demo viewer shell acceptance pass
+  - Acceptance checks:
+    - demo 첫 화면은 library 역할만 한다
+    - 열람 시 별도 viewer screen으로 이동한다
+    - `DOCX/PPTX`는 scroll viewing으로 동작한다
+    - `XLSX`는 spreadsheet viewer처럼 보인다
+    - 이후 issue screenshot은 viewer screen 기준으로 수집한다
 
 ## Phase 3.6: XLSX visual parity and large-sheet pass
 ### Visual regression triage
-- [ ] issue 기반 XLSX 시각 회귀 분류 규칙 정리
+- [x] XLSX grid-first viewer UX 아키텍처 확정
+  - Done when:
+    - `docs/architecture/xlsx_viewer_ux.md` 기준으로 UX 방향이 고정된다
+    - `XLSX`가 page viewer가 아니라 sheet viewport라는 점이 `PROJECT_PLAN.md`와 동기화된다
+  - Output:
+    - row/column header, 2D scroll, frozen pane, visible window 정책 확정
+- [x] issue 기반 XLSX 시각 회귀 분류 규칙 정리
   - Scope:
     - column width, row height, merged cell, frozen pane, large-sheet viewport 차이를 `issue/` 기준으로 분류
     - 최소 재현 fixture 후보를 `fixtures/regression/`에 승격
+  - Done:
+    - `docs/qa/XLSX_VISUAL_TRIAGE.md`에 `template-a`, `template-b` 차이를 정리했다
+    - blank grid 문제와 drawing/chart backlog를 분리했다
 
 ### Layout and viewport fidelity
-- [ ] XLSX column width/row height/merged cell 배치 보정
+- [x] Flutter 전용 2D sheet viewport scaffold 구현
+  - Scope:
+    - 공통 `DocumentPageView` 대신 `XLSX` 전용 viewport shell 도입
+    - `TableView` 또는 동등한 2D viewport 기반으로 row/column scrolling 구조 구성
+  - Tests:
+    - initial viewport widget test
+    - 2D scroll smoke test
+- [x] XLSX 최소 visible window와 기본 셀 수 확장 보정
+  - Scope:
+    - 첫 렌더에서 너무 적은 셀만 보이지 않도록 minimum row/column budget 적용
+    - viewport 크기에 따라 초기 visible window를 한 번 확장한다
+  - Tests:
+    - minimum visible window expansion widget test
+    - sparse sheet blank-grid regression test
+- [x] pinned row/column headers와 corner cell 구현
+  - Tests:
+    - pinned header widget test
+    - header/body scroll sync test
+- [x] XLSX column width/row height/merged cell 배치 보정
   - Tests:
     - merged cell layout regression fixture
     - row height regression fixture
-- [ ] XLSX frozen pane와 visible window virtualization 보정
+- [x] XLSX frozen pane와 visible window virtualization 보정
   - Tests:
     - frozen pane viewport regression fixture
     - large-sheet scroll stability regression fixture
-- [ ] XLSX number/date format 및 기본 타이포그래피 보정
+- [x] XLSX effective bounds와 overscan 정책 보정
+  - Scope:
+    - `dimension`, actual cells, metrics, merges, frozen panes를 합쳐 effective bounds 계산
+    - global max row/column가 아니라 used-range 중심 viewport를 사용
+  - Tests:
+    - effective bounds regression fixture
+    - overscan stability regression fixture
+- [x] XLSX number/date format 및 기본 타이포그래피 보정
   - Tests:
     - number/date display regression fixture
     - mixed width text regression fixture
+- [x] XLSX sheet tab navigation shell 구현
+  - Scope:
+    - `next/previous` 대신 workbook sheet name 기반 하단 탭을 사용한다
+    - hidden sheet는 탭에 노출하지 않고 active sheet를 우선 연다
+  - Tests:
+    - open contract sheet tab decode test
+    - xlsx tab switch widget test
+- [x] XLSX viewport window continuity와 incremental loading UX 보정
+  - Scope:
+    - visible window 갱신 시 기존 sheet surface를 유지하고 full-screen loading으로 덮지 않는다
+    - scroll edge에서 다음 window뿐 아니라 이전 window도 다시 요청할 수 있다
+    - window 교체 후 scroll continuity를 유지한다
+  - Tests:
+    - controller window continuity test
+    - leading/trailing edge window request widget test
+    - xlsx window loading overlay widget test
+- [x] XLSX demo engine persistent process와 parsed workbook cache 적용
+  - Scope:
+    - demo app이 `cargo run`을 매 요청마다 다시 띄우지 않고 persistent `viewer_cli serve` 프로세스를 재사용한다
+    - `XLSX`는 open 이후 parsed workbook/package를 캐시해서 window/search/selection 요청 때 재파싱하지 않는다
+    - large-sheet scroll 시 CPU spike와 freeze를 줄이는 방향으로 request overhead를 낮춘다
+  - Tests:
+    - `viewer_cli` cache path를 포함한 `cargo test --manifest-path rust/Cargo.toml`
+    - `ms_viewer`/`flutter_demo` 회귀 테스트
+- [x] XLSX sheet painter 최적화와 viewport resize 재확장 보정
+  - Scope:
+    - `XLSX` body는 수천 개의 cell widget 대신 sheet 전용 painter로 box/text 레이어를 그린다
+    - body viewport가 커지면 minimum visible window 확장을 다시 평가한다
+    - large-sheet에서 widget tree 폭증과 resize 후 빈 영역 잔존을 줄인다
+  - Tests:
+    - `sheet_viewport` re-expand on resize widget test
+    - `packages/ms_viewer` 전체 회귀 테스트
+- [x] XLSX sparse sheet render contract 적용
+  - Scope:
+    - blank/default cell box를 render node로 모두 보내지 않는다
+    - 기본 grid/stroke/background는 Flutter sheet painter가 그리고, Rust는 sparse visual node만 보낸다
+    - `sheetCells`는 geometry/highlight metadata로 유지한다
+  - Tests:
+    - xlsx render model regression tests
+    - `packages/ms_viewer` 전체 회귀 테스트
+- [x] XLSX engine render hot-path indexing 최적화
+  - Scope:
+    - visible window 렌더에서 cell lookup을 선형 탐색 대신 좌표 인덱스로 바꾼다
+    - row/column 누적 길이는 prefix offset으로 계산해 per-cell 합산 비용을 제거한다
+    - merged range도 visible bounds 기준 lookup으로 줄인다
+  - Tests:
+    - `cargo test --manifest-path rust/Cargo.toml`
+    - `packages/ms_viewer` 전체 회귀 테스트
+- [x] XLSX tile 기반 viewport cache와 composite window 적용
+  - Scope:
+    - controller가 임의의 large sheet window를 tile-aligned window들로 정규화한다
+    - cached tile page를 재사용하고, 필요한 경우 여러 tile을 `PageRenderModel` 1개로 합성한다
+    - 반대 방향 이동 시 전체 large window를 다시 만들지 않고 tile 재사용 경로를 우선 탄다
+  - Tests:
+    - xlsx controller tile-normalized window test
+    - `packages/ms_viewer`/`flutter_demo` 전체 회귀 테스트
+- [x] XLSX cell-centric search navigation groundwork
+  - Scope:
+    - `XLSX` search result는 text offset뿐 아니라 target cell(row/column)을 함께 가진다
+    - search 결과 선택 시 해당 sheet/cell이 현재 window 밖이면 viewport를 그 셀 중심으로 다시 연다
+    - highlight는 text range 대신 target cell rect에 적용한다
+  - Tests:
+    - xlsx search result contract decode test
+    - xlsx search widget integration test
+- [x] XLSX active cell 선택과 표시
+  - Scope:
+    - sheet body에서 cell을 클릭하면 active cell(row/column)을 선택한다
+    - active cell은 현재 sheet 기준으로 하이라이트되고 UI에 cell address를 표시한다
+    - search jump와 active cell 하이라이트가 같은 모델을 공유한다
+  - Tests:
+    - xlsx controller active cell selection test
+    - xlsx active cell widget integration test
+- [x] XLSX 방향키 active cell 이동
+  - Scope:
+    - sheet viewport가 focus를 받을 때 화살표 키로 active cell을 이동한다
+    - active cell이 viewport 밖으로 나가면 sheet window가 그 셀을 따라간다
+    - keyboard navigation은 search/active cell 모델과 같은 상태를 사용한다
+  - Tests:
+    - xlsx controller keyboard movement test
+    - xlsx active cell keyboard widget integration test
+- [x] XLSX multi-cell range selection 기본 구조
+  - Scope:
+    - active cell과 별도로 sheet range anchor/extent 상태를 유지한다
+    - `Shift + 방향키`는 active cell을 움직이면서 range를 확장한다
+    - range는 cell rect 집합으로 하이라이트된다
+  - Tests:
+    - xlsx controller range expansion test
+    - xlsx range state widget integration test
+- [x] XLSX viewport pointer scroll routing 보정
+  - Scope:
+    - sheet viewport가 wheel/trackpad scroll 신호를 직접 소비해 body scroll controller에만 전달한다
+    - 상위 shell/app bar가 spreadsheet body scroll에 반응하지 않도록 분리한다
+  - Tests:
+    - sheet viewport pointer scroll widget test
+    - `packages/ms_viewer` 전체 회귀 테스트
 
 ### Acceptance
-- [ ] XLSX visual parity acceptance pass
+- [x] XLSX visual parity acceptance pass
   - Acceptance checks:
     - 주요 issue sheet가 빈 영역/잘린 영역 없이 렌더된다
+    - `XLSX`가 page viewer처럼 보이지 않고 spreadsheet viewport처럼 동작한다
+    - row/column headers가 유지된다
+    - 하단 시트 탭으로 workbook sheet 전환이 가능하다
     - column width와 row height가 허용 범위 내에 있다
     - frozen pane과 visible window가 안정적으로 동작한다
     - 최소 재현 fixture 회귀 테스트가 추가되었다
+  - Done:
+    - `docs/qa/XLSX_VISUAL_TRIAGE.md`와 review fixture 2종을 기준으로 issue 유형, 최소 재현 fixture, drawing/chart 후속 backlog가 분리되었다
+    - `packages/ms_viewer/test/sheet_viewport_test.dart`, `packages/ms_viewer/test/ms_document_view_test.dart`, `examples/flutter_demo/test/smoke_test.dart` 재실행으로 header, tab, frozen pane, active cell, range highlight, scroll continuity가 viewer shell 기준으로 회귀 검증되었다
 
 ## Phase 4: Hardening
-- [ ] deferred hardening backlog sweep
+- [x] deferred hardening backlog sweep
   - Scope:
     - `DOCX/PPTX/XLSX` phase에서 미룬 품질/성능/호환성 debt를 전수 검토
     - 중복 항목 정리와 우선순위 재배치
+  - Done:
+    - Phase 3.6에서 이미 구현된 `XLSX active cell keyboard navigation`, `XLSX multi-cell range selection`을 hardening backlog에서 제거했다
+    - hardening 잔여 범위를 drawing/image, chart, zoom, password polish, theme font/glyph metrics, FileHandle, cache/memory, fallback font, cross-format parity, PPTX fidelity, coverage, Linux review로 재정렬했다
+- [ ] XLSX worksheet drawing/image support
+  - Scope:
+    - `xdr:wsDr` 기반 drawing/image anchor parse
+    - worksheet image placement와 기본 crop/size 반영
+- [ ] XLSX chart placeholder/render support
+  - Scope:
+    - chart part 연결
+    - 최소 placeholder 또는 chart preview 렌더 전략 확정
   - Output:
     - `PROJECT_PLAN.md`와 이 문서의 hardening backlog 동기화
+- [ ] XLSX zoom in/out contract와 viewport scaling support
+  - Scope:
+    - scale factor에 따라 visible budget, overscan, frozen pane overlay를 다시 계산
+    - zoom 상태를 active sheet viewport state와 함께 유지
 - [ ] password flow end-to-end polish
   - Tests:
     - wrong password retry

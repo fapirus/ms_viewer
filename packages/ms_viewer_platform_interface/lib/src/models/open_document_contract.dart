@@ -1,29 +1,20 @@
 import 'render_model.dart';
 
 class OpenOptions {
-  const OpenOptions({
-    this.password,
-    this.preferLazyLoading = true,
-  });
+  const OpenOptions({this.password, this.preferLazyLoading = true});
 
   final String? password;
   final bool preferLazyLoading;
 
   Map<String, Object?> toJson() {
-    return {
-      'password': password,
-      'preferLazyLoading': preferLazyLoading,
-    };
+    return {'password': password, 'preferLazyLoading': preferLazyLoading};
   }
 }
 
 enum DocumentSourceKind { path, bytesBase64 }
 
 class OpenDocumentSource {
-  const OpenDocumentSource._({
-    required this.kind,
-    required this.value,
-  });
+  const OpenDocumentSource._({required this.kind, required this.value});
 
   const OpenDocumentSource.path(String value)
     : this._(kind: DocumentSourceKind.path, value: value);
@@ -35,10 +26,7 @@ class OpenDocumentSource {
   final String value;
 
   Map<String, Object?> toJson() {
-    return {
-      'kind': kind.name,
-      'value': value,
-    };
+    return {'kind': kind.name, 'value': value};
   }
 }
 
@@ -52,10 +40,7 @@ class OpenDocumentRequest {
   final OpenOptions options;
 
   Map<String, Object?> toJson() {
-    return {
-      'source': source.toJson(),
-      'options': options.toJson(),
-    };
+    return {'source': source.toJson(), 'options': options.toJson()};
   }
 }
 
@@ -64,12 +49,14 @@ class GetPageRenderModelRequest {
     required this.source,
     required this.documentId,
     required this.pageIndex,
+    this.sheetWindow,
     this.options = const OpenOptions(),
   });
 
   final OpenDocumentSource source;
   final String documentId;
   final int pageIndex;
+  final SheetWindow? sheetWindow;
   final OpenOptions options;
 
   Map<String, Object?> toJson() {
@@ -77,7 +64,31 @@ class GetPageRenderModelRequest {
       'source': source.toJson(),
       'documentId': documentId,
       'pageIndex': pageIndex,
+      if (sheetWindow != null) 'sheetWindow': sheetWindow!.toJson(),
       'options': options.toJson(),
+    };
+  }
+}
+
+class SheetWindow {
+  const SheetWindow({
+    required this.startRow,
+    required this.endRow,
+    required this.startColumn,
+    required this.endColumn,
+  });
+
+  final int startRow;
+  final int endRow;
+  final int startColumn;
+  final int endColumn;
+
+  Map<String, Object?> toJson() {
+    return {
+      'startRow': startRow,
+      'endRow': endRow,
+      'startColumn': startColumn,
+      'endColumn': endColumn,
     };
   }
 }
@@ -160,6 +171,20 @@ class DocumentCapabilities {
   }
 }
 
+class SheetTabModel {
+  const SheetTabModel({required this.pageIndex, required this.title});
+
+  final int pageIndex;
+  final String title;
+
+  factory SheetTabModel.fromJson(Map<String, Object?> json) {
+    return SheetTabModel(
+      pageIndex: json['pageIndex'] as int,
+      title: json['title'] as String,
+    );
+  }
+}
+
 class OpenDocumentSuccess {
   const OpenDocumentSuccess({
     required this.documentId,
@@ -167,6 +192,8 @@ class OpenDocumentSuccess {
     required this.title,
     required this.pageCount,
     required this.capabilities,
+    this.sheetTabs = const [],
+    this.activePageIndex,
   });
 
   final String documentId;
@@ -174,8 +201,11 @@ class OpenDocumentSuccess {
   final String title;
   final int pageCount;
   final DocumentCapabilities capabilities;
+  final List<SheetTabModel> sheetTabs;
+  final int? activePageIndex;
 
   factory OpenDocumentSuccess.fromJson(Map<String, Object?> json) {
+    final sheetTabsJson = json['sheetTabs'] as List<Object?>? ?? const [];
     return OpenDocumentSuccess(
       documentId: json['documentId'] as String,
       kind: DocumentKind.values.byName(json['kind'] as String),
@@ -184,6 +214,11 @@ class OpenDocumentSuccess {
       capabilities: DocumentCapabilities.fromJson(
         json['capabilities'] as Map<String, Object?>,
       ),
+      sheetTabs: sheetTabsJson
+          .cast<Map<String, Object?>>()
+          .map(SheetTabModel.fromJson)
+          .toList(growable: false),
+      activePageIndex: json['activePageIndex'] as int?,
     );
   }
 }
@@ -234,9 +269,7 @@ sealed class GetPageRenderModelResult {
       return GetPageRenderModelFailure(OpenDocumentError.fromJson(json));
     }
 
-    return GetPageRenderModelSuccess(
-      PageRenderModel.fromJson(json),
-    );
+    return GetPageRenderModelSuccess(PageRenderModel.fromJson(json));
   }
 }
 
@@ -259,6 +292,7 @@ class SearchMatchModel {
     required this.start,
     required this.end,
     required this.preview,
+    required this.sheetCell,
   });
 
   final String query;
@@ -266,14 +300,33 @@ class SearchMatchModel {
   final int start;
   final int end;
   final String preview;
+  final SearchSheetCellModel? sheetCell;
 
   factory SearchMatchModel.fromJson(Map<String, Object?> json) {
+    final sheetCellJson = json['sheetCell'] as Map<String, Object?>?;
     return SearchMatchModel(
       query: json['query'] as String,
       pageIndex: json['pageIndex'] as int,
       start: json['start'] as int,
       end: json['end'] as int,
       preview: json['preview'] as String,
+      sheetCell: sheetCellJson == null
+          ? null
+          : SearchSheetCellModel.fromJson(sheetCellJson),
+    );
+  }
+}
+
+class SearchSheetCellModel {
+  const SearchSheetCellModel({required this.row, required this.column});
+
+  final int row;
+  final int column;
+
+  factory SearchSheetCellModel.fromJson(Map<String, Object?> json) {
+    return SearchSheetCellModel(
+      row: json['row'] as int,
+      column: json['column'] as int,
     );
   }
 }
@@ -336,19 +389,16 @@ class GetSelectionPageFailure extends GetSelectionPageResult {
 
 ViewerErrorCode _viewerErrorCodeFromWire(String value) {
   return switch (value) {
-    'unsupported_format' || 'unsupportedFormat' =>
-      ViewerErrorCode.unsupportedFormat,
-    'password_required' || 'passwordRequired' =>
-      ViewerErrorCode.passwordRequired,
-    'invalid_password' || 'invalidPassword' =>
-      ViewerErrorCode.invalidPassword,
-    'unsupported_encryption' || 'unsupportedEncryption' =>
-      ViewerErrorCode.unsupportedEncryption,
+    'unsupported_format' ||
+    'unsupportedFormat' => ViewerErrorCode.unsupportedFormat,
+    'password_required' ||
+    'passwordRequired' => ViewerErrorCode.passwordRequired,
+    'invalid_password' || 'invalidPassword' => ViewerErrorCode.invalidPassword,
+    'unsupported_encryption' ||
+    'unsupportedEncryption' => ViewerErrorCode.unsupportedEncryption,
     'io_error' || 'ioError' => ViewerErrorCode.ioError,
-    'invalid_document' || 'invalidDocument' =>
-      ViewerErrorCode.invalidDocument,
-    'not_implemented' || 'notImplemented' =>
-      ViewerErrorCode.notImplemented,
+    'invalid_document' || 'invalidDocument' => ViewerErrorCode.invalidDocument,
+    'not_implemented' || 'notImplemented' => ViewerErrorCode.notImplemented,
     _ => throw ArgumentError.value(value, 'value', 'Unknown viewer error code'),
   };
 }

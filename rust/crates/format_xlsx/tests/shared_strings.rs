@@ -84,7 +84,10 @@ fn parses_simple_and_rich_shared_strings() {
     let workbook = parse_xlsx(&archive).expect("xlsx should parse");
     let shared_strings = parse_shared_strings(&archive, &workbook).expect("shared strings");
 
-    assert_eq!(workbook.shared_strings_part.as_deref(), Some("xl/sharedStrings.xml"));
+    assert_eq!(
+        workbook.shared_strings_part.as_deref(),
+        Some("xl/sharedStrings.xml")
+    );
     assert_eq!(
         shared_strings,
         vec![

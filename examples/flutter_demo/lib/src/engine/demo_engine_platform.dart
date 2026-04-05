@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -7,7 +8,7 @@ import 'package:path/path.dart' as p;
 
 class DemoEnginePlatform extends MsViewerPlatform {
   DemoEnginePlatform({DemoEngineRunner? runner})
-    : _runner = runner ?? const CargoViewerCliRunner();
+    : _runner = runner ?? CargoViewerCliRunner();
 
   final DemoEngineRunner _runner;
 
@@ -75,49 +76,124 @@ class DemoEnginePlatform extends MsViewerPlatform {
 }
 
 abstract class DemoEngineRunner {
-  const DemoEngineRunner();
-
   Future<String> run(String command, String requestJson);
 }
 
 class CargoViewerCliRunner extends DemoEngineRunner {
-  const CargoViewerCliRunner();
+  CargoViewerCliRunner();
+
+  Future<void> _queue = Future<void>.value();
+  Process? _serverProcess;
+  StreamIterator<String>? _stdoutLines;
+  final StringBuffer _stderrBuffer = StringBuffer();
 
   @override
-  Future<String> run(String command, String requestJson) async {
+  Future<String> run(String command, String requestJson) {
+    final completer = Completer<String>();
+    _queue = _queue.then((_) async {
+      try {
+        final process = await _ensureServerProcess();
+        final stdoutLines = _stdoutLines;
+        if (stdoutLines == null) {
+          throw StateError('viewer_cli stdout stream is not initialized.');
+        }
+
+        process.stdin.writeln(
+          jsonEncode({
+            'command': command,
+            'requestJson': requestJson,
+          }),
+        );
+        await process.stdin.flush();
+
+        final hasNext = await stdoutLines.moveNext();
+        if (!hasNext) {
+          throw ProcessException(
+            _resolvedBinaryPath(await _workspaceRoot()),
+            ['serve'],
+            _stderrMessage('viewer_cli server exited unexpectedly.'),
+          );
+        }
+
+        completer.complete(stdoutLines.current.trim());
+      } catch (error, stackTrace) {
+        completer.completeError(error, stackTrace);
+      }
+    });
+    return completer.future;
+  }
+
+  Future<Process> _ensureServerProcess() async {
+    final existing = _serverProcess;
+    if (existing != null) {
+      return existing;
+    }
+
     if (!_supportsCliBridge) {
       throw ProcessException(
-        'cargo',
-        [],
+        'viewer_cli',
+        const [],
         'Rust CLI bridge is only available on desktop platforms.',
       );
     }
 
-    final workspaceRoot = _findWorkspaceRoot();
+    final workspaceRoot = await _workspaceRoot();
     final manifestPath = p.join(workspaceRoot.path, 'rust', 'Cargo.toml');
-    final result = await Process.run('cargo', [
-      'run',
+    final buildResult = await Process.run('cargo', [
+      'build',
       '--quiet',
       '--manifest-path',
       manifestPath,
       '-p',
       'viewer_cli',
-      '--',
-      command,
-      requestJson,
     ], workingDirectory: workspaceRoot.path);
 
-    if (result.exitCode != 0) {
-      final error = (result.stderr as String).trim();
+    if (buildResult.exitCode != 0) {
+      final error = (buildResult.stderr as String).trim();
       throw ProcessException(
         'cargo',
-        ['run', '-p', 'viewer_cli', '--', command],
-        error.isEmpty ? 'viewer_cli failed' : error,
-        result.exitCode,
+        ['build', '-p', 'viewer_cli'],
+        error.isEmpty ? 'viewer_cli build failed' : error,
+        buildResult.exitCode,
       );
     }
 
-    return (result.stdout as String).trim();
+    final binaryPath = _resolvedBinaryPath(workspaceRoot);
+    final process = await Process.start(binaryPath, ['serve'], workingDirectory: workspaceRoot.path);
+    _stderrBuffer.clear();
+    process.stderr
+        .transform(utf8.decoder)
+        .listen((chunk) => _stderrBuffer.write(chunk));
+    _stdoutLines = StreamIterator(
+      process.stdout.transform(utf8.decoder).transform(const LineSplitter()),
+    );
+    unawaited(
+      process.exitCode.then((_) {
+        _serverProcess = null;
+        _stdoutLines = null;
+      }),
+    );
+    _serverProcess = process;
+    return process;
+  }
+
+  Future<Directory> _workspaceRoot() async {
+    return _findWorkspaceRoot();
+  }
+
+  String _resolvedBinaryPath(Directory workspaceRoot) {
+    return p.join(
+      workspaceRoot.path,
+      'rust',
+      'target',
+      'debug',
+      Platform.isWindows ? 'viewer_cli.exe' : 'viewer_cli',
+    );
+  }
+
+  String _stderrMessage(String fallback) {
+    final message = _stderrBuffer.toString().trim();
+    return message.isEmpty ? fallback : message;
   }
 }
 

@@ -136,4 +136,3 @@ fn selection_models_expose_text_only_anchors() {
         .iter()
         .all(|anchor| text_node_indexes.contains(&anchor.node_index)));
 }
-

@@ -14,6 +14,7 @@ void main() {
           start: 0,
           end: 5,
           preview: 'first',
+          sheetCell: null,
         ),
         SearchResult(
           query: 'alpha',
@@ -21,6 +22,7 @@ void main() {
           start: 6,
           end: 11,
           preview: 'second',
+          sheetCell: null,
         ),
         SearchResult(
           query: 'alpha',
@@ -28,6 +30,7 @@ void main() {
           start: 12,
           end: 17,
           preview: 'third',
+          sheetCell: null,
         ),
       ],
     );

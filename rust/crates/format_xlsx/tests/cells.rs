@@ -169,11 +169,13 @@ fn formula_without_cached_value_keeps_formula_only() {
 
     let archive = OoxmlArchive::open_path(&path).expect("archive should open");
     let workbook = parse_xlsx(&archive).expect("xlsx should parse");
-    let worksheet_cells =
-        parse_worksheet_cells(&archive, &workbook, &[]).expect("worksheet cells");
+    let worksheet_cells = parse_worksheet_cells(&archive, &workbook, &[]).expect("worksheet cells");
 
     assert_eq!(worksheet_cells[0].cells.len(), 1);
-    assert_eq!(worksheet_cells[0].cells[0].formula.as_deref(), Some("NOW()"));
+    assert_eq!(
+        worksheet_cells[0].cells[0].formula.as_deref(),
+        Some("NOW()")
+    );
     assert_eq!(worksheet_cells[0].cells[0].value, None);
 }
 
@@ -243,4 +245,3 @@ fn invalid_shared_string_index_fails() {
 
     assert!(matches!(error, ViewerError::InvalidDocument));
 }
-

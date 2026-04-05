@@ -142,8 +142,8 @@ fn builds_sheet_render_model_from_cells_metrics_and_merges() {
     let workbook = parse_xlsx(&archive).expect("xlsx should parse");
     let shared_strings = parse_shared_strings(&archive, &workbook).expect("shared strings");
     let styles = parse_cell_style_subset(&archive, &workbook).expect("styles");
-    let render_model =
-        build_sheet_render_model(&archive, &workbook, &shared_strings, &styles, 0).expect("render model");
+    let render_model = build_sheet_render_model(&archive, &workbook, &shared_strings, &styles, 0)
+        .expect("render model");
 
     assert_eq!(render_model.page_index, 0);
     assert!(render_model.width > 0.0);
@@ -166,12 +166,15 @@ fn builds_sheet_render_model_from_cells_metrics_and_merges() {
         })
         .collect();
 
-    assert!(text_nodes.iter().any(|node| node.text == "Quarterly Summary"));
+    assert!(text_nodes
+        .iter()
+        .any(|node| node.text == "Quarterly Summary"));
     assert!(text_nodes.iter().any(|node| node.text == "42"));
     assert!(text_nodes.iter().any(|node| node.text == "inline"));
     assert!(text_nodes.iter().any(|node| node.text == "TRUE"));
     assert!(text_nodes.iter().any(|node| node.text == "#DIV/0!"));
-    assert_eq!(box_nodes.len(), 5);
+    assert_eq!(render_model.sheet_cells.len(), 5);
+    assert_eq!(box_nodes.len(), 1);
 
     let merged_header_box = box_nodes
         .iter()
@@ -311,4 +314,513 @@ fn visible_window_render_model_limits_rows_and_columns() {
     assert!(render_model.width > 0.0);
     assert!(render_model.height > 0.0);
     assert!(render_model.selection_anchors.len() >= 8);
+}
+
+#[test]
+fn visible_window_render_model_keeps_blank_grid_for_sparse_sheet() {
+    let dir = tempdir().expect("tempdir should exist");
+    let path = dir.path().join("sheet-sparse-window.xlsx");
+    create_zip(
+        &path,
+        &[
+            (
+                "_rels/.rels",
+                br#"
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>
+"#,
+            ),
+            (
+                "xl/workbook.xml",
+                br#"
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+          xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets>
+    <sheet name="Sheet1" sheetId="1" r:id="rIdSheet1"/>
+  </sheets>
+</workbook>
+"#,
+            ),
+            (
+                "xl/_rels/workbook.xml.rels",
+                br#"
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdSheet1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+  <Relationship Id="rIdStyles" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+</Relationships>
+"#,
+            ),
+            (
+                "xl/styles.xml",
+                br#"
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <fonts count="1"><font><name val="Calibri"/><sz val="11"/></font></fonts>
+  <fills count="2">
+    <fill><patternFill patternType="none"/></fill>
+    <fill><patternFill patternType="gray125"/></fill>
+  </fills>
+  <cellXfs count="1"><xf numFmtId="0" fontId="0" fillId="0"/></cellXfs>
+</styleSheet>
+"#,
+            ),
+            (
+                "xl/worksheets/sheet1.xml",
+                br#"
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <dimension ref="A1"/>
+  <sheetFormatPr defaultRowHeight="15" defaultColWidth="8.43"/>
+  <sheetData>
+    <row r="1">
+      <c r="A1" t="inlineStr"><is><t>Hello</t></is></c>
+    </row>
+  </sheetData>
+</worksheet>
+"#,
+            ),
+        ],
+    );
+
+    let archive = OoxmlArchive::open_path(&path).expect("archive should open");
+    let workbook = parse_xlsx(&archive).expect("xlsx should parse");
+    let shared_strings = parse_shared_strings(&archive, &workbook).expect("shared strings");
+    let styles = parse_cell_style_subset(&archive, &workbook).expect("styles");
+    let render_model = build_visible_window_render_model(
+        &archive,
+        &workbook,
+        &shared_strings,
+        &styles,
+        0,
+        &XlsxVisibleWindow {
+            start_row: 1,
+            start_column: 1,
+            row_count: 24,
+            column_count: 10,
+        },
+    )
+    .expect("window render model");
+
+    let viewport = render_model
+        .sheet_viewport
+        .as_ref()
+        .expect("sheet viewport metadata");
+    assert_eq!(viewport.window.end_row, 24);
+    assert_eq!(viewport.window.end_column, 10);
+    assert_eq!(viewport.visible_rows.len(), 24);
+    assert_eq!(viewport.visible_columns.len(), 10);
+    assert!(render_model.width > 600.0);
+    assert!(render_model.height > 400.0);
+
+    let box_nodes = render_model
+        .nodes
+        .iter()
+        .filter(|node| matches!(node, RenderNode::Box(_)))
+        .count();
+    assert_eq!(render_model.sheet_cells.len(), 240);
+    assert_eq!(box_nodes, 0);
+}
+
+#[test]
+fn hidden_rows_and_columns_do_not_consume_sheet_space() {
+    let dir = tempdir().expect("tempdir should exist");
+    let path = dir.path().join("sheet-hidden-metrics.xlsx");
+    create_zip(
+        &path,
+        &[
+            (
+                "_rels/.rels",
+                br#"
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>
+"#,
+            ),
+            (
+                "xl/workbook.xml",
+                br#"
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+          xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets>
+    <sheet name="Sheet1" sheetId="1" r:id="rIdSheet1"/>
+  </sheets>
+</workbook>
+"#,
+            ),
+            (
+                "xl/_rels/workbook.xml.rels",
+                br#"
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdSheet1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+</Relationships>
+"#,
+            ),
+            (
+                "xl/worksheets/sheet1.xml",
+                br#"
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <dimension ref="A1:B2"/>
+  <sheetFormatPr defaultRowHeight="15" defaultColWidth="8.43"/>
+  <cols>
+    <col min="1" max="1" width="12" customWidth="1"/>
+    <col min="2" max="2" width="20" hidden="1" customWidth="1"/>
+  </cols>
+  <sheetData>
+    <row r="1" ht="12" customHeight="1">
+      <c r="A1" t="inlineStr"><is><t>visible</t></is></c>
+      <c r="B1" t="inlineStr"><is><t>hidden column</t></is></c>
+    </row>
+    <row r="2" hidden="1">
+      <c r="A2" t="inlineStr"><is><t>hidden row</t></is></c>
+    </row>
+  </sheetData>
+</worksheet>
+"#,
+            ),
+        ],
+    );
+
+    let archive = OoxmlArchive::open_path(&path).expect("archive should open");
+    let workbook = parse_xlsx(&archive).expect("xlsx should parse");
+    let styles = parse_cell_style_subset(&archive, &workbook).expect("styles");
+    let render_model =
+        build_sheet_render_model(&archive, &workbook, &[], &styles, 0).expect("render model");
+
+    let text_nodes: Vec<_> = render_model
+        .nodes
+        .iter()
+        .filter_map(|node| match node {
+            RenderNode::Text(text) => Some(text),
+            _ => None,
+        })
+        .collect();
+    let box_nodes: Vec<_> = render_model
+        .nodes
+        .iter()
+        .filter_map(|node| match node {
+            RenderNode::Box(node) => Some(node),
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(render_model.sheet_cells.len(), 1);
+    assert!(box_nodes.is_empty());
+    assert_eq!(text_nodes.len(), 1);
+    assert_eq!(text_nodes[0].text, "visible");
+    assert!((render_model.width - excel_column_width_to_pixels(12.0)).abs() < 0.1);
+    assert!((render_model.height - (12.0 * (96.0 / 72.0))).abs() < 0.1);
+}
+
+#[test]
+fn merged_cells_use_spanned_column_widths_and_row_heights() {
+    let dir = tempdir().expect("tempdir should exist");
+    let path = dir.path().join("sheet-merged-span.xlsx");
+    create_zip(
+        &path,
+        &[
+            (
+                "_rels/.rels",
+                br#"
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>
+"#,
+            ),
+            (
+                "xl/workbook.xml",
+                br#"
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+          xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets>
+    <sheet name="Sheet1" sheetId="1" r:id="rIdSheet1"/>
+  </sheets>
+</workbook>
+"#,
+            ),
+            (
+                "xl/_rels/workbook.xml.rels",
+                br#"
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdSheet1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+</Relationships>
+"#,
+            ),
+            (
+                "xl/worksheets/sheet1.xml",
+                br#"
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <dimension ref="A1:B2"/>
+  <sheetFormatPr defaultRowHeight="15" defaultColWidth="8.43"/>
+  <cols>
+    <col min="1" max="1" width="10" customWidth="1"/>
+    <col min="2" max="2" width="15" customWidth="1"/>
+  </cols>
+  <sheetData>
+    <row r="1" ht="18" customHeight="1">
+      <c r="A1" t="inlineStr"><is><t>Merged title</t></is></c>
+      <c r="B1"/>
+    </row>
+    <row r="2" ht="21" customHeight="1">
+      <c r="A2"/>
+      <c r="B2"/>
+    </row>
+  </sheetData>
+  <mergeCells count="1">
+    <mergeCell ref="A1:B2"/>
+  </mergeCells>
+</worksheet>
+"#,
+            ),
+        ],
+    );
+
+    let archive = OoxmlArchive::open_path(&path).expect("archive should open");
+    let workbook = parse_xlsx(&archive).expect("xlsx should parse");
+    let styles = parse_cell_style_subset(&archive, &workbook).expect("styles");
+    let render_model =
+        build_sheet_render_model(&archive, &workbook, &[], &styles, 0).expect("render model");
+
+    let merged_box = render_model
+        .sheet_cells
+        .first()
+        .expect("merged cell metadata should exist");
+    let merged_text = render_model
+        .nodes
+        .iter()
+        .find_map(|node| match node {
+            RenderNode::Text(node) => Some(node),
+            _ => None,
+        })
+        .expect("merged cell text should exist");
+
+    let expected_width = excel_column_width_to_pixels(10.0) + excel_column_width_to_pixels(15.0);
+    let expected_height = (18.0 * (96.0 / 72.0)) + (21.0 * (96.0 / 72.0));
+
+    assert!((merged_box.bounds.width - expected_width).abs() < 0.1);
+    assert!((merged_box.bounds.height - expected_height).abs() < 0.1);
+    assert!(merged_text.bounds.x >= merged_box.bounds.x);
+    assert!(merged_text.bounds.y >= merged_box.bounds.y);
+    assert!(
+        merged_text.bounds.x + merged_text.bounds.width
+            <= merged_box.bounds.x + merged_box.bounds.width
+    );
+    assert!(
+        merged_text.bounds.y + merged_text.bounds.height
+            <= merged_box.bounds.y + merged_box.bounds.height
+    );
+}
+
+#[test]
+fn effective_bounds_union_dimension_metrics_merges_and_frozen_panes() {
+    let dir = tempdir().expect("tempdir should exist");
+    let path = dir.path().join("sheet-effective-bounds.xlsx");
+    create_zip(
+        &path,
+        &[
+            (
+                "_rels/.rels",
+                br#"
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>
+"#,
+            ),
+            (
+                "xl/workbook.xml",
+                br#"
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+          xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets>
+    <sheet name="Sheet1" sheetId="1" r:id="rIdSheet1"/>
+  </sheets>
+</workbook>
+"#,
+            ),
+            (
+                "xl/_rels/workbook.xml.rels",
+                br#"
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdSheet1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+  <Relationship Id="rIdStyles" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+</Relationships>
+"#,
+            ),
+            (
+                "xl/styles.xml",
+                br#"
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <fonts count="1"><font><name val="Calibri"/><sz val="11"/></font></fonts>
+  <fills count="2">
+    <fill><patternFill patternType="none"/></fill>
+    <fill><patternFill patternType="gray125"/></fill>
+  </fills>
+  <cellXfs count="1"><xf numFmtId="0" fontId="0" fillId="0"/></cellXfs>
+</styleSheet>
+"#,
+            ),
+            (
+                "xl/worksheets/sheet1.xml",
+                br#"
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <dimension ref="B2:C3"/>
+  <sheetViews>
+    <sheetView workbookViewId="0">
+      <pane state="frozen" xSplit="1" ySplit="1" topLeftCell="C4"/>
+    </sheetView>
+  </sheetViews>
+  <sheetFormatPr defaultRowHeight="15" defaultColWidth="8.43"/>
+  <cols>
+    <col min="5" max="6" width="14" customWidth="1"/>
+  </cols>
+  <sheetData>
+    <row r="2">
+      <c r="B2"><v>1</v></c>
+    </row>
+    <row r="7" ht="30" customHeight="1"/>
+  </sheetData>
+  <mergeCells count="1">
+    <mergeCell ref="D6:F6"/>
+  </mergeCells>
+</worksheet>
+"#,
+            ),
+        ],
+    );
+
+    let archive = OoxmlArchive::open_path(&path).expect("archive should open");
+    let workbook = parse_xlsx(&archive).expect("xlsx should parse");
+    let shared_strings = parse_shared_strings(&archive, &workbook).expect("shared strings");
+    let styles = parse_cell_style_subset(&archive, &workbook).expect("styles");
+    let render_model = build_sheet_render_model(&archive, &workbook, &shared_strings, &styles, 0)
+        .expect("render model");
+    let viewport = render_model
+        .sheet_viewport
+        .as_ref()
+        .expect("sheet viewport metadata");
+
+    assert_eq!(viewport.effective_bounds.start_row, 1);
+    assert_eq!(viewport.effective_bounds.start_column, 1);
+    assert_eq!(viewport.effective_bounds.end_row, 7);
+    assert_eq!(viewport.effective_bounds.end_column, 6);
+    assert_eq!(
+        viewport
+            .frozen_pane
+            .as_ref()
+            .and_then(|pane| pane.top_left_cell.as_deref()),
+        Some("C4"),
+    );
+}
+
+#[test]
+fn render_model_formats_numbers_dates_and_typography_from_styles() {
+    let dir = tempdir().expect("tempdir should exist");
+    let path = dir.path().join("sheet-formatting.xlsx");
+    create_zip(
+        &path,
+        &[
+            (
+                "_rels/.rels",
+                br#"
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>
+"#,
+            ),
+            (
+                "xl/workbook.xml",
+                br#"
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+          xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <workbookPr date1904="1"/>
+  <sheets>
+    <sheet name="Sheet1" sheetId="1" r:id="rIdSheet1"/>
+  </sheets>
+</workbook>
+"#,
+            ),
+            (
+                "xl/_rels/workbook.xml.rels",
+                br#"
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdSheet1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+  <Relationship Id="rIdStyles" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+</Relationships>
+"#,
+            ),
+            (
+                "xl/styles.xml",
+                br##"
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <numFmts count="2">
+    <numFmt numFmtId="164" formatCode="#,##0.00"/>
+    <numFmt numFmtId="165" formatCode="yyyy-mm-dd"/>
+  </numFmts>
+  <fonts count="2">
+    <font><name val="Calibri"/><sz val="11"/></font>
+    <font><name val="Pretendard"/><sz val="14"/><b/></font>
+  </fonts>
+  <fills count="2">
+    <fill><patternFill patternType="none"/></fill>
+    <fill><patternFill patternType="gray125"/></fill>
+  </fills>
+  <cellXfs count="4">
+    <xf numFmtId="164" fontId="0" fillId="0" applyNumberFormat="1"/>
+    <xf numFmtId="165" fontId="0" fillId="0" applyNumberFormat="1"/>
+    <xf numFmtId="10" fontId="0" fillId="0" applyNumberFormat="1"/>
+    <xf numFmtId="0" fontId="1" fillId="0"/>
+  </cellXfs>
+</styleSheet>
+"##,
+            ),
+            (
+                "xl/worksheets/sheet1.xml",
+                r#"
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <dimension ref="A1:D1"/>
+  <sheetData>
+    <row r="1">
+      <c r="A1" s="0"><v>1234.5</v></c>
+      <c r="B1" s="1"><v>1</v></c>
+      <c r="C1" s="2"><v>0.125</v></c>
+      <c r="D1" s="3" t="inlineStr"><is><t>한글 Budget</t></is></c>
+    </row>
+  </sheetData>
+</worksheet>
+"#
+                .as_bytes(),
+            ),
+        ],
+    );
+
+    let archive = OoxmlArchive::open_path(&path).expect("archive should open");
+    let workbook = parse_xlsx(&archive).expect("xlsx should parse");
+    let styles = parse_cell_style_subset(&archive, &workbook).expect("styles");
+    let render_model =
+        build_sheet_render_model(&archive, &workbook, &[], &styles, 0).expect("render model");
+    let text_nodes: Vec<_> = render_model
+        .nodes
+        .iter()
+        .filter_map(|node| match node {
+            RenderNode::Text(node) => Some(node),
+            _ => None,
+        })
+        .collect();
+
+    assert!(text_nodes.iter().any(|node| node.text == "1,234.50"));
+    assert!(text_nodes.iter().any(|node| node.text == "1904-01-02"));
+    assert!(text_nodes.iter().any(|node| node.text == "12.50%"));
+
+    let typography_node = text_nodes
+        .iter()
+        .find(|node| node.text == "한글 Budget")
+        .expect("styled text node");
+    assert_eq!(typography_node.style.font_family, "Pretendard");
+    assert_eq!(typography_node.style.font_size, 14.0);
+    assert!(typography_node.style.bold);
+}
+
+fn excel_column_width_to_pixels(width_units: f32) -> f32 {
+    let max_digit_width = 7.0;
+    let padding = 5.0;
+    let truncation = (128.0_f32 / max_digit_width).floor();
+    ((((256.0 * width_units) + truncation) / 256.0).floor() * max_digit_width + padding).max(0.0)
 }

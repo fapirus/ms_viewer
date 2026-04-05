@@ -3,6 +3,10 @@ use std::path::Path;
 use base64::Engine;
 use format_docx::{build_selection_page_models, parse_docx, search_document};
 use format_pptx::{build_slide_render_model, parse_pptx, search_slides};
+use format_xlsx::{
+    build_sheet_render_model, build_visible_window_render_model, parse_cell_style_subset,
+    parse_shared_strings, parse_xlsx, search_workbook, XlsxVisibleWindow,
+};
 use serde::{Deserialize, Serialize};
 use viewer_core::archive::OoxmlArchive;
 use viewer_core::crypto::{
@@ -38,12 +42,22 @@ pub struct DocumentCapabilities {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+pub struct SheetTab {
+    pub page_index: u32,
+    pub title: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub struct OpenDocumentSuccess {
     pub document_id: String,
     pub kind: DocumentKind,
     pub title: String,
     pub page_count: u32,
     pub capabilities: DocumentCapabilities,
+    #[serde(default)]
+    pub sheet_tabs: Vec<SheetTab>,
+    pub active_page_index: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -52,7 +66,18 @@ pub struct GetPageRenderModelRequest {
     pub source: DocumentSource,
     pub document_id: String,
     pub page_index: u32,
+    #[serde(default)]
+    pub sheet_window: Option<SheetWindow>,
     pub options: OpenOptions,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SheetWindow {
+    pub start_row: u32,
+    pub end_row: u32,
+    pub start_column: u32,
+    pub end_column: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -243,8 +268,34 @@ fn build_open_success(
     title: String,
 ) -> Result<OpenDocumentSuccess, ViewerError> {
     let kind = detect_document_kind(archive)?;
-    let page_count = detect_page_count(archive, kind)?;
     let document_id = build_document_id(source, &title);
+    let (page_count, sheet_tabs, active_page_index) = match kind {
+        DocumentKind::Xlsx => {
+            let workbook = parse_xlsx(archive)?;
+            let sheet_tabs = workbook
+                .sheets
+                .iter()
+                .enumerate()
+                .filter(|(_, sheet)| matches!(sheet.visibility, format_xlsx::WorksheetVisibility::Visible))
+                .map(|(index, sheet)| SheetTab {
+                    page_index: index as u32,
+                    title: sheet.name.clone(),
+                })
+                .collect::<Vec<_>>();
+            let fallback_index = sheet_tabs.first().map(|tab| tab.page_index);
+            let active_page_index = workbook
+                .active_sheet_index
+                .and_then(|index| {
+                    sheet_tabs
+                        .iter()
+                        .find(|tab| tab.page_index == index)
+                        .map(|tab| tab.page_index)
+                })
+                .or(fallback_index);
+            (sheet_tabs.len().max(1) as u32, sheet_tabs, active_page_index)
+        }
+        _ => (detect_page_count(archive, kind)?, Vec::new(), None),
+    };
 
     Ok(OpenDocumentSuccess {
         document_id,
@@ -256,6 +307,8 @@ fn build_open_success(
             text_selection: supports_text_selection(kind),
             password_protected: false,
         },
+        sheet_tabs,
+        active_page_index,
     })
 }
 
@@ -338,7 +391,37 @@ fn get_page_render_model_impl(
             let slide_tree = parse_pptx(&archive)?;
             build_slide_render_model(&archive, &slide_tree, request.page_index as usize)
         }
-        DocumentKind::Xlsx => Err(ViewerError::NotImplemented("xlsx page rendering")),
+        DocumentKind::Xlsx => {
+            let workbook = parse_xlsx(&archive)?;
+            let shared_strings = parse_shared_strings(&archive, &workbook)?;
+            let styles = parse_cell_style_subset(&archive, &workbook)?;
+            if let Some(window) = request.sheet_window.as_ref() {
+                if window.end_row < window.start_row || window.end_column < window.start_column {
+                    return Err(ViewerError::InvalidDocument);
+                }
+                build_visible_window_render_model(
+                    &archive,
+                    &workbook,
+                    &shared_strings,
+                    &styles,
+                    request.page_index as usize,
+                    &XlsxVisibleWindow {
+                        start_row: window.start_row,
+                        start_column: window.start_column,
+                        row_count: window.end_row - window.start_row + 1,
+                        column_count: window.end_column - window.start_column + 1,
+                    },
+                )
+            } else {
+                build_sheet_render_model(
+                    &archive,
+                    &workbook,
+                    &shared_strings,
+                    &styles,
+                    request.page_index as usize,
+                )
+            }
+        }
     }
 }
 
@@ -357,7 +440,18 @@ fn search_document_pages_impl(
             let slide_tree = parse_pptx(&archive)?;
             search_slides(&archive, &slide_tree, &request.query)
         }
-        DocumentKind::Xlsx => Err(ViewerError::NotImplemented("xlsx search")),
+        DocumentKind::Xlsx => {
+            let workbook = parse_xlsx(&archive)?;
+            let shared_strings = parse_shared_strings(&archive, &workbook)?;
+            let styles = parse_cell_style_subset(&archive, &workbook)?;
+            search_workbook(
+                &archive,
+                &workbook,
+                &shared_strings,
+                &styles,
+                &request.query,
+            )
+        }
     }
 }
 
@@ -368,6 +462,7 @@ fn get_selection_page_impl(
         source: request.source,
         document_id: request.document_id,
         page_index: request.page_index,
+        sheet_window: None,
         options: request.options,
     })
 }
@@ -385,9 +480,15 @@ fn open_archive_from_source(source: DocumentSource) -> Result<OoxmlArchive, View
 }
 
 fn supports_text_search(kind: DocumentKind) -> bool {
-    matches!(kind, DocumentKind::Docx | DocumentKind::Pptx)
+    matches!(
+        kind,
+        DocumentKind::Docx | DocumentKind::Pptx | DocumentKind::Xlsx
+    )
 }
 
 fn supports_text_selection(kind: DocumentKind) -> bool {
-    matches!(kind, DocumentKind::Docx | DocumentKind::Pptx)
+    matches!(
+        kind,
+        DocumentKind::Docx | DocumentKind::Pptx | DocumentKind::Xlsx
+    )
 }

@@ -136,12 +136,14 @@ fn opens_rendered_page_break_regression_fixture_with_two_pages() {
         source: DocumentSource::Path(path.display().to_string()),
         document_id: document_id.clone(),
         page_index: 0,
+        sheet_window: None,
         options: OpenOptions::default(),
     });
     let second_page = get_page_render_model(GetPageRenderModelRequest {
         source: DocumentSource::Path(path.display().to_string()),
         document_id,
         page_index: 1,
+        sheet_window: None,
         options: OpenOptions::default(),
     });
 
@@ -183,6 +185,7 @@ fn table_cell_layout_regression_fixture_preserves_cell_text_style() {
         source: DocumentSource::Path(path.display().to_string()),
         document_id: format!("path:{}", path.display()),
         page_index: 0,
+        sheet_window: None,
         options: OpenOptions::default(),
     });
 
@@ -222,6 +225,7 @@ fn table_inline_image_regression_fixture_emits_image_node() {
         source: DocumentSource::Path(path.display().to_string()),
         document_id: format!("path:{}", path.display()),
         page_index: 0,
+        sheet_window: None,
         options: OpenOptions::default(),
     });
 
@@ -252,6 +256,7 @@ fn paragraph_spacing_regression_fixture_preserves_style_metrics() {
         source: DocumentSource::Path(path.display().to_string()),
         document_id: format!("path:{}", path.display()),
         page_index: 0,
+        sheet_window: None,
         options: OpenOptions::default(),
     });
 
@@ -285,6 +290,7 @@ fn floating_table_regression_fixture_preserves_centered_bounds() {
         source: DocumentSource::Path(path.display().to_string()),
         document_id: format!("path:{}", path.display()),
         page_index: 0,
+        sheet_window: None,
         options: OpenOptions::default(),
     });
 
@@ -330,7 +336,7 @@ fn opens_xlsx_bytes_request_from_json() {
             "_rels/.rels",
             r#"<?xml version="1.0" encoding="UTF-8"?>
             <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-              <Relationship Id="rId1" Type="officeDocument" Target="xl/workbook.xml"/>
+              <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
             </Relationships>"#,
         ),
         (
@@ -342,6 +348,28 @@ fn opens_xlsx_bytes_request_from_json() {
                 <sheet name="Sheet2" sheetId="2" r:id="rId2" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"/>
               </sheets>
             </workbook>"#,
+        ),
+        (
+            "xl/_rels/workbook.xml.rels",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+              <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+              <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/>
+            </Relationships>"#,
+        ),
+        (
+            "xl/worksheets/sheet1.xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+              <sheetData/>
+            </worksheet>"#,
+        ),
+        (
+            "xl/worksheets/sheet2.xml",
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+              <sheetData/>
+            </worksheet>"#,
         ),
     ]);
     let bytes = fs::read(file.path()).expect("fixture bytes");
@@ -364,6 +392,8 @@ fn opens_xlsx_bytes_request_from_json() {
             assert_eq!(success.kind, viewer_core::DocumentKind::Xlsx);
             assert_eq!(success.title, "memory-document");
             assert_eq!(success.page_count, 2);
+            assert!(success.capabilities.search);
+            assert!(success.capabilities.text_selection);
         }
         other => panic!("expected success, got {other:?}"),
     }
@@ -449,6 +479,7 @@ fn fetches_first_docx_page_render_model() {
         source: DocumentSource::Path(path),
         document_id,
         page_index: 0,
+        sheet_window: None,
         options: OpenOptions::default(),
     });
 
@@ -550,6 +581,7 @@ fn fetches_first_pptx_slide_render_model() {
         source: DocumentSource::Path(path),
         document_id,
         page_index: 0,
+        sheet_window: None,
         options: OpenOptions::default(),
     });
 
@@ -609,6 +641,7 @@ fn invalid_page_index_maps_to_invalid_document_error() {
         source: DocumentSource::Path(path),
         document_id: "unused".to_string(),
         page_index: 9,
+        sheet_window: None,
         options: OpenOptions::default(),
     });
 
@@ -680,6 +713,99 @@ fn invalid_pptx_slide_index_maps_to_invalid_document_error() {
         source: DocumentSource::Path(path),
         document_id: "unused".to_string(),
         page_index: 9,
+        sheet_window: None,
+        options: OpenOptions::default(),
+    });
+
+    match response {
+        GetPageRenderModelResponse::Error(error) => {
+            assert_eq!(
+                error.code,
+                viewer_core::wire::ViewerErrorCode::InvalidDocument
+            );
+        }
+        other => panic!("expected error, got {other:?}"),
+    }
+}
+
+#[test]
+fn fetches_xlsx_visible_window_render_model() {
+    let path = xlsx_fixture_path("xlsx_merges_frozen_formulas.xlsx");
+
+    let response = get_page_render_model(GetPageRenderModelRequest {
+        source: DocumentSource::Path(path.display().to_string()),
+        document_id: format!("path:{}", path.display()),
+        page_index: 0,
+        sheet_window: Some(viewer_ffi::SheetWindow {
+            start_row: 2,
+            end_row: 3,
+            start_column: 1,
+            end_column: 2,
+        }),
+        options: OpenOptions::default(),
+    });
+
+    match response {
+        GetPageRenderModelResponse::Success(page) => {
+            let text_nodes = page
+                .nodes
+                .iter()
+                .filter_map(|node| match node {
+                    viewer_core::model::RenderNode::Text(text) => Some(text.text.as_str()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+
+            assert_eq!(page.page_index, 0);
+            assert!(text_nodes.contains(&"420"));
+            assert!(text_nodes.contains(&"inline"));
+        }
+        other => panic!("expected xlsx page render model, got {other:?}"),
+    }
+}
+
+#[test]
+fn invalid_xlsx_sheet_window_maps_to_invalid_document_error() {
+    let path = xlsx_fixture_path("xlsx_merges_frozen_formulas.xlsx");
+
+    let response = get_page_render_model(GetPageRenderModelRequest {
+        source: DocumentSource::Path(path.display().to_string()),
+        document_id: format!("path:{}", path.display()),
+        page_index: 0,
+        sheet_window: Some(viewer_ffi::SheetWindow {
+            start_row: 3,
+            end_row: 2,
+            start_column: 2,
+            end_column: 1,
+        }),
+        options: OpenOptions::default(),
+    });
+
+    match response {
+        GetPageRenderModelResponse::Error(error) => {
+            assert_eq!(
+                error.code,
+                viewer_core::wire::ViewerErrorCode::InvalidDocument
+            );
+        }
+        other => panic!("expected error, got {other:?}"),
+    }
+}
+
+#[test]
+fn invalid_xlsx_sheet_index_maps_to_invalid_document_error() {
+    let path = xlsx_fixture_path("xlsx_merges_frozen_formulas.xlsx");
+
+    let response = get_page_render_model(GetPageRenderModelRequest {
+        source: DocumentSource::Path(path.display().to_string()),
+        document_id: format!("path:{}", path.display()),
+        page_index: 9,
+        sheet_window: Some(viewer_ffi::SheetWindow {
+            start_row: 1,
+            end_row: 3,
+            start_column: 1,
+            end_column: 3,
+        }),
         options: OpenOptions::default(),
     });
 
@@ -799,6 +925,28 @@ fn search_query_returns_pptx_matches() {
 }
 
 #[test]
+fn search_query_returns_xlsx_matches() {
+    let path = xlsx_fixture_path("xlsx_basic_grid.xlsx");
+
+    let response = search_document_pages(SearchDocumentRequest {
+        source: DocumentSource::Path(path.display().to_string()),
+        document_id: format!("path:{}", path.display()),
+        query: "status".to_string(),
+        options: OpenOptions::default(),
+    });
+
+    match response {
+        SearchDocumentResponse::Success(matches) => {
+            assert_eq!(matches.len(), 1);
+            assert_eq!(matches[0].page_index, 1);
+            assert_eq!(matches[0].query, "status");
+            assert!(matches[0].preview.to_lowercase().contains("status"));
+        }
+        other => panic!("expected search matches, got {other:?}"),
+    }
+}
+
+#[test]
 fn selection_metadata_fetch_returns_page_with_anchors() {
     let file = create_package(&[
         (
@@ -838,6 +986,37 @@ fn selection_metadata_fetch_returns_page_with_anchors() {
     match response {
         GetSelectionPageResponse::Success(page) => {
             assert_eq!(page.page_index, 0);
+            assert!(!page.selection_anchors.is_empty());
+        }
+        other => panic!("expected selection page, got {other:?}"),
+    }
+}
+
+#[test]
+fn selection_metadata_fetch_returns_xlsx_sheet_with_anchors() {
+    let path = xlsx_fixture_path("xlsx_merges_frozen_formulas.xlsx");
+
+    let response = get_selection_page(GetSelectionPageRequest {
+        source: DocumentSource::Path(path.display().to_string()),
+        document_id: format!("path:{}", path.display()),
+        page_index: 0,
+        options: OpenOptions::default(),
+    });
+
+    match response {
+        GetSelectionPageResponse::Success(page) => {
+            let text_nodes = page
+                .nodes
+                .iter()
+                .filter_map(|node| match node {
+                    viewer_core::model::RenderNode::Text(text) => Some(text.text.as_str()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+
+            assert_eq!(page.page_index, 0);
+            assert!(text_nodes.contains(&"420"));
+            assert!(text_nodes.contains(&"inline"));
             assert!(!page.selection_anchors.is_empty());
         }
         other => panic!("expected selection page, got {other:?}"),
@@ -974,6 +1153,12 @@ fn create_package(entries: &[(&str, &str)]) -> NamedTempFile {
 fn regression_fixture_path(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../../fixtures/regression")
+        .join(name)
+}
+
+fn xlsx_fixture_path(name: &str) -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../fixtures/xlsx")
         .join(name)
 }
 

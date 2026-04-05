@@ -702,6 +702,8 @@ pub fn build_slide_render_model(
         height: slide_height,
         nodes,
         selection_anchors: anchors,
+        sheet_viewport: None,
+        sheet_cells: Vec::new(),
     })
 }
 

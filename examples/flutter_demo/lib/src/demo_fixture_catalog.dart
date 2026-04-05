@@ -99,5 +99,39 @@ List<DemoDocumentEntry> buildFixtureEntries() {
       location: 'assets/fixtures/pptx/pptx_theme_layout_images.pptx',
       note: 'Theme, layout and image review fixture.',
     ),
+    DemoDocumentEntry(
+      id: 'xlsx_basic_grid',
+      title: 'xlsx_basic_grid.xlsx',
+      kind: DocumentKind.xlsx,
+      origin: DemoDocumentOrigin.fixture,
+      previewPages: [
+        buildImportedPreviewPage(
+          title: 'xlsx_basic_grid.xlsx',
+          extension: 'xlsx',
+        ),
+      ],
+      tags: const ['grid', 'xlsx'],
+      sourceLabel: 'Bundled fixture',
+      statusLabel: 'Ready',
+      location: 'assets/fixtures/xlsx/xlsx_basic_grid.xlsx',
+      note: 'Basic grid rendering review fixture.',
+    ),
+    DemoDocumentEntry(
+      id: 'xlsx_merges_frozen_formulas',
+      title: 'xlsx_merges_frozen_formulas.xlsx',
+      kind: DocumentKind.xlsx,
+      origin: DemoDocumentOrigin.fixture,
+      previewPages: [
+        buildImportedPreviewPage(
+          title: 'xlsx_merges_frozen_formulas.xlsx',
+          extension: 'xlsx',
+        ),
+      ],
+      tags: const ['merges', 'frozen panes', 'formulas', 'xlsx'],
+      sourceLabel: 'Bundled fixture',
+      statusLabel: 'Ready',
+      location: 'assets/fixtures/xlsx/xlsx_merges_frozen_formulas.xlsx',
+      note: 'Merged cells, frozen panes and cached formula review fixture.',
+    ),
   ];
 }
