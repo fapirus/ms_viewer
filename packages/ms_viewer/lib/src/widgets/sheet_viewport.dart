@@ -726,17 +726,17 @@ class _FrozenPaneOverlay extends StatelessWidget {
   Widget build(BuildContext context) {
     final splitPage = _filterSheetPageNodes(
       page,
-      (node) => !_isFrozenBoundaryCrossingNode(
-        node,
-        frozenWidth: frozenWidth,
-        frozenHeight: frozenHeight,
-        freezeColumns: freezeColumns,
-        freezeRows: freezeRows,
-      ),
+      (node) => !_isFrozenBoundaryCrossingTextNode(
+            node,
+            frozenWidth: frozenWidth,
+            frozenHeight: frozenHeight,
+            freezeColumns: freezeColumns,
+            freezeRows: freezeRows,
+          ),
     );
-    final crossingPage = _filterSheetPageNodes(
+    final topCrossingTextPage = _filterSheetPageNodes(
       page,
-      (node) => _isFrozenBoundaryCrossingNode(
+      (node) => _isFrozenBoundaryCrossingTextNode(
         node,
         frozenWidth: frozenWidth,
         frozenHeight: frozenHeight,
@@ -806,16 +806,16 @@ class _FrozenPaneOverlay extends StatelessWidget {
                 ),
               ),
             ),
-        if (crossingPage.nodes.isNotEmpty)
+        if (topCrossingTextPage.nodes.isNotEmpty && freezeRows && frozenHeight > 0)
           Positioned.fill(
             child: IgnorePointer(
               child: ClipRect(
                 child: SheetRenderCanvas(
-                  page: crossingPage,
+                  page: topCrossingTextPage,
                   canvasWidth: page.width,
                   canvasHeight: page.height,
                   viewportOffset: Offset.zero,
-                  viewportSize: viewportSize,
+                  viewportSize: Size(viewportSize.width, frozenHeight),
                   highlights: highlights,
                   backgroundColor: Colors.transparent,
                 ),
@@ -864,33 +864,23 @@ PageRenderModel _filterSheetPageNodes(
   );
 }
 
-bool _isFrozenBoundaryCrossingNode(
+bool _isFrozenBoundaryCrossingTextNode(
   RenderNodeModel node, {
   required double frozenWidth,
   required double frozenHeight,
   required bool freezeColumns,
   required bool freezeRows,
 }) {
-  final bounds = switch (node) {
-    TextRenderNodeModel() => Rect.fromLTWH(
+  if (node is! TextRenderNodeModel) {
+    return false;
+  }
+
+  final bounds = Rect.fromLTWH(
       node.bounds.x,
       node.bounds.y,
       node.bounds.width,
       node.bounds.height,
-    ),
-    ImageRenderNodeModel() => Rect.fromLTWH(
-      node.bounds.x,
-      node.bounds.y,
-      node.bounds.width,
-      node.bounds.height,
-    ),
-    BoxRenderNodeModel() => Rect.fromLTWH(
-      node.bounds.x,
-      node.bounds.y,
-      node.bounds.width,
-      node.bounds.height,
-    ),
-  };
+    );
 
   final crossesFrozenColumn = freezeColumns &&
       freezeRows &&
